@@ -77,7 +77,13 @@ minutes of a push; AWS then tries to revoke a key that never existed, and the ac
 test fixture gets a mark against it.
 
 So the files carry `__PLANTED_…__` placeholders, and `plant_secrets.py` fills them from a seeded
-PRNG. Two people running it get the same corpus and can compare results, and the two directions are
+PRNG.
+
+Only 28 of the corpus's planted credentials are templated this way — the ones whose shape a
+provider's scanner recognises, which are the ones that would block a push. The rest are generic
+passwords, connection strings and secrets pasted into comments; they look like nothing in
+particular to a scanner and ship as they are. `secrets-and-config/` is complete either way, which
+is what makes "did the tool leak any of them into its output" a real test. Two people running it get the same corpus and can compare results, and the two directions are
 exact inverses — a working copy can go round the loop any number of times and come back
 byte-identical.
 
