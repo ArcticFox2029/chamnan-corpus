@@ -1,0 +1,57 @@
+# =============================================================================
+# Proměnné pro běh rolí v CI.
+#
+# Nic tu neposlouchá na síti a nic se nepřipojuje ven. Účelem je, aby
+# `ansible-playbook --check --diff site.yml` prošel a aby vyrenderované
+# prostředí sedělo s §5 SPEC.md — validaci dělá ops/validate-env.py, který
+# porovnává vyrenderovaný .env proti seznamu proměnných ve specifikaci a
+# neznámou proměnnou bere jako chybu, ne jako varování.
+# =============================================================================
+
+of_release_channel: dev
+of_registry: localhost:5000
+of_image_prefix: "{{ of_registry }}/of"
+of_image_tag: "ci-{{ lookup('env', 'GITHUB_SHA') | default('local', true) | truncate(12, true, '') }}"
+
+of_log_level: debug
+of_log_format: text
+of_database_max_conns: 5
+of_database_statement_timeout_ms: 30000
+of_otel_exporter_endpoint: "http://127.0.0.1:4317"
+of_otel_sample_ratio: "1.0"
+of_identity_jwks_grace_seconds: 30
+of_outbox_relay_interval_ms: 1000
+of_shutdown_grace_seconds: 5
+of_systemd_stop_timeout_seconds: 25
+
+of_kafka_brokers: "127.0.0.1:9092"
+of_identity_grpc_addr: "127.0.0.1:9081"
+of_identity_jwks_url: "http://127.0.0.1:8081/.well-known/jwks.json"
+of_container_registry_grpc_addr: "127.0.0.1:9083"
+of_geo_grpc_addr: "127.0.0.1:9086"
+of_audit_ledger_grpc_addr: "127.0.0.1:9092"
+of_routing_base_url: "http://127.0.0.1:8085"
+of_customs_base_url: "http://127.0.0.1:8087"
+of_billing_base_url: "http://127.0.0.1:8088"
+of_document_base_url: "http://127.0.0.1:8089"
+of_fleet_base_url: "http://127.0.0.1:8082"
+of_analytics_base_url: "http://127.0.0.1:8093"
+
+of_default_replicas: 1
+of_kafka_default_replication_factor: 1
+of_kafka_min_insync_replicas: 1
+
+of_service_overrides:
+  telemetry-ingest:
+    # Jediné místo v celé platformě, kde smí být podpis dávky vypnutý:
+    # OF_TELEMETRY_SIGNATURE_REQUIRED je podle §5.5 true všude kromě `local`,
+    # a CI se pro tenhle účel počítá jako local — testovací fixtury se
+    # nepodepisují klíčem depa.
+    OF_TELEMETRY_SIGNATURE_REQUIRED: "false"
+    OF_TELEMETRY_BATCH_MAX_READINGS: "50"
+  document-service:
+    OF_DOCUMENT_BUCKET: of-documents-ci
+    OF_DOCUMENT_KMS_KEY_ID: arn:of:kms:local:key/ci-noop
+
+of_postgres_endpoint: "127.0.0.1"
+of_postgres_primary_endpoint: "127.0.0.1"

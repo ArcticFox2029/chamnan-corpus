@@ -1,0 +1,100 @@
+# =============================================================================
+# CI úpravy.
+#
+# Tři věci: sundat požadavky na zdroje, které runner nemá, vypnout objekty,
+# které v kind clusteru nedávají smysl (HPA nemá metriky, PDB by blokoval
+# úklid), a zkrátit sondy, aby test nečekal minutu na start.
+#
+# Co se NEvypíná: síťové politiky. Právě ony vynucují graf §1.1 a je levnější
+# zjistit v CI, že nová hrana neprojde, než v produkci, že prošla.
+# =============================================================================
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: identity-service
+  namespace: orbitalfreight
+spec:
+  template:
+    spec:
+      affinity: null
+      containers:
+        - name: identity-service
+          resources:
+            requests: { cpu: 50m, memory: 128Mi }
+            limits: { cpu: 500m, memory: 512Mi }
+          env:
+            - name: OF_IDENTITY_ARGON2_MEMORY_KIB
+              # Produkční 256 MiB na runneru zabere celou paměť podu při první
+              # mintované přihlašovací sadě.
+              value: "8192"
+          startupProbe:
+            httpGet: { path: /healthz, port: http }
+            periodSeconds: 1
+            failureThreshold: 60
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: geo-service
+  namespace: orbitalfreight
+spec:
+  template:
+    spec:
+      topologySpreadConstraints: null
+      containers:
+        - name: geo-service
+          resources:
+            requests: { cpu: 50m, memory: 256Mi }
+            limits: { cpu: 500m, memory: 1Gi }
+          env:
+            - name: OF_GEO_ROAD_GRAPH_PATH
+              value: /var/lib/orbitalfreight/geo/road-graph-fixture.mmap
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: telemetry-ingest
+  namespace: orbitalfreight
+spec:
+  template:
+    spec:
+      topologySpreadConstraints: null
+      containers:
+        - name: telemetry-ingest
+          resources:
+            requests: { cpu: 50m, memory: 128Mi }
+            limits: { cpu: 500m, memory: 512Mi }
+          env:
+            - name: OF_TELEMETRY_SIGNATURE_REQUIRED
+              # Jediné prostředí, kde smí být false — §5.5 SPEC.md říká
+              # "všude kromě local". CI generuje fixtury bez podpisu.
+              value: "false"
+            - name: OF_TELEMETRY_BATCH_MAX_READINGS
+              value: "50"
+  volumeClaimTemplates:
+    - metadata:
+        name: batch-spool
+      spec:
+        accessModes: [ReadWriteOnce]
+        storageClassName: standard
+        resources:
+          requests: { storage: 1Gi }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: analytics-pipeline
+  namespace: orbitalfreight
+spec:
+  template:
+    spec:
+      containers:
+        - name: analytics-pipeline
+          resources:
+            requests: { cpu: 100m, memory: 512Mi }
+            limits: { cpu: "1", memory: 2Gi }
+          env:
+            - name: OF_ANALYTICS_SPARK_MASTER
+              # Lokální Spark, žádné executory přes Kubernetes API — runner
+              # nemá práva pody vytvářet a nemá to ani testovat.
+              value: "local[2]"

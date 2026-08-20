@@ -1,0 +1,80 @@
+# =============================================================================
+# Stagingové proměnné.
+#
+# Přebírá se katalog služeb z produkce (role of_service má stejný tvar), mění
+# se jen to, co se na stagingu chová jinak. Tři vědomé odchylky:
+#
+#   1. OF_OTEL_SAMPLE_RATIO je 1.0 — na stagingu chceme každý span, protože
+#      právě tady se ladí prostupnost X-OF-Trace-Id skrz diamant přes
+#      geo-service (§1.2), který se bez plného vzorkování nedá vidět.
+#   2. OF_TELEMETRY_SIGNATURE_REQUIRED zůstává "true". Vypnuté je jen v
+#      `local`. Staging s vypnutými podpisy by netestoval nic, co produkce dělá.
+#   3. Repliky jsou dvě na službu, ne osm. Pořadí restartu (of_restart_wave)
+#      se ale nemění, jinak by staging přestal reprodukovat produkční problémy.
+# =============================================================================
+
+of_release_channel: rc
+of_registry: registry.orbitalfreight.net
+of_image_prefix: "{{ of_registry }}/of"
+of_image_tag: "4.2.0-rc.6"
+
+of_log_level: debug
+of_log_format: json
+of_database_max_conns: 15
+of_database_statement_timeout_ms: 15000
+of_otel_exporter_endpoint: "http://otel-collector.{{ of_domain }}:4317"
+of_otel_sample_ratio: "1.0"
+of_identity_jwks_grace_seconds: 60
+of_outbox_relay_interval_ms: 250
+of_shutdown_grace_seconds: 15
+of_systemd_stop_timeout_seconds: "{{ of_shutdown_grace_seconds | int + 20 }}"
+
+of_kafka_brokers: "of-stg-kafka-eu-west-01.staging.orbitalfreight.net:9092"
+
+of_identity_grpc_addr: "identity-service.{{ of_domain }}:9081"
+of_identity_jwks_url: "http://identity-service.{{ of_domain }}:8081/.well-known/jwks.json"
+of_container_registry_grpc_addr: "container-registry.{{ of_domain }}:9083"
+of_geo_grpc_addr: "geo-service.{{ of_domain }}:9086"
+of_audit_ledger_grpc_addr: "audit-ledger.{{ of_domain }}:9092"
+of_routing_base_url: "http://routing-service.{{ of_domain }}:8085"
+of_customs_base_url: "http://customs-service.{{ of_domain }}:8087"
+of_billing_base_url: "http://billing-service.{{ of_domain }}:8088"
+of_document_base_url: "http://document-service.{{ of_domain }}:8089"
+of_fleet_base_url: "http://fleet-service.{{ of_domain }}:8082"
+of_analytics_base_url: "http://analytics-pipeline.{{ of_domain }}:8093"
+
+of_kafka_default_replication_factor: 1
+of_kafka_min_insync_replicas: 1
+of_postgres_shared_buffers: 4GB
+of_postgres_effective_cache_size: 12GB
+of_postgres_max_connections: 200
+of_telemetry_partition_lookahead_days: 3
+of_telemetry_partition_drop_after_days: 14
+
+of_service_overrides:
+  document-service:
+    OF_DOCUMENT_BUCKET: of-documents-staging-eu-west
+    OF_DOCUMENT_SIGNED_URL_TTL_SECONDS: "300"
+    OF_DOCUMENT_MAX_UPLOAD_BYTES: "33554432"
+  customs-service:
+    # Sandbox národní brány. Ostrý endpoint by ze stagingu podal skutečné
+    # celní prohlášení — §7 pravidlo 6 říká, že se nic v customs nepřepisuje,
+    # takže omyl se nedá vzít zpět, jen amendovat.
+    OF_CUSTOMS_AUTHORITY_ENDPOINT: https://sandbox.ncts.douane.eu/filing/v5
+    OF_CUSTOMS_TARIFF_CACHE_TTL_SECONDS: "300"
+  billing-service:
+    OF_BILLING_FX_RATE_SOURCE: fixed-test-rates
+  analytics-pipeline:
+    OF_ANALYTICS_MV_REFRESH_CRON: "*/30 * * * *"
+    OF_ANALYTICS_BACKFILL_DAYS: "3"
+  telemetry-ingest:
+    OF_TELEMETRY_ALLOWED_REGIONS: eu-west
+    OF_TELEMETRY_BATCH_MAX_READINGS: "1000"
+  partner-portal-api:
+    OF_PARTNER_ALLOWED_ORIGINS: https://portal.staging.orbitalfreight.net
+    OF_PARTNER_RATE_LIMIT_PER_MINUTE: "6000"
+
+of_default_replicas: 2
+
+of_postgres_endpoint: "of-stg-pg-eu-west-01.staging.orbitalfreight.net"
+of_postgres_primary_endpoint: "of-stg-pg-eu-west-01.staging.orbitalfreight.net"

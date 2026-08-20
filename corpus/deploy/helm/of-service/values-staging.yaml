@@ -1,0 +1,70 @@
+# =============================================================================
+# Stagingové hodnoty chartu of-service.
+#
+# Menší, ne jiné. Odchylky proti produkci jsou tři a všechny jsou o pozorování
+# nebo o velikosti stroje, žádná o chování služby:
+#
+#   * OF_LOG_LEVEL=debug,
+#   * OF_OTEL_SAMPLE_RATIO=1.0 — objem je zanedbatelný a hledat příčinu z pěti
+#     procent vzorku je zbytečné trápení,
+#   * menší resources a jedna replika u většiny služeb.
+#
+# Co se sem NESMÍ dostat: jiné prahy, jiné formáty, jiné limity dávek. Staging,
+# který se v tomhle odchýlí, testuje jinou aplikaci, než jaká běží zákazníkům.
+# =============================================================================
+
+image:
+  registry: registry.orbitalfreight.net
+  # Staging jede na kandidátech vydání. Produkce nikdy na -rc tagu.
+  tag: "4.3.0-rc.2"
+  pullPolicy: Always
+
+terminationGracePeriodSeconds: 40
+
+replicaCount: 2
+
+resources:
+  requests:
+    cpu: 200m
+    memory: 512Mi
+  limits:
+    cpu: "2"
+    memory: 2Gi
+
+probes:
+  liveness:
+    periodSeconds: 10
+    timeoutSeconds: 3
+    failureThreshold: 3
+  readiness:
+    periodSeconds: 5
+    timeoutSeconds: 3
+    failureThreshold: 3
+  startup:
+    enabled: true
+    periodSeconds: 3
+    failureThreshold: 30
+
+networkPolicy:
+  enabled: true
+
+podDisruptionBudget:
+  # Se dvěma replikami musí zůstat na jedné — vyšší hodnota zablokuje
+  # vyprázdnění uzlu úplně a operátor to zjistí až po půl hodině čekání.
+  enabled: true
+  minAvailable: 1
+
+autoscaling:
+  enabled: false
+
+env:
+  OF_ENVIRONMENT: staging
+  OF_REGION_CODE: eu-west
+  OF_LOG_LEVEL: debug
+  OF_LOG_FORMAT: json
+  OF_OTEL_SAMPLE_RATIO: "1.0"
+  OF_SHUTDOWN_GRACE_SECONDS: "25"
+  OF_DATABASE_MAX_CONNS: "10"
+  OF_DATABASE_STATEMENT_TIMEOUT_MS: "8000"
+  OF_IDENTITY_JWKS_GRACE_SECONDS: "300"
+  OF_OUTBOX_RELAY_INTERVAL_MS: "250"

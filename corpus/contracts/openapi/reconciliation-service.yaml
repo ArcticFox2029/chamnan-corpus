@@ -1,0 +1,230 @@
+# Superficie REST di reconciliation-service (Clojure 1.11, porta 8094). Ogni notte confronta a tre
+# spedizioni, dichiarazioni e fatture e apre una discrepanza per ogni disallineamento che superi
+# `OF_RECON_TOLERANCE_MINOR`.
+#
+# Chiama identity-service, billing-service, audit-ledger e analytics-pipeline. Non viene mai
+# richiamato indietro: billing-service consuma `reconciliation.discrepancy.opened`, mette la
+# fattura in attesa e si ferma lì. La risoluzione è un gesto umano che passa da
+# POST /v1/discrepancies/{discrepancy_id}/resolve.
+
+openapi: 3.1.0
+
+info:
+  title: reconciliation-service
+  version: 4.2.0
+  description: |
+    Scrive `analytics.reconciliation_runs` e `analytics.reconciliation_discrepancies` — due tabelle
+    che vivono nello schema di analytics-pipeline perché sono derivate e perché il confronto le
+    ricostruisce da capo a ogni esecuzione.
+
+    L'unicità `(tenant_id, business_date, engine_version)` permette a due versioni del motore di
+    confrontare la stessa giornata senza sovrascriversi: è così che si valida un cambio di regole
+    prima di adottarlo.
+
+servers:
+  - url: http://reconciliation-service.orbitalfreight.svc.cluster.local:8094
+
+tags: [{ name: runs }, { name: discrepancies }, { name: operations }]
+
+security:
+  - bearerAuth: []
+
+paths:
+
+  /v1/runs:
+    post:
+      operationId: startRun
+      tags: [runs]
+      summary: Avvia il confronto a tre per una giornata contabile
+      description: |
+        La giornata si colloca su `occurred_at` delle scansioni, non su `recorded_at`: una prova di
+        consegna acquisita offline la sera e sincronizzata il mattino dopo appartiene alla sera.
+        Confondere i due campi spostava sistematicamente il fatturato di un giorno.
+
+        La finestra esaminata all'indietro è `OF_RECON_LOOKBACK_DAYS`, perché una dichiarazione può
+        essere emendata dopo lo sdoganamento e la discrepanza nascere giorni dopo il fatto.
+      parameters:
+        - $ref: './_shared/components.yaml#/components/parameters/TenantHeader'
+        - $ref: './_shared/components.yaml#/components/parameters/IdempotencyHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [business_date]
+              properties:
+                business_date: { $ref: './_shared/components.yaml#/components/schemas/LocalDate' }
+                engine_version:
+                  type: string
+                  description: Predefinito a `OF_RECON_ENGINE_VERSION`. Passarlo esplicitamente serve a rieseguire con un motore diverso.
+      responses:
+        '202':
+          description: Avviata.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Run' }
+        '409':
+          description: Esecuzione già presente per questa terna (tenant, data, versione motore).
+          content:
+            application/json:
+              schema: { $ref: './_shared/components.yaml#/components/schemas/Error' }
+
+  /v1/runs/{run_id}:
+    get:
+      operationId: getRun
+      tags: [runs]
+      summary: Stato e contatori di una esecuzione
+      parameters:
+        - $ref: './_shared/components.yaml#/components/parameters/TenantHeader'
+        - name: run_id
+          in: path
+          required: true
+          schema: { $ref: './_shared/components.yaml#/components/schemas/Ulid' }
+      responses:
+        '200':
+          description: Esecuzione.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Run' }
+              examples:
+                parziale:
+                  value:
+                    run_id: rec_01J8ZU1RUN0000000000000001
+                    tenant_id: tnt_01J7A0000000000000000000AA
+                    business_date: '2026-04-27'
+                    state: partial
+                    started_at: '2026-04-28T01:00:00Z'
+                    finished_at: '2026-04-28T01:14:37Z'
+                    shipments_examined: 2841
+                    discrepancies_opened: 12
+                    engine_version: '3.4.0'
+        '404': { $ref: './_shared/components.yaml#/components/responses/NotFound' }
+
+  /v1/discrepancies:
+    get:
+      operationId: listDiscrepancies
+      tags: [discrepancies]
+      summary: Elenca le discrepanze
+      parameters:
+        - $ref: './_shared/components.yaml#/components/parameters/TenantHeader'
+        - $ref: './_shared/components.yaml#/components/parameters/LimitParam'
+        - $ref: './_shared/components.yaml#/components/parameters/CursorParam'
+        - name: state
+          in: query
+          schema: { type: string, enum: [open, acknowledged, resolved, waived], default: open }
+          description: Il predefinito `open` usa l'indice parziale `discrepancies_open_idx`.
+        - name: kind
+          in: query
+          schema: { $ref: '#/components/schemas/DiscrepancyKind' }
+      responses:
+        '200':
+          description: Pagina di discrepanze.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items: { type: array, items: { $ref: '#/components/schemas/Discrepancy' } }
+                  next_cursor: { type: [string, 'null'] }
+
+  /v1/discrepancies/{discrepancy_id}/resolve:
+    post:
+      operationId: resolveDiscrepancy
+      tags: [discrepancies]
+      summary: Risolve o deroga con una nota
+      description: |
+        La nota è obbligatoria e finisce in `platform.audit_ledger_entries` insieme all'attore:
+        chiudere una discrepanza è una decisione contabile, e chi la prende deve restare scritto.
+
+        Risolvere non toglie da solo il blocco alla fattura: billing-service se ne accorge alla
+        prossima esecuzione, oppure l'operatore lo rimuove esplicitamente. Il collegamento inverso
+        non esiste, questo servizio non chiama billing-service per sbloccarla.
+      parameters:
+        - $ref: './_shared/components.yaml#/components/parameters/TenantHeader'
+        - $ref: './_shared/components.yaml#/components/parameters/IdempotencyHeader'
+        - name: discrepancy_id
+          in: path
+          required: true
+          schema: { $ref: './_shared/components.yaml#/components/schemas/Ulid' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [state, note]
+              properties:
+                state: { type: string, enum: [acknowledged, resolved, waived] }
+                note: { type: string, minLength: 8 }
+      responses:
+        '200':
+          description: Aggiornata.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Discrepancy' }
+        '409':
+          description: Già risolta o derogata.
+          content:
+            application/json:
+              schema: { $ref: './_shared/components.yaml#/components/schemas/Error' }
+
+  /healthz:
+    $ref: './_shared/universal-paths.yaml#/paths/~1healthz'
+  /readyz:
+    $ref: './_shared/universal-paths.yaml#/paths/~1readyz'
+  /metrics:
+    $ref: './_shared/universal-paths.yaml#/paths/~1metrics'
+  /version:
+    $ref: './_shared/universal-paths.yaml#/paths/~1version'
+
+components:
+  securitySchemes:
+    bearerAuth:
+      $ref: './_shared/components.yaml#/components/securitySchemes/bearerAuth'
+
+  schemas:
+    DiscrepancyKind:
+      type: string
+      enum:
+        - missing_declaration
+        - missing_invoice
+        - duty_mismatch
+        - weight_mismatch
+        - orphan_payment
+        - unbilled_accessorial
+        - cleared_without_payment
+
+    Run:
+      type: object
+      properties:
+        run_id: { $ref: './_shared/components.yaml#/components/schemas/Ulid' }
+        tenant_id: { $ref: './_shared/components.yaml#/components/schemas/TenantId' }
+        business_date: { $ref: './_shared/components.yaml#/components/schemas/LocalDate' }
+        state: { type: string, enum: [running, succeeded, failed, partial] }
+        started_at: { $ref: './_shared/components.yaml#/components/schemas/Timestamp' }
+        finished_at: { $ref: './_shared/components.yaml#/components/schemas/Timestamp' }
+        shipments_examined: { type: integer }
+        discrepancies_opened: { type: integer }
+        engine_version: { type: string }
+
+    Discrepancy:
+      type: object
+      properties:
+        discrepancy_id: { $ref: './_shared/components.yaml#/components/schemas/Ulid' }
+        run_id: { $ref: './_shared/components.yaml#/components/schemas/Ulid' }
+        tenant_id: { $ref: './_shared/components.yaml#/components/schemas/TenantId' }
+        shipment_id: { $ref: './_shared/components.yaml#/components/schemas/Ulid' }
+        declaration_id:
+          type: [string, 'null']
+          description: Nullo proprio quando `kind` è `missing_declaration`: è la sua assenza a costituire la discrepanza.
+        invoice_id: { type: [string, 'null'] }
+        kind: { $ref: '#/components/schemas/DiscrepancyKind' }
+        expected_minor: { type: [integer, 'null'], format: int64 }
+        observed_minor: { type: [integer, 'null'], format: int64 }
+        currency: { type: [string, 'null'] }
+        state: { type: string, enum: [open, acknowledged, resolved, waived] }
+        opened_at: { $ref: './_shared/components.yaml#/components/schemas/Timestamp' }
+        resolved_at: { $ref: './_shared/components.yaml#/components/schemas/Timestamp' }
+        resolved_by: { type: [string, 'null'] }
+        resolution_note: { type: [string, 'null'] }

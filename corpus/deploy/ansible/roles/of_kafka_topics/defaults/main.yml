@@ -1,0 +1,85 @@
+# =============================================================================
+# Definice šesti Kafka témat z §4 SPEC.md.
+#
+# Tohle je jediné místo v repozitáři, kde se počty partition a retence
+# nastavují. Žádná služba si téma nezakládá sama — auto.create.topics.enable je
+# na brokerech vypnutý (viz roles/of_kafka), protože téma vytvořené runtimem
+# dostane výchozí jednu partition a tím se rozbije jediná záruka pořadí, kterou
+# platforma dává: pořadí událostí v rámci jednoho `shipment_id`.
+#
+# Počet partition se smí jen zvyšovat, a i to je nebezpečné: partition_key z
+# obálky (§0.7) se mapuje modulem počtu partition, takže po zvýšení skončí
+# události téže zásilky v jiné partition než ty starší. Dělá se to výhradně
+# přes migraci s prázdným consumer lagem, ne tímhle playbookem.
+# =============================================================================
+
+of_kafka_bin_dir: /opt/kafka/bin
+of_kafka_bootstrap: "{{ of_kafka_brokers.split(',')[0] }}"
+of_kafka_topic_config_dir: "{{ of_common_config_dir }}/kafka/topics"
+
+# min.insync.replicas = 2 při replication.factor = 3 je záměrná volba:
+# producent s acks=all přežije výpadek jednoho brokera a zastaví se až při
+# druhém. Pro of.telemetry.v1 je to jinak — viz komentář u tématu.
+of_kafka_default_replication_factor: 3
+of_kafka_default_min_insync_replicas: 2
+
+of_kafka_topics:
+  - name: of.identity.v1
+    partitions: 12
+    retention_ms: 2592000000          # 30 d
+    producers: [identity-service]
+    note: >-
+      Nízký objem, ale konzumenti reagují na `identity.credential.revoked` do
+      pěti sekund (§4.2), takže téma nesmí zaostávat.
+
+  - name: of.freight.v1
+    partitions: 48
+    retention_ms: 1209600000          # 14 d
+    producers: [container-registry, fleet-service]
+    note: >-
+      Klíčováno na shipment_id. Nejvíc konzumentů ze všech témat — samotné
+      `shipment.status.changed` čte šest služeb.
+
+  - name: of.telemetry.v1
+    partitions: 96
+    retention_ms: 604800000           # 7 d
+    producers: [telemetry-ingest]
+    min_insync_replicas: 1
+    note: >-
+      min.insync.replicas = 1 schválně: telemetry-ingest raději publikuje s
+      jednou replikou, než aby zastavil příjem z depotních bran. Ztráta
+      vzorkované události (§4.8, každé dvacáté čtení) je přijatelná, ztráta
+      dávky ve spoolu brány není.
+
+  - name: of.customs.v1
+    partitions: 12
+    retention_ms: 7776000000          # 90 d
+    producers: [customs-service]
+    note: >-
+      Devadesát dní není provozní potřeba, ale auditní: `customs.declaration.filed`
+      a `customs.declaration.cleared` se dohledávají zpětně při kontrole.
+
+  - name: of.billing.v1
+    partitions: 12
+    retention_ms: 7776000000          # 90 d
+    producers: [billing-service]
+    note: >-
+      Nese `billing.invoice.settled` — jedinou cestu, kterou se customs-service
+      dozví o zaplacení cla (§1.2, rozbitý cyklus). Zkrátit retenci tady
+      znamená, že po delším výpadku customs-service zůstane duty_paid = false.
+
+  - name: of.platform.v1
+    partitions: 24
+    retention_ms: 2592000000          # 30 d
+    producers:
+      - document-service
+      - notification-service
+      - routing-service
+      - reconciliation-service
+
+# Fronty nedoručitelných zpráv podle pravidla 4 v §4.19: po osmi pokusech s
+# exponenciálním backoffem od 500 ms jde zpráva do <topic>.dlq. DLQ mají menší
+# počet partition, ale delší retenci — z DLQ se čte ručně a nespěchá to.
+of_kafka_dlq_partitions: 6
+of_kafka_dlq_retention_ms: 7776000000
+of_kafka_create_dlq: true

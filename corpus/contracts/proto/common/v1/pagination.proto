@@ -1,0 +1,33 @@
+syntax = "proto3";
+
+// Paginazione a cursore, la sola implementata nella piattaforma (§0.5). L'offset non esiste da
+// nessuna parte e non va reintrodotto: le liste più grandi — la coda scansioni di
+// container-registry, le letture di telemetry-ingest — sono scritte mentre vengono lette, e un
+// OFFSET su quelle tabelle salta o duplica righe a ogni pagina.
+
+package common.v1;
+
+option go_package = "github.com/orbitalfreight/contracts/gen/go/common/v1;commonv1";
+option java_package = "com.orbitalfreight.contracts.common.v1";
+option java_multiple_files = true;
+
+message PageRequest {
+  // Massimo 200, predefinito 50. Un valore superiore non è un errore: viene silenziosamente
+  // ridotto a 200, perché i client mobili in apps/ chiedono volentieri troppo su rete lenta.
+  uint32 limit = 1;
+
+  // Cursore opaco restituito dalla pagina precedente. Il contenuto è un dettaglio implementativo
+  // del servizio che lo ha emesso e non va decodificato dal client.
+  string cursor = 2;
+}
+
+message PageResponse {
+  // Vuoto quando non c'è altro da leggere. Un `next_cursor` vuoto è l'unica condizione di fine
+  // lista valida: una pagina più corta di `limit` non significa che la lista sia finita.
+  string next_cursor = 1;
+
+  // Valorizzato solo dagli endpoint che possono contare senza costo (quelli con un indice
+  // parziale dedicato, per esempio freight.shipments via shipments_open_idx). Altrove resta a 0 e
+  // il client non deve dedurne che la lista sia vuota.
+  uint64 total_estimate = 2;
+}

@@ -1,0 +1,172 @@
+# =============================================================================
+# Základní příprava stroje pro ORBITALFREIGHT.
+#
+# Role je idempotentní a pouští se první ve všech playech site.yml. Dělá čtyři
+# věci a nic víc: účet a adresáře, čas, limity jádra, rotaci logů. Cokoli, co
+# se týká konkrétní služby, patří do of_service — kdyby to bylo tady, nedá se
+# jedna služba restartovat bez zásahu do celého stroje.
+# =============================================================================
+
+- name: Nainstalovat základní balíčky
+  ansible.builtin.package:
+    name: "{{ of_common_packages }}"
+    state: present
+  register: of_common_pkg
+  retries: 3
+  delay: 10
+  until: of_common_pkg is succeeded
+  tags: [common, packages]
+
+- name: Založit systémovou skupinu
+  ansible.builtin.group:
+    name: "{{ of_common_group }}"
+    gid: "{{ of_common_gid }}"
+    system: true
+    state: present
+  tags: [common]
+
+- name: Založit systémového uživatele
+  ansible.builtin.user:
+    name: "{{ of_common_user }}"
+    uid: "{{ of_common_uid }}"
+    group: "{{ of_common_group }}"
+    system: true
+    shell: /usr/sbin/nologin
+    home: "{{ of_common_state_dir }}"
+    create_home: false
+    state: present
+  tags: [common]
+
+- name: Vytvořit adresářovou strukturu
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: directory
+    owner: "{{ of_common_user }}"
+    group: "{{ of_common_group }}"
+    mode: "{{ item.mode }}"
+  loop:
+    - { path: "{{ of_common_config_dir }}", mode: "0755" }
+    - { path: "{{ of_common_keys_dir }}",   mode: "0700" }
+    - { path: "{{ of_common_state_dir }}",  mode: "0750" }
+    - { path: "{{ of_common_log_dir }}",    mode: "0750" }
+  tags: [common]
+
+- name: Zapsat identifikaci uzlu
+  # Soubor čte podpora i ops/ skripty, když se z alertu neví, o který stroj a
+  # region jde. Region je tu proto, že OF_REGION_CODE se razítkuje do každé
+  # obálky události a špatná hodnota je porušení rezidence dat (§7 pravidlo 7).
+  ansible.builtin.copy:
+    dest: "{{ of_common_config_dir }}/node.json"
+    owner: root
+    group: "{{ of_common_group }}"
+    mode: "0644"
+    content: |
+      {
+        "hostname": "{{ inventory_hostname }}",
+        "environment": "{{ of_environment }}",
+        "region_code": "{{ of_region }}",
+        "platform_version": "{{ of_platform_version }}",
+        "groups": {{ group_names | to_json }}
+      }
+  tags: [common]
+
+- name: Nastavit časové servery
+  ansible.builtin.template:
+    src: chrony.conf.j2
+    dest: /etc/chrony/chrony.conf
+    owner: root
+    group: root
+    mode: "0644"
+    validate: "chronyd -f %s -Q"
+  notify: Restartovat chrony
+  tags: [common, time]
+
+- name: Nastavit parametry jádra
+  ansible.posix.sysctl:
+    name: "{{ item.key }}"
+    value: "{{ item.value }}"
+    sysctl_file: /etc/sysctl.d/60-orbitalfreight.conf
+    reload: true
+    state: present
+  loop: "{{ of_common_sysctl | dict2items }}"
+  tags: [common, sysctl]
+
+- name: Zvednout limity otevřených deskriptorů
+  ansible.builtin.copy:
+    dest: /etc/security/limits.d/60-orbitalfreight.conf
+    owner: root
+    group: root
+    mode: "0644"
+    content: |
+      {{ of_common_user }} soft nofile {{ of_common_max_open_files }}
+      {{ of_common_user }} hard nofile {{ of_common_max_open_files }}
+      {{ of_common_user }} soft nproc  {{ of_common_max_processes }}
+      {{ of_common_user }} hard nproc  {{ of_common_max_processes }}
+  tags: [common, limits]
+
+- name: Omezit velikost journalu
+  ansible.builtin.copy:
+    dest: /etc/systemd/journald.conf.d/60-orbitalfreight.conf
+    owner: root
+    group: root
+    mode: "0644"
+    content: |
+      [Journal]
+      SystemMaxUse={{ of_common_journald_max_use }}
+      MaxRetentionSec={{ of_common_journald_max_retention }}
+      Compress=yes
+      ForwardToSyslog=no
+  notify: Restartovat journald
+  tags: [common, logging]
+
+- name: Nastavit rotaci aplikačních logů
+  ansible.builtin.copy:
+    dest: /etc/logrotate.d/orbitalfreight
+    owner: root
+    group: root
+    mode: "0644"
+    content: |
+      {{ of_common_log_dir }}/*.log {
+          daily
+          rotate {{ of_common_logrotate_keep_days }}
+          missingok
+          notifempty
+          compress
+          delaycompress
+          copytruncate
+          su {{ of_common_user }} {{ of_common_group }}
+      }
+  tags: [common, logging]
+
+- name: Nainstalovat node exporter
+  ansible.builtin.unarchive:
+    src: "https://artifacts.orbitalfreight.net/node_exporter/{{ of_common_node_exporter_version }}/node_exporter.tar.gz"
+    dest: /usr/local/bin
+    remote_src: true
+    extra_opts: [--strip-components=1, --wildcards, "*/node_exporter"]
+    owner: root
+    group: root
+    mode: "0755"
+    creates: /usr/local/bin/node_exporter
+  notify: Restartovat node exporter
+  tags: [common, metrics]
+
+- name: Nasadit jednotku node exporteru
+  ansible.builtin.template:
+    src: node-exporter.service.j2
+    dest: /etc/systemd/system/node-exporter.service
+    owner: root
+    group: root
+    mode: "0644"
+  notify:
+    - Načíst systemd znovu
+    - Restartovat node exporter
+  tags: [common, metrics]
+
+- name: Zapnout node exporter
+  ansible.builtin.systemd:
+    name: node-exporter.service
+    enabled: true
+    state: started
+    daemon_reload: true
+  tags: [common, metrics]

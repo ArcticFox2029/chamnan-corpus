@@ -1,0 +1,45 @@
+# =============================================================================
+# systemd jednotka agenta depotní brány. Generuje role of_edge_gateway.
+#
+# Restart=always bez omezení počtu pokusů je tu záměr: depo bývá bez obsluhy a
+# agent, který se vzdá po pátém pokusu, znamená den chybějící telemetrie.
+# Zároveň proto StartLimitIntervalSec=0 — jinak by systemd jednotku po sérii
+# rychlých pádů zablokoval a nikdo by si toho do rána nevšiml.
+# =============================================================================
+[Unit]
+Description=ORBITALFREIGHT depotní brána ({{ of_gateway_serial }}, depo {{ of_depot_id }})
+Documentation=https://docs.orbitalfreight.net/edge/gateway-agent
+After=network-online.target chronyd.service
+Wants=network-online.target
+StartLimitIntervalSec=0
+
+[Service]
+Type=notify
+User={{ of_edge_agent_user }}
+Group={{ of_edge_agent_group }}
+EnvironmentFile={{ of_common_config_dir }}/edge-agent.env
+ExecStart={{ of_edge_agent_binary }} run --spool {{ of_edge_spool_dir }}
+ExecReload=/bin/kill -HUP $MAINPID
+Restart=always
+RestartSec=5
+{# Vypnutí musí stihnout doposlat rozpracovanou dávku, jinak se po startu #}
+{# posílá znovu celá a dedup na ingestu ji jen zahodí — zbytečný provoz.  #}
+TimeoutStopSec={{ of_shutdown_grace_seconds | int + 10 }}
+KillSignal=SIGTERM
+LimitNOFILE={{ of_edge_max_open_files }}
+WorkingDirectory={{ of_edge_agent_home }}
+
+# Brána stojí ve veřejně přístupné hale depa. Zpřísněné prostředí je tu proto
+# reálné opatření, ne kosmetika.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+ReadWritePaths={{ of_edge_spool_dir }} {{ of_common_log_dir }}/edge
+DeviceAllow={{ of_edge_serial_devices | join(' rw ') }} rw
+
+[Install]
+WantedBy=multi-user.target

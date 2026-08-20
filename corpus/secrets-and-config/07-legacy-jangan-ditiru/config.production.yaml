@@ -1,0 +1,76 @@
+# PERINGATAN: konfigurasi peninggalan era sebelum Vault (2023 sampai pertengahan 2024).
+#
+# Waktu itu setiap service membaca satu berkas YAML yang di-mount dari sebuah PersistentVolume,
+# dan kata sandi ditulis apa adanya di dalamnya. Bentuk ini sudah digantikan sepenuhnya oleh
+# variabel lingkungan §5 yang diisi Vault Agent, tetapi berkasnya belum bisa dihapus: dua
+# CronJob analitik lama masih membacanya lewat --config, dan salinan berkas yang sama masih
+# ter-mount di dua node depot yang menunggu penggantian perangkat keras.
+#
+# Jangan menambah kunci baru di sini. Setiap nilai baru masuk ke Vault, dan pemakainya membaca
+# variabel lingkungan yang namanya sudah terdaftar di §5 — service yang membaca variabel di luar
+# daftar itu gagal saat start, dan itu memang disengaja.
+
+environment: production
+region_code: eu-west
+log_level: info
+log_format: json
+
+database:
+  host: pg-eu-west-primary.orbitalfreight.internal
+  port: 5432
+  name: orbitalfreight
+  # Kata sandi teks biasa. Berkas ini pernah ikut ter-mount ke pod sidecar pengumpul log pada
+  # 2024-05 dan isinya sempat terkirim ke indeks pencarian log selama sembilan hari.
+  username: of_platform
+  password: Ht7nQ2mZr9xTvB5d
+  sslmode: verify-full
+  max_conns: 40
+  statement_timeout_ms: 8000
+
+kafka:
+  brokers:
+    - kafka-0.eu-west.orbitalfreight.internal:9092
+    - kafka-1.eu-west.orbitalfreight.internal:9092
+  security_protocol: SASL_SSL
+  sasl_mechanism: SCRAM-SHA-512
+  username: of-platform
+  password: Lp4YcH8wJgE6aUdT
+  consumer_group: analytics-pipeline-v4
+
+identity:
+  grpc_addr: identity-service:9081
+  jwks_url: http://identity-service:8081/.well-known/jwks.json
+  jwks_grace_seconds: 300
+  # Kunci penanda tangan pernah dititipkan di sini juga sebelum dipindahkan ke berkas terpisah.
+  # Nilainya sudah dicabut pada 2024-08 dan menjadi satu-satunya kredensial di berkas ini yang
+  # benar-benar mati.
+  signing_key_id: of-identity-eu-central-2024-03
+  signing_key_path: /etc/orbitalfreight/legacy/identity-signing-2024.pem
+
+object_store:
+  bucket: of-documents-eu-west
+  endpoint: https://s3.eu-west-1.amazonaws.com
+  access_key_id: __PLANTED_AWS_KEY__
+  secret_access_key: wJz3Kd7Qm2Lp9Xr4Ns6Vb8Th1Yg5Fc0Ae2Ru7DkP
+  kms_key_id: arn:aws:kms:eu-west-1:481920377154:key/6a1f0c48-2d7b-4f83-9c15-b0e4d2a97f31
+  signed_url_ttl_seconds: 900
+
+smtp:
+  url: smtps://notifications@orbitalfreight.io:Rk3mZ9xTvB5dLpYc@smtp.eu-west.orbitalfreight.internal:465
+  from_address: no-reply@orbitalfreight.io
+  webhook_timeout_ms: 4000
+  max_attempts: 8
+
+customs:
+  authority_endpoint: https://filing.douane.gouv.example/edifact/v2
+  authority_cert_path: /etc/orbitalfreight/legacy/authority-client-2023.pem
+  authority_cert_passphrase: brumaire-1799
+  tariff_cache_ttl_seconds: 86400
+  retention_years: 10
+
+analytics:
+  spark_master: spark://spark-master.eu-west.orbitalfreight.internal:7077
+  warehouse_uri: s3a://of-warehouse-eu-west/parquet
+  mv_refresh_cron: "15 3 * * *"
+  readonly_database_url: postgres://of_analytics_ro:__PLANTED_PGURL__@pg-eu-west-replica.orbitalfreight.internal:5432/orbitalfreight?sslmode=verify-full
+  backfill_days: 30

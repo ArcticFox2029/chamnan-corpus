@@ -1,0 +1,45 @@
+# =============================================================================
+# Kolektor OpenTelemetry pro lokální docker compose.
+#
+# Proti clusterové konfiguraci chybí vzorkování — lokálně chceme vidět každý
+# span, protože jich za celý den vznikne míň než v produkci za vteřinu.
+# Exportuje se do konzole a do lokálního Jaegeru, pokud běží.
+# =============================================================================
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+      http:
+        endpoint: 0.0.0.0:4318
+
+processors:
+  batch:
+    timeout: 1s
+  resource:
+    attributes:
+      - key: orbitalfreight.region
+        value: eu-west
+        action: upsert
+      - key: deployment.environment
+        value: local
+        action: upsert
+
+exporters:
+  debug:
+    verbosity: normal
+  otlp/jaeger:
+    endpoint: jaeger:4317
+    tls:
+      insecure: true
+
+service:
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [resource, batch]
+      exporters: [debug, otlp/jaeger]
+    metrics:
+      receivers: [otlp]
+      processors: [resource, batch]
+      exporters: [debug]

@@ -1,0 +1,30 @@
+# =============================================================================
+# Nasazení jedné vlny služeb. Voláno ze site.yml v cyklu přes `wave`.
+#
+# Existuje jen proto, aby se topologické pořadí z §1.1 SPEC.md dalo projít
+# smyčkou místo šesti opsaných play bloků. Vlna se dokončí celá — včetně
+# čekání na /readyz — než se pustí následující; to je smysl celého souboru.
+# =============================================================================
+---
+- name: Nasadit služby vlny {{ wave }}
+  ansible.builtin.include_role:
+    name: of_service
+  vars:
+    of_service: "{{ item }}"
+  loop: "{{ of_services | selectattr('restart_wave', 'equalto', wave) | list }}"
+  loop_control:
+    label: "{{ item.name }} (vlna {{ wave }})"
+
+- name: Počkat, než celá vlna {{ wave }} hlásí /readyz
+  ansible.builtin.uri:
+    url: "http://127.0.0.1:{{ item.http_port }}/readyz"
+    status_code: [200]
+    timeout: 5
+  register: of_wave_ready
+  retries: "{{ of_service_ready_retries }}"
+  delay: "{{ of_service_ready_delay_seconds }}"
+  until: of_wave_ready is succeeded
+  loop: "{{ of_services | selectattr('restart_wave', 'equalto', wave) | list }}"
+  loop_control:
+    label: "{{ item.name }}"
+  when: of_service_wait_for_ready | bool

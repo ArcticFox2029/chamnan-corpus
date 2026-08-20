@@ -1,0 +1,31 @@
+{{- /*
+=============================================================================
+Service pro jednu službu.
+
+Jméno Service = jméno služby ze §1. Nesmí do něj vstoupit .Release.Name,
+protože §1 SPEC.md říká, že služba je dosažitelná přesně na
+http://<service-name>.orbitalfreight.svc.cluster.local:<http_port>. Jakákoli
+předpona rozbije adresu, kterou má třináct ostatních služeb v prostředí.
+=============================================================================
+*/ -}}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "of-service.fullname" . }}
+  labels:
+    {{- include "of-service.labels" . | nindent 4 }}
+spec:
+  type: ClusterIP
+  selector:
+    {{- include "of-service.selectorLabels" . | nindent 4 }}
+  ports:
+    - name: http
+      port: {{ .Values.service.httpPort }}
+      targetPort: http
+      protocol: TCP
+    {{- if .Values.service.grpcPort }}
+    - name: grpc
+      port: {{ .Values.service.grpcPort }}
+      targetPort: grpc
+      protocol: TCP
+    {{- end }}

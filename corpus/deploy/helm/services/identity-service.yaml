@@ -1,0 +1,71 @@
+# =============================================================================
+# Identita služby identity-service pro chart of-service.
+#
+# Kořen synchronního grafu (§1.2): `outbound` je prázdné a musí zůstat prázdné.
+# Kdyby identity-service začala kohokoli volat synchronně, vznikl by cyklus s
+# každou službou, která volá ji — tedy se všemi třinácti.
+#
+# `kafka.consumerGroup` je prázdné schválně. identity-service jen publikuje
+# (`identity.session.opened`, `identity.credential.revoked`) a prázdná skupina
+# konzumenta by nechala relay běžet naprázdno.
+#
+# Podepisovací klíč se montuje ze zapečetěného secretu. Výměna se dělá
+# překryvem: tokeny podepsané starým klíčem žijí ještě
+# OF_IDENTITY_ACCESS_TOKEN_TTL_SECONDS, takže JWKS musí obě verze publikovat
+# po celou tu dobu.
+# =============================================================================
+
+service:
+  name: identity-service
+  httpPort: 8081
+  grpcPort: 9081
+  schema: identity
+  restartWave: 0
+  language: go
+
+replicaCount: 6
+
+outbound: []
+
+kafka:
+  consumerGroup: ""
+
+autoscaling:
+  # Kořen grafu se neškáluje podle zátěže. V okamžiku špičky by se rozjížděla
+  # právě ta služba, na kterou v tu chvíli čeká všech třináct ostatních.
+  enabled: false
+
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 4
+
+resources:
+  requests:
+    cpu: "1"
+    memory: 1Gi
+  limits:
+    # Argon2id na POST /v1/credentials si ve špičce vezme podstatně víc, než
+    # kolik služba drží v klidu.
+    cpu: "4"
+    memory: 3Gi
+
+secretVolumes:
+  - name: signing-keys
+    secretName: identity-service-signing-key
+    mountPath: /etc/orbitalfreight/keys
+
+affinity:
+  podAntiAffinity:
+    requiredDuringSchedulingIgnoredDuringExecution:
+      - labelSelector:
+          matchLabels:
+            app.kubernetes.io/name: identity-service
+        topologyKey: kubernetes.io/hostname
+
+env:
+  OF_IDENTITY_SIGNING_KEY_PATH: /etc/orbitalfreight/keys/identity-rs256-current.pem
+  OF_IDENTITY_ACCESS_TOKEN_TTL_SECONDS: "900"
+  OF_IDENTITY_REFRESH_TOKEN_TTL_DAYS: "30"
+  OF_IDENTITY_ARGON2_MEMORY_KIB: "262144"
+  OF_IDENTITY_MFA_ISSUER: ORBITALFREIGHT
+  OF_IDENTITY_MAX_ORG_DEPTH: "12"

@@ -1,0 +1,437 @@
+# Superficie REST di customs-service (.NET 8, porta 8087). Costruisce, deposita e insegue le
+# dichiarazioni doganali, e valuta il dazio contro tariffe versionate.
+#
+# Da leggere prima di aggiungere qualsiasi client HTTP a questo servizio: customs-service NON
+# chiama billing-service e non deve mai farlo. Il fatto che il dazio sia stato pagato gli arriva
+# esclusivamente consumando `billing.invoice.settled`, ed è l'unica cosa che valorizza
+# `customs.customs_declarations.duty_paid`. Il ciclo del grafo di §1.1 è rotto lì, di proposito.
+
+openapi: 3.1.0
+
+info:
+  title: customs-service
+  version: 4.2.0
+  description: |
+    Possiede lo schema `customs`. Due proprietà lo distinguono dal resto della piattaforma.
+
+    La prima: qui non si aggiorna nulla. Una correzione dopo lo sdoganamento è un emendamento, che
+    tiene lo stesso `mrn` e produce righe nuove (§7 regola 6).
+
+    La seconda: `customs.tariff_schedules` è una tabella temporale con un vincolo EXCLUDE che rende
+    impossibili due periodi sovrapposti per la stessa terna (voce doganale, destinazione, origine).
+    Un accertamento fatto ieri deve poter essere rifatto identico oggi, e per questo
+    `declaration_line_items.tariff_id` congela la riga esatta usata al momento della valutazione.
+
+servers:
+  - url: http://customs-service.orbitalfreight.svc.cluster.local:8087
+
+tags:
+  - name: declarations
+  - name: tariffs
+  - name: operations
+
+security:
+  - bearerAuth: []
+
+paths:
+
+  /v1/declarations:
+    post:
+      operationId: createDeclaration
+      tags: [declarations]
+      summary: Crea una dichiarazione in bozza
+      description: |
+        Il valico determina `customs_office_code`, copiato da `geo.border_crossings`. Il numero
+        `mrn` non esiste ancora: lo assegna l'autorità all'accettazione.
+      parameters:
+        - $ref: './_shared/components.yaml#/components/parameters/TenantHeader'
+        - $ref: './_shared/components.yaml#/components/parameters/TraceHeader'
+        - $ref: './_shared/components.yaml#/components/parameters/IdempotencyHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [shipment_id, crossing_id, direction, currency]
+              properties:
+                shipment_id: { $ref: './_shared/components.yaml#/components/schemas/Ulid' }
+                crossing_id: { $ref: './_shared/components.yaml#/components/schemas/Ulid' }
+                direction: { type: string, enum: [import, export, transit] }
+                broker_user_id: { $ref: './_shared/components.yaml#/components/schemas/Ulid' }
+                currency: { $ref: './_shared/components.yaml#/components/schemas/CurrencyCode' }
+                lines:
+                  type: array
+                  items: { $ref: '#/components/schemas/DeclarationLineInput' }
+      responses:
+        '201':
+          description: Bozza creata.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Declaration' }
+
+  /v1/declarations/{declaration_id}/lines:
+    post:
+      operationId: replaceDeclarationLines
+      tags: [declarations]
+      summary: Aggiunge o sostituisce le righe
+      description: |
+        Sostituzione integrale delle righe di una dichiarazione ancora in bozza. Ogni riga viene
+        valutata risolvendo la tariffa efficace alla data corrente e il `tariff_id` risolto viene
+        congelato sulla riga: da quel momento una modifica alla tabella delle tariffe non può
+        riscrivere la storia di questa dichiarazione.
+      parameters:
+        - $ref: './_shared/components.yaml#/components/parameters/TenantHeader'
+        - $ref: './_shared/components.yaml#/components/parameters/IdempotencyHeader'
+        - name: declaration_id
+          in: path
+          required: true
+          schema: { $ref: './_shared/components.yaml#/components/schemas/Ulid' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [lines]
+              properties:
+                lines:
+                  type: array
+                  minItems: 1
+                  items: { $ref: '#/components/schemas/DeclarationLineInput' }
+            examples:
+              due_righe:
+                value:
+                  lines:
+                    - seq_no: 1
+                      hs_code: '8471300000'
+                      description: 'portable automatic data processing machines'
+                      origin_country: CN
+                      quantity: 420
+                      unit: PCE
+                      net_weight_kg: 588.4
+                      customs_value_minor: 18900000
+                    - seq_no: 2
+                      hs_code: '8523510000'
+                      description: 'solid-state non-volatile storage devices'
+                      origin_country: KR
+                      quantity: 1200
+                      unit: PCE
+                      net_weight_kg: 96.0
+                      customs_value_minor: 4560000
+      responses:
+        '200':
+          description: Righe sostituite e riValutate.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Declaration' }
+        '409':
+          description: La dichiarazione non è più in bozza.
+          content:
+            application/json:
+              schema: { $ref: './_shared/components.yaml#/components/schemas/Error' }
+
+  /v1/declarations/{declaration_id}/file:
+    post:
+      operationId: fileDeclaration
+      tags: [declarations]
+      summary: Deposita presso l'autorità
+      description: |
+        Invia a `OF_CUSTOMS_AUTHORITY_ENDPOINT` con il certificato client di
+        `OF_CUSTOMS_AUTHORITY_CERT_PATH`, riceve l'`mrn` e pubblica `customs.declaration.filed`.
+        Da qui in poi la dichiarazione è immutabile.
+
+        Contestualmente scrive una voce in `platform.audit_ledger_entries` chiamando
+        `audit.v1.LedgerService/Append`, e imposta `retained_until` sui documenti allegati a
+        data di deposito più `OF_CUSTOMS_RETENTION_YEARS`.
+      parameters:
+        - $ref: './_shared/components.yaml#/components/parameters/TenantHeader'
+        - $ref: './_shared/components.yaml#/components/parameters/TraceHeader'
+        - $ref: './_shared/components.yaml#/components/parameters/IdempotencyHeader'
+        - name: declaration_id
+          in: path
+          required: true
+          schema: { $ref: './_shared/components.yaml#/components/schemas/Ulid' }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                commercial_invoice_document_id:
+                  $ref: './_shared/components.yaml#/components/schemas/Ulid'
+      responses:
+        '200':
+          description: Depositata.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Declaration' }
+              examples:
+                depositata:
+                  value:
+                    declaration_id: dcl_01J8ZP1DECL00000000000001
+                    tenant_id: tnt_01J7A0000000000000000000AA
+                    shipment_id: shp_01J8ZK4T9QW3RM7XN2VB6HD5PC
+                    crossing_id: bxg_01J7A3ATBG0000000000001
+                    customs_office_code: BG005100
+                    direction: import
+                    status: submitted
+                    mrn: 26BG005100A47F91
+                    filed_at: '2026-03-16T07:42:03Z'
+                    assessed_duty_minor: 1417500
+                    assessed_vat_minor: 4693500
+                    currency: EUR
+                    duty_paid: false
+        '422':
+          description: Fattura commerciale mancante su una importazione, oppure nessuna riga.
+          content:
+            application/json:
+              schema: { $ref: './_shared/components.yaml#/components/schemas/Error' }
+        '502':
+          description: L'autorità doganale ha rifiutato o non ha risposto. Ritentabile.
+          content:
+            application/json:
+              schema: { $ref: './_shared/components.yaml#/components/schemas/Error' }
+
+  /v1/declarations/{declaration_id}/amend:
+    post:
+      operationId: amendDeclaration
+      tags: [declarations]
+      summary: Emendamento post-sdoganamento
+      description: |
+        Tiene lo stesso `mrn` e porta lo stato a `amended`. Non modifica le righe esistenti: ne
+        scrive di nuove con numeri di sequenza successivi, così che il confronto fra la versione
+        depositata e quella emendata resti leggibile a distanza di anni.
+      parameters:
+        - $ref: './_shared/components.yaml#/components/parameters/TenantHeader'
+        - $ref: './_shared/components.yaml#/components/parameters/IdempotencyHeader'
+        - name: declaration_id
+          in: path
+          required: true
+          schema: { $ref: './_shared/components.yaml#/components/schemas/Ulid' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [reason, lines]
+              properties:
+                reason: { type: string }
+                lines:
+                  type: array
+                  items: { $ref: '#/components/schemas/DeclarationLineInput' }
+      responses:
+        '200':
+          description: Emendata.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Declaration' }
+
+  /v1/declarations/{declaration_id}:
+    get:
+      operationId: getDeclaration
+      tags: [declarations]
+      summary: Legge una dichiarazione, dazio valutato compreso
+      description: |
+        È l'endpoint che billing-service interroga per costruire la riga `duty_disbursement`. Il
+        campo `duty_paid` resta falso finché non arriva `billing.invoice.settled`: leggere questo
+        endpoint non lo cambia, e nessun altro percorso lo scrive.
+      parameters:
+        - $ref: './_shared/components.yaml#/components/parameters/TenantHeader'
+        - name: declaration_id
+          in: path
+          required: true
+          schema: { $ref: './_shared/components.yaml#/components/schemas/Ulid' }
+      responses:
+        '200':
+          description: Dichiarazione.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Declaration' }
+        '404': { $ref: './_shared/components.yaml#/components/responses/NotFound' }
+
+  /v1/shipments/{shipment_id}/declarations:
+    get:
+      operationId: listShipmentDeclarations
+      tags: [declarations]
+      summary: Tutte le dichiarazioni di una spedizione
+      description: |
+        Una spedizione multi-tratta ne ha più di una: una esportazione all'origine, un transito per
+        ogni valico intermedio, un'importazione a destinazione. Ordinate per `filed_at`, con le
+        bozze in coda.
+      parameters:
+        - $ref: './_shared/components.yaml#/components/parameters/TenantHeader'
+        - name: shipment_id
+          in: path
+          required: true
+          schema: { $ref: './_shared/components.yaml#/components/schemas/Ulid' }
+      responses:
+        '200':
+          description: Elenco.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: '#/components/schemas/Declaration' }
+
+  /v1/tariffs/lookup:
+    get:
+      operationId: tariffLookup
+      tags: [tariffs]
+      summary: Risolve una riga di tariffa alla data indicata
+      description: |
+        Restituisce l'unica riga di `customs.tariff_schedules` il cui `valid_period` contiene
+        `on_date` per la terna richiesta. Senza `origin_country` risolve la riga generica, quella
+        con `origin_country` nullo.
+
+        La cache è lunga (`OF_CUSTOMS_TARIFF_CACHE_TTL_SECONDS`) e può esserlo senza rischi: le
+        righe di quella tabella sono immutabili, una variazione chiude il periodo aperto e ne
+        inserisce una successiva.
+
+        billing-service è il chiamante esterno principale — è uno dei due archi sincroni che
+        entrano in questo servizio.
+      parameters:
+        - $ref: './_shared/components.yaml#/components/parameters/TenantHeader'
+        - name: hs_code
+          in: query
+          required: true
+          schema: { type: string, minLength: 10, maxLength: 10 }
+        - name: destination_country
+          in: query
+          required: true
+          schema: { $ref: './_shared/components.yaml#/components/schemas/CountryCode' }
+        - name: origin_country
+          in: query
+          schema: { $ref: './_shared/components.yaml#/components/schemas/CountryCode' }
+        - name: on_date
+          in: query
+          required: true
+          schema: { $ref: './_shared/components.yaml#/components/schemas/LocalDate' }
+      responses:
+        '200':
+          description: Riga di tariffa efficace.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TariffScheduleRow' }
+              examples:
+                preferenziale:
+                  value:
+                    tariff_id: trf_01J7A9TARIFF000000000001
+                    hs_code: '8471300000'
+                    destination_country: BG
+                    origin_country: KR
+                    duty_rate_bp: 0
+                    vat_rate_bp: 2000
+                    preferential_scheme: 'EU-KR FTA'
+                    valid_from: '2026-01-01T00:00:00Z'
+                    valid_to: null
+                    source_document_id: doc_01J7A9DECREE00000000001
+        '404':
+          description: Nessuna tariffa efficace a quella data per quella terna.
+          content:
+            application/json:
+              schema: { $ref: './_shared/components.yaml#/components/schemas/Error' }
+              examples:
+                nessuna:
+                  value:
+                    error:
+                      code: tariff_not_effective
+                      http_status: 404
+                      message: 'no tariff row covers hs_code 8471300000 into BG on 2025-12-31'
+                      trace_id: 7e6d5c4b3a2918070f1e2d3c4b5a6978
+                      retryable: false
+
+  /healthz:
+    $ref: './_shared/universal-paths.yaml#/paths/~1healthz'
+  /readyz:
+    $ref: './_shared/universal-paths.yaml#/paths/~1readyz'
+  /metrics:
+    $ref: './_shared/universal-paths.yaml#/paths/~1metrics'
+  /version:
+    $ref: './_shared/universal-paths.yaml#/paths/~1version'
+
+components:
+  securitySchemes:
+    bearerAuth:
+      $ref: './_shared/components.yaml#/components/securitySchemes/bearerAuth'
+
+  schemas:
+    DeclarationLineInput:
+      type: object
+      required: [seq_no, hs_code, description, origin_country, quantity, unit, net_weight_kg, customs_value_minor]
+      properties:
+        seq_no: { type: integer }
+        hs_code: { type: string, minLength: 10, maxLength: 10 }
+        description: { type: string }
+        origin_country: { $ref: './_shared/components.yaml#/components/schemas/CountryCode' }
+        quantity: { type: string, description: 'Decimale esatto come stringa, NUMERIC(14,3).' }
+        unit:
+          type: string
+          description: Unità UN/ECE Rec 20.
+          examples: ['KGM', 'PCE', 'LTR']
+        net_weight_kg: { type: string }
+        customs_value_minor: { $ref: './_shared/components.yaml#/components/schemas/MinorAmount' }
+
+    DeclarationLine:
+      allOf:
+        - $ref: '#/components/schemas/DeclarationLineInput'
+        - type: object
+          properties:
+            line_id: { $ref: './_shared/components.yaml#/components/schemas/Ulid' }
+            tariff_id:
+              $ref: './_shared/components.yaml#/components/schemas/Ulid'
+            duty_minor: { $ref: './_shared/components.yaml#/components/schemas/MinorAmount' }
+
+    Declaration:
+      type: object
+      properties:
+        declaration_id: { $ref: './_shared/components.yaml#/components/schemas/Ulid' }
+        tenant_id: { $ref: './_shared/components.yaml#/components/schemas/TenantId' }
+        shipment_id: { $ref: './_shared/components.yaml#/components/schemas/Ulid' }
+        crossing_id: { $ref: './_shared/components.yaml#/components/schemas/Ulid' }
+        customs_office_code: { type: string }
+        broker_user_id: { $ref: './_shared/components.yaml#/components/schemas/Ulid' }
+        direction: { type: string, enum: [import, export, transit] }
+        status:
+          type: string
+          enum: [draft, submitted, under_review, held, cleared, rejected, amended]
+        mrn:
+          type: [string, 'null']
+          description: Assegnato dall'autorità all'accettazione. Unico sull'intera piattaforma.
+        filed_at: { $ref: './_shared/components.yaml#/components/schemas/Timestamp' }
+        cleared_at: { $ref: './_shared/components.yaml#/components/schemas/Timestamp' }
+        assessed_duty_minor: { $ref: './_shared/components.yaml#/components/schemas/MinorAmount' }
+        assessed_vat_minor: { $ref: './_shared/components.yaml#/components/schemas/MinorAmount' }
+        currency: { $ref: './_shared/components.yaml#/components/schemas/CurrencyCode' }
+        duty_paid:
+          type: boolean
+          description: |
+            Vero solo dopo `billing.invoice.settled`. Nessun endpoint lo scrive e nessuna chiamata
+            a billing-service lo verifica: quell'arco non esiste.
+        lines:
+          type: array
+          items: { $ref: '#/components/schemas/DeclarationLine' }
+
+    TariffScheduleRow:
+      type: object
+      properties:
+        tariff_id: { $ref: './_shared/components.yaml#/components/schemas/Ulid' }
+        hs_code: { type: string }
+        destination_country: { $ref: './_shared/components.yaml#/components/schemas/CountryCode' }
+        origin_country:
+          type: [string, 'null']
+          description: Nullo significa «vale per qualsiasi origine».
+        duty_rate_bp:
+          type: integer
+          description: Punti base. 1250 = 12,50 %.
+        vat_rate_bp: { type: integer }
+        preferential_scheme:
+          type: [string, 'null']
+          examples: ['GSP', 'EU-UK TCA', 'USMCA']
+        valid_from: { $ref: './_shared/components.yaml#/components/schemas/Timestamp' }
+        valid_to: { $ref: './_shared/components.yaml#/components/schemas/Timestamp' }
+        source_document_id: { $ref: './_shared/components.yaml#/components/schemas/Ulid' }

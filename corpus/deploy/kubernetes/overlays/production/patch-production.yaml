@@ -1,0 +1,76 @@
+# =============================================================================
+# Produkční úpravy, které se nedají vyjádřit generátorem ConfigMap.
+#
+# Jsou to tři druhy věcí: regionální hodnoty (bucket, povolené regiony),
+# tvrdší plánovací pravidla a delší okna. Nic z toho není "produkce má víc
+# výkonu" — to řeší `replicas` v kustomization.yaml.
+# =============================================================================
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: document-service
+  namespace: orbitalfreight
+spec:
+  template:
+    spec:
+      containers:
+        - name: document-service
+          env:
+            # Bucket je jeden na region. Dokument označený jiným regionem se do
+            # něj nesmí dostat ani omylem (§7, pravidlo 7) — proto je hodnota
+            # v overlay, ne v base.
+            - name: OF_DOCUMENT_BUCKET
+              value: of-documents-eu-west
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: telemetry-ingest
+  namespace: orbitalfreight
+spec:
+  template:
+    spec:
+      containers:
+        - name: telemetry-ingest
+          env:
+            # Uzavřený výčet regionů, které tenhle cluster smí přijmout. Dávka
+            # pro jiný region skončí 403 a nepřesměruje se. eu-central je v
+            # seznamu proto, že tam sedí zápisová část schématu `identity`, a
+            # brány u hamburského depa občas přepnou na tamní vstupní bod.
+            - name: OF_TELEMETRY_ALLOWED_REGIONS
+              value: eu-west,eu-central
+            - name: OF_TELEMETRY_SIGNATURE_REQUIRED
+              value: "true"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: fleet-service
+  namespace: orbitalfreight
+spec:
+  template:
+    spec:
+      containers:
+        - name: fleet-service
+          env:
+            # Evropský region: platí nařízení 561/2006 o dobách řízení.
+            # V clusterech na-east a na-west je tady us_fmcsa.
+            - name: OF_FLEET_HOS_RULESET
+              value: eu_561
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: identity-service
+  namespace: orbitalfreight
+spec:
+  template:
+    spec:
+      # Kořen grafu nesmí skončit celý na jednom uzlu ani v jedné zóně.
+      # V base je antiafinita na uzel; produkce přidává rozprostření po zónách.
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: topology.kubernetes.io/zone
+          whenUnsatisfiable: DoNotSchedule
+          labelSelector:
+            matchLabels: { app.kubernetes.io/name: identity-service }

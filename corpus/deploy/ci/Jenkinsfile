@@ -1,0 +1,168 @@
+// =============================================================================
+// Jenkins pipeline pro noční ověření celé platformy.
+//
+// Není to náhrada GitHub Actions ani GitLabu. Jenkins u nás dělá jedinou věc,
+// kterou žádný z nich neumí: má runnery s přístupem do produkční sítě, takže
+// smí ověřit, že nasazená platforma odpovídá tomu, co je v repozitáři.
+//
+// Běží ve 02:00 UTC, tedy před obnovou materializovaných pohledů (03:15) a
+// před nočním párováním (04:30). Kdyby běžel po nich, jeho dotazy do
+// analytics by soupeřily o zámek s REFRESH ... CONCURRENTLY.
+//
+// Selhání téhle pipeline neblokuje nasazení — hlásí rozdíl mezi repozitářem a
+// realitou. To se opravuje ráno, ne v noci automaticky.
+// =============================================================================
+
+pipeline {
+    agent {
+        label 'of-prod-network'
+    }
+
+    options {
+        timeout(time: 90, unit: 'MINUTES')
+        buildDiscarder(logRotator(numToKeepStr: '30'))
+        disableConcurrentBuilds()
+        timestamps()
+    }
+
+    triggers {
+        cron('0 2 * * *')
+    }
+
+    environment {
+        SPEC_VERSION   = '4.2.0'
+        NAMESPACE      = 'orbitalfreight'
+        REGISTRY       = 'registry.orbitalfreight.net'
+        // Kubeconfig s právem jen ke čtení. Tahle pipeline nikdy nic nemění;
+        // kdyby měla právo zápisu, dřív nebo později by ho někdo použil na
+        // "rychlou opravu" mimo Semaphore a nasazovaný stav by se rozešel s
+        // repozitářem, což je přesně to, co tu hlídáme.
+        KUBECONFIG     = credentials('of-kubeconfig-readonly')
+        SEMAPHORE_TOKEN = credentials('of-semaphore-readonly-token')
+    }
+
+    stages {
+
+        stage('Připravit') {
+            steps {
+                checkout scm
+                sh 'kustomize build deploy/kubernetes/overlays/production > /tmp/expected.yaml'
+            }
+        }
+
+        stage('Verze nasazených služeb') {
+            steps {
+                // Prochází se všech čtrnáct z §1 SPEC.md. Rozdíl mezi verzí v
+                // /version a tagem v manifestu znamená, že v clusteru běží
+                // něco jiného, než co je v gitu — typicky po ručním zásahu
+                // kubectl set image, který nikdo nezapsal zpátky.
+                sh '''
+                    python3 ops/compare-deployed-versions.py \
+                      --namespace "${NAMESPACE}" \
+                      --expected /tmp/expected.yaml \
+                      --spec SPEC.md \
+                      --report /tmp/version-drift.json
+                '''
+            }
+        }
+
+        stage('Souběžné kontroly') {
+            parallel {
+
+                stage('Kafka témata') {
+                    steps {
+                        // Počty partition a retence proti §4. Zvýšení počtu
+                        // partition je legální, ale musí být zapsané v
+                        // deploy/ansible/roles/of_kafka_topics/defaults —
+                        // jinak se po dalším běhu Ansiblu nic nestane a
+                        // rozdíl přežije.
+                        sh '''
+                            python3 ops/check-kafka-topics.py \
+                              --bootstrap of-prod-kafka-eu-west-01.orbitalfreight.net:9092 \
+                              --spec SPEC.md \
+                              --defaults deploy/ansible/roles/of_kafka_topics/defaults/main.yml
+                        '''
+                    }
+                }
+
+                stage('Řetězec audit-ledgeru') {
+                    steps {
+                        // Ověření hash řetězce proti podepsanému checkpointu u
+                        // notáře. Je to jediná kontrola, která umí odhalit
+                        // úpravu platform.audit_ledger_entries — v databázi
+                        // samotné by taková úprava nebyla vidět.
+                        sh '''
+                            python3 tools/verify-ledger.py \
+                              --ledger https://api.orbitalfreight.net/internal/audit-ledger \
+                              --notary https://notary.orbitalfreight.net/v1/checkpoints \
+                              --sample 5000
+                        '''
+                    }
+                }
+
+                stage('Rezidence dat') {
+                    steps {
+                        // Pravidlo 7 v §7: čtení, dokument ani zásilka
+                        // označená jedním regionem nesmí ležet v jiném.
+                        // Kontroluje se tablespace partition telemetrie a
+                        // předpona storage_key u platform.documents.
+                        sh '''
+                            python3 ops/check-data-residency.py \
+                              --regions eu-west,eu-central,na-east,apac-sg \
+                              --fail-on-violation
+                        '''
+                    }
+                }
+
+                stage('Certifikáty a klíče') {
+                    steps {
+                        // Certifikát celní správy (OF_CUSTOMS_AUTHORITY_CERT_PATH)
+                        // a klientský certifikát notáře. Vypršení znamená, že
+                        // se přestanou podávat deklarace — a pozná se to až na
+                        // první odmítnuté, pokud to nehlídá tahle kontrola.
+                        sh '''
+                            python3 ops/check-cert-expiry.py \
+                              --warn-days 30 \
+                              --targets customs-authority,notary,partner-ingress
+                        '''
+                    }
+                }
+            }
+        }
+
+        stage('Suchý běh Ansiblu') {
+            steps {
+                // --check --diff proti produkci. Ukáže každou ruční změnu na
+                // strojích, které ještě nejsou v Kubernetes (na-east migruje
+                // v Q4). Nic nemění.
+                sh '''
+                    ansible-playbook \
+                      -i deploy/ansible/inventories/production/hosts.yml \
+                      deploy/ansible/site.yml \
+                      --check --diff \
+                      --vault-id production@/var/lib/jenkins/.of/vault-production.pass \
+                      | tee /tmp/ansible-drift.log
+                '''
+            }
+        }
+    }
+
+    post {
+        always {
+            archiveArtifacts artifacts: '/tmp/version-drift.json,/tmp/ansible-drift.log',
+                             allowEmptyArchive: true
+        }
+        unstable {
+            // Rozdíl proti repozitáři není havárie, ale nesmí zapadnout.
+            // Zpráva jde ranní směně, ne pohotovosti.
+            slackSend channel: '#of-platform',
+                      color: 'warning',
+                      message: "Noční kontrola nalezla rozdíly proti repozitáři: ${env.BUILD_URL}"
+        }
+        failure {
+            slackSend channel: '#of-platform',
+                      color: 'danger',
+                      message: "Noční kontrola selhala: ${env.BUILD_URL}"
+        }
+    }
+}

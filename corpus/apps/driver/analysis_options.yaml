@@ -1,0 +1,24 @@
+# Regras de análise estática partilhadas por toda a app do condutor. A regra que interessa mesmo
+# é `avoid_dynamic_calls`: as respostas dos serviços chegam como JSON não tipado e queremos que
+# qualquer desvio ao contrato do SPEC rebente na desserialização, não três ecrãs mais à frente.
+include: package:flutter_lints/flutter.yaml
+
+analyzer:
+  language:
+    strict-casts: true
+    strict-raw-types: true
+  errors:
+    invalid_annotation_target: ignore
+    todo: ignore
+  exclude:
+    - "**/*.g.dart"
+    - "lib/gen/**"
+
+linter:
+  rules:
+    avoid_dynamic_calls: true
+    avoid_print: true
+    prefer_final_locals: true
+    require_trailing_commas: true
+    unawaited_futures: true
+    use_super_parameters: true

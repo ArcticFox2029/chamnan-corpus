@@ -1,0 +1,42 @@
+{{- /* Vypisuje se po instalaci. Má odpovědět na to, co člověk po nasazení
+       skutečně potřebuje vědět: kde služba je, čím ověřit, že jede, a co
+       zkontrolovat, když nejede. */ -}}
+Nasazeno: {{ include "of-service.name" . }} ({{ include "of-service.image" . }})
+Vlna restartu podle §1.1 SPEC.md: {{ .Values.service.restartWave }}
+
+Adresa uvnitř clusteru:
+  http://{{ include "of-service.name" . }}.{{ .Release.Namespace }}.svc.cluster.local:{{ .Values.service.httpPort }}
+{{- if .Values.service.grpcPort }}
+  gRPC: {{ include "of-service.name" . }}.{{ .Release.Namespace }}.svc.cluster.local:{{ .Values.service.grpcPort }}
+{{- end }}
+
+Ověření (§3.15 — tyhle čtyři cesty vystavuje každá služba):
+  kubectl -n {{ .Release.Namespace }} port-forward svc/{{ include "of-service.name" . }} {{ .Values.service.httpPort }}
+  curl -s localhost:{{ .Values.service.httpPort }}/healthz   # proces žije, databáze se netestuje
+  curl -s localhost:{{ .Values.service.httpPort }}/readyz    # databáze, Kafka i identity-service
+  curl -s localhost:{{ .Values.service.httpPort }}/version   # build SHA, semver, číslo migrace
+
+{{ if .Values.outbound -}}
+Odchozí hrany podle §1.1 SPEC.md:
+{{- range .Values.outbound }}
+  - {{ . }}
+{{- end }}
+Nic dalšího tato služba synchronně volat nesmí. Když se v logu objeví spojení
+jinam, není to konfigurace — je to hrana navíc v grafu.
+{{ else -}}
+Tato služba nevolá synchronně nikoho kromě identity-service (list grafu §1.2).
+{{ end }}
+{{- if not .Values.kafka.consumerGroup }}
+Služba nekonzumuje z Kafky; OF_KAFKA_CONSUMER_GROUP se proto vůbec nenastavuje.
+{{- else }}
+Skupina konzumenta: {{ .Values.kafka.consumerGroup }}
+Zvýšení přípony přehraje téma od začátku retence — dělá se to jen při migraci
+schématu události, ne při běžném nasazení.
+{{- end }}
+
+Když /readyz vrací 503 déle než minutu, projdi v tomhle pořadí:
+  1. dosažitelnost identity-service (bez ní jede služba nejvýš
+     OF_IDENTITY_JWKS_GRACE_SECONDS a pak odmítá strojová volání),
+  2. OF_DATABASE_URL a search_path — cizí schéma se projeví jako chybějící
+     tabulka, ne jako chyba přihlášení,
+  3. lag skupiny konzumenta, pokud služba čte z Kafky.

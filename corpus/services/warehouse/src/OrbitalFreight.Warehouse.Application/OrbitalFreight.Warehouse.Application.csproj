@@ -1,0 +1,23 @@
+<!--
+  Warstwa aplikacji: przypadki użycia hali — przyjęcie na gniazdo, fala kompletacyjna
+  i inwentaryzacja ciągła. Składa domenę z portami z Abstractions i nie zna żadnej konkretnej
+  technologii. Kierunek zależności biegnie od infrastruktury do niej, nigdy odwrotnie — dlatego
+  zadania okresowe, które potrzebują kontekstu bazy, siedzą w Infrastructure/Maintenance.
+-->
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <RootNamespace>OrbitalFreight.Warehouse.Application</RootNamespace>
+    <AssemblyName>OrbitalFreight.Warehouse.Application</AssemblyName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\OrbitalFreight.Warehouse.Domain\OrbitalFreight.Warehouse.Domain.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="8.0.1" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="8.0.1" />
+  </ItemGroup>
+
+</Project>

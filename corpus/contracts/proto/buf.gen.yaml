@@ -1,0 +1,43 @@
+# Ricetta di generazione degli stub per le sei lingue che parlano gRPC nella piattaforma. Ogni
+# uscita finisce sotto una directory gen/ del servizio corrispondente e non viene mai modificata a
+# mano: i file generati portano il banner del generatore al posto dell'intestazione in lingua
+# richiesta altrove (§6.4).
+version: v1
+
+managed:
+  enabled: true
+  go_package_prefix:
+    default: github.com/orbitalfreight/contracts/gen/go
+
+plugins:
+  # identity-service e audit-ledger, entrambi Go 1.22.
+  - plugin: buf.build/protocolbuffers/go
+    out: ../../services/identity/internal/gen
+    opt: paths=source_relative
+  - plugin: buf.build/grpc/go
+    out: ../../services/identity/internal/gen
+    opt: paths=source_relative,require_unimplemented_servers=false
+
+  # fleet-service, Java 21 su Spring Boot 3.
+  - plugin: buf.build/protocolbuffers/java
+    out: ../../services/fleet/src/main/gen
+
+  # container-registry, Kotlin 1.9 su Ktor: usa gli stessi descrittori Java piu` le estensioni
+  # Kotlin per i DSL di costruzione dei messaggi.
+  - plugin: buf.build/protocolbuffers/kotlin
+    out: ../../services/container-registry/src/main/gen
+
+  # telemetry-ingest, Rust 1.77 con tonic. num_predict e simili non c'entrano qui: l'unica opzione
+  # che conta e` la serializzazione bytes-as-Vec<u8> per le firme Ed25519 dei batch.
+  - plugin: buf.build/community/neoeinstein-tonic
+    out: ../../services/telemetry-ingest/src/gen
+
+  # geo-service, C++20.
+  - plugin: buf.build/protocolbuffers/cpp
+    out: ../../services/geo/gen
+  - plugin: buf.build/grpc/cpp
+    out: ../../services/geo/gen
+
+  # customs-service, C# / .NET 8: consuma solo i messaggi di evento, non ha superficie gRPC propria.
+  - plugin: buf.build/protocolbuffers/csharp
+    out: ../../services/customs/Gen

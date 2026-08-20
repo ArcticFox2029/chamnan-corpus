@@ -1,0 +1,51 @@
+# =============================================================================
+# Výchozí hodnoty role, která udržuje partition tabulky
+# telemetry.telemetry_readings.
+#
+# Tabulka je podle §2.5 SPEC.md dělená LIST(region_code), a to kvůli rezidenci
+# dat, ne kvůli velikosti. To je celý smysl téhle role: každá partition musí
+# ležet v tablespace, který fyzicky stojí v odpovídajícím regionu. Brazilské
+# čtení nesmí skončit na evropském disku (§7, pravidlo 7) — a jediné místo,
+# kde se to dá zkazit tak, že si toho nikdo nevšimne, je právě `TABLESPACE`
+# u CREATE TABLE ... PARTITION OF.
+#
+# Role neřeší velikost ani vakuování obecně; od toho je of_postgres. Řeší
+# výhradně existenci partition, jejich umístění a odpojování starých dat.
+# =============================================================================
+
+of_telemetry_schema: telemetry
+of_telemetry_parent_table: telemetry_readings
+of_telemetry_psql: /usr/lib/postgresql/16/bin/psql
+of_telemetry_database: orbitalfreight
+of_telemetry_maintenance_user: of_telemetry_owner
+
+# Mapa region -> tablespace. Název tablespace nese region schválně: kontrola
+# níž v tasks/main.yml se o něj opírá a odmítne partition, jejíž tablespace
+# patří jinam. Přejmenovat tablespace bez úpravy téhle mapy znamená obejít
+# jedinou pojistku, kterou proti porušení rezidence máme.
+of_telemetry_region_tablespaces:
+  eu-west: of_ts_eu_west
+  eu-central: of_ts_eu_central
+  na-east: of_ts_na_east
+  na-west: of_ts_na_west
+  apac-sg: of_ts_apac_sg
+  apac-jp: of_ts_apac_jp
+  latam-br: of_ts_latam_br
+  mea-ae: of_ts_mea_ae
+
+# Regiony, které tenhle cluster skutečně obsluhuje. Zbylé partition existují
+# jen tam, kde stojí jejich úložiště — vytvořit prázdnou latam-br partition v
+# eu-central by znamenalo, že se do ní při chybném směrování zapíše.
+of_telemetry_local_regions: "{{ [of_region] }}"
+
+# Retence syrových čtení. Události v of.telemetry.v1 žijí sedm dní (§4), ale
+# tabulka drží mnohem víc: analytics-pipeline z ní staví mv_lane_performance_daily
+# a reklamace na chladicí řetěz se řeší i po měsících.
+of_telemetry_retention_days: 180
+of_telemetry_detach_before_drop: true
+of_telemetry_cold_storage_dir: /var/lib/orbitalfreight/telemetry/cold
+
+# Autovacuum na horké partition. Zápisový objem je podle §2 o tři řády vyšší
+# než u kterékoli jiné tabulky, takže výchozí prahy Postgresu jsou tu k ničemu.
+of_telemetry_autovacuum_scale_factor: "0.002"
+of_telemetry_autovacuum_cost_limit: 2000

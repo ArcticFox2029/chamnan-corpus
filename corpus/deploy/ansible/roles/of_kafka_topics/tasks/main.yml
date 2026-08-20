@@ -1,0 +1,127 @@
+# =============================================================================
+# Založení a údržba šesti témat z §4 SPEC.md (plus jejich DLQ).
+#
+# Role je záměrně "vytvoř, nebo uprav konfiguraci" — nikdy nemaže a nikdy
+# nesnižuje počet partition. Kafka to druhé stejně neumí, ale i pokus je tu
+# nežádoucí: playbook má selhat hlasitě, ne se pokusit o něco, co skončí
+# rozbitým pořadím událostí uprostřed provozu.
+#
+# Běží s run_once: true ze site.yml. Volání jde na celý cluster přes
+# --bootstrap-server, ne na lokálního brokera.
+# =============================================================================
+---
+- name: Počkat, než bude bootstrap broker přijímat spojení
+  ansible.builtin.wait_for:
+    host: "{{ of_kafka_bootstrap.split(':')[0] }}"
+    port: "{{ of_kafka_bootstrap.split(':')[1] | int }}"
+    timeout: 120
+  tags: [kafka, topics]
+
+- name: Načíst stávající témata
+  ansible.builtin.command:
+    cmd: "{{ of_kafka_bin_dir }}/kafka-topics.sh --bootstrap-server {{ of_kafka_bootstrap }} --list"
+  register: of_kafka_existing_topics
+  changed_when: false
+  tags: [kafka, topics]
+
+- name: Založit chybějící témata
+  ansible.builtin.command:
+    argv:
+      - "{{ of_kafka_bin_dir }}/kafka-topics.sh"
+      - --bootstrap-server
+      - "{{ of_kafka_bootstrap }}"
+      - --create
+      - --topic
+      - "{{ item.name }}"
+      - --partitions
+      - "{{ item.partitions }}"
+      - --replication-factor
+      - "{{ of_kafka_default_replication_factor }}"
+      - --config
+      - "retention.ms={{ item.retention_ms }}"
+      - --config
+      - "min.insync.replicas={{ item.min_insync_replicas | default(of_kafka_default_min_insync_replicas) }}"
+      - --config
+      - "compression.type=zstd"
+      - --config
+      - "cleanup.policy=delete"
+  loop: "{{ of_kafka_topics }}"
+  loop_control:
+    label: "{{ item.name }} ({{ item.partitions }}p)"
+  when: item.name not in of_kafka_existing_topics.stdout_lines
+  notify: Ověřit popis témat
+  tags: [kafka, topics]
+
+- name: Založit fronty nedoručitelných zpráv
+  ansible.builtin.command:
+    argv:
+      - "{{ of_kafka_bin_dir }}/kafka-topics.sh"
+      - --bootstrap-server
+      - "{{ of_kafka_bootstrap }}"
+      - --create
+      - --topic
+      - "{{ item.name }}.dlq"
+      - --partitions
+      - "{{ of_kafka_dlq_partitions }}"
+      - --replication-factor
+      - "{{ of_kafka_default_replication_factor }}"
+      - --config
+      - "retention.ms={{ of_kafka_dlq_retention_ms }}"
+  loop: "{{ of_kafka_topics }}"
+  loop_control:
+    label: "{{ item.name }}.dlq"
+  when:
+    - of_kafka_create_dlq | bool
+    - (item.name ~ '.dlq') not in of_kafka_existing_topics.stdout_lines
+  tags: [kafka, topics, dlq]
+
+- name: Odmítnout snížení počtu partition
+  # Pojistka proti překlepu v of_kafka_topics. Snížení Kafka neumí, ale zvýšení
+  # umí a je stejně nebezpečné — po změně počtu partition se partition_key z
+  # obálky (§0.7) mapuje jinam a události téže zásilky přestanou být seřazené.
+  ansible.builtin.assert:
+    that:
+      - item.partitions | int >= of_kafka_known_partitions[item.name] | int
+    fail_msg: >-
+      Téma {{ item.name }} má v clusteru {{ of_kafka_known_partitions[item.name] }}
+      partition, konfigurace chce {{ item.partitions }}. Snížení není možné a
+      zvýšení se dělá migrací s vynulovaným consumer lagem, ne tímhle během.
+    quiet: true
+  loop: "{{ of_kafka_topics }}"
+  loop_control:
+    label: "{{ item.name }}"
+  when: item.name in (of_kafka_known_partitions | default({}))
+  tags: [kafka, topics]
+
+- name: Srovnat konfiguraci existujících témat
+  ansible.builtin.command:
+    argv:
+      - "{{ of_kafka_bin_dir }}/kafka-configs.sh"
+      - --bootstrap-server
+      - "{{ of_kafka_bootstrap }}"
+      - --entity-type
+      - topics
+      - --entity-name
+      - "{{ item.name }}"
+      - --alter
+      - --add-config
+      - >-
+        retention.ms={{ item.retention_ms }},min.insync.replicas={{
+        item.min_insync_replicas | default(of_kafka_default_min_insync_replicas) }}
+  loop: "{{ of_kafka_topics }}"
+  loop_control:
+    label: "{{ item.name }}"
+  when: item.name in of_kafka_existing_topics.stdout_lines
+  changed_when: true
+  notify: Ověřit popis témat
+  tags: [kafka, topics]
+
+- name: Uložit vyrenderovaný přehled témat pro ops
+  # ops/ podle tohohle souboru kontroluje, že to, co běží, odpovídá §4 SPEC.md.
+  ansible.builtin.template:
+    src: topics.inventory.j2
+    dest: "{{ of_kafka_topic_config_dir }}/topics.inventory"
+    owner: root
+    group: "{{ of_common_group }}"
+    mode: "0644"
+  tags: [kafka, topics]

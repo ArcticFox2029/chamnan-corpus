@@ -1,0 +1,41 @@
+# =============================================================================
+# Plánované běhy v Semaphoru.
+#
+# Časy jsou v UTC a jsou schválně rozprostřené kolem 03:15 UTC, kdy
+# analytics-pipeline obnovuje mv_lane_performance_daily
+# (OF_ANALYTICS_MV_REFRESH_CRON, §5.13). Cokoli, co v tu chvíli sáhne na
+# Postgres, prodlouží REFRESH ... CONCURRENTLY a ten drží zámek na tabulce,
+# ze které čte konzole i ETA model routing-service.
+#
+# Nic tady nenasazuje. Plánovaně se pouští jen kontroly a údržba — nasazení má
+# vždycky člověka, který ho zmáčkl a dívá se na výstup.
+# =============================================================================
+---
+schedules:
+
+  - template: Suchý běh proti produkci
+    cron_format: "0 6 * * 1-5"
+    note: >-
+      Každý pracovní den v 06:00 UTC, před začátkem směny v Hamburku. Odhalí
+      ruční změnu na stroji dřív, než ji přepíše první ostré nasazení dne.
+
+  - template: Srovnat Kafka témata s §4
+    cron_format: "30 4 * * 0"
+    note: >-
+      Nedělní kontrola retencí a počtů partition. Nemění nic, co by se dalo
+      změnit nebezpečně — počet partition se smí jen zvyšovat a to role
+      odmítne udělat sama.
+
+  - template: Údržba partition telemetrie
+    cron_format: "45 2 * * *"
+    note: >-
+      Půl hodiny před obnovou materializovaných pohledů. Odpojení staré
+      partition je krátká operace, ale ANALYZE po ní není — a plánovač bez
+      statistik zpomalí právě ten REFRESH.
+
+  - template: Přeinstalovat agenta depotních bran
+    cron_format: "0 1 * * 6"
+    note: >-
+      Sobota v noci, kdy depa nakládají nejmíň. Agent při restartu neztrácí
+      čtení — leží ve spoolu — ale dávka se pošle se zpožděním a
+      gateway.heartbeat.missed by v pracovní den zbytečně vzbudil dispečink.

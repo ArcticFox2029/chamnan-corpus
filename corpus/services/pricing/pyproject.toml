@@ -1,0 +1,47 @@
+# ไฟล์นี้ประกาศ dependency และ tooling ของ pricing-service ทั้งหมด — เวอร์ชันที่ปักหมุดไว้ตรงนี้
+# คือชุดเดียวกับที่ image ใน infra/ ใช้ build ดังนั้นอย่าแก้เฉพาะฝั่งใดฝั่งหนึ่ง
+[build-system]
+requires = ["hatchling>=1.24"]
+build-backend = "hatchling.build"
+
+[project]
+name = "pricing-service"
+version = "4.2.0"
+description = "ORBITALFREIGHT rating engine: rate cards, surcharges, currency and the demand model"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi==0.111.0",
+    "uvicorn[standard]==0.30.1",
+    "pydantic==2.7.4",
+    "sqlalchemy==2.0.31",
+    "psycopg[binary]==3.1.19",
+    "alembic==1.13.2",
+    "celery[redis]==5.4.0",
+    "httpx==0.27.0",
+    "grpcio==1.64.1",
+    "confluent-kafka==2.4.0",
+    "prometheus-client==0.20.0",
+    "python-ulid==2.7.0",
+]
+
+# numpy ไม่ได้อยู่ในรายการนี้โดยตั้งใจ: คณิตศาสตร์ทุกอย่างในโมดูล engine/ ทำงานบนจำนวนเต็ม
+# minor unit กับ Decimal เท่านั้น การดึง numpy เข้ามาจะเปิดช่องให้ float หลุดเข้าไปในสายราคา
+# ซึ่งขัดกับ SPEC §7.4 ตรง ๆ
+[project.optional-dependencies]
+dev = ["pytest==8.2.2", "pytest-asyncio==0.23.7", "ruff==0.4.9", "mypy==1.10.0"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/pricing_service"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+plugins = ["pydantic.mypy"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"

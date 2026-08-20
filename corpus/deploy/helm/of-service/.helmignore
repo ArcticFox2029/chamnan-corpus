@@ -1,0 +1,27 @@
+# =============================================================================
+# Co se nesmí zabalit do chartu.
+#
+# Kromě obvyklého balastu jsou tu dvě položky, na kterých záleží: soubory
+# hodnot konkrétních prostředí a cokoli, co vypadá jako klíč. Hodnoty
+# prostředí se předávají přes -f při nasazení, ne z balíčku — jinak by se do
+# artefaktu v registru chartů dostala produkční topologie.
+# =============================================================================
+.DS_Store
+.git/
+.gitignore
+*.tmp
+*.orig
+*.swp
+.idea/
+.vscode/
+
+# Hodnoty prostředí se předávají přes -f, do balíčku nepatří.
+values-ci.yaml
+values-staging.yaml
+values-production.yaml
+
+# Pojistka proti nedopatření.
+*.pem
+*.p12
+*.key
+secrets*.yaml

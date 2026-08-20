@@ -1,0 +1,191 @@
+# =============================================================================
+# Instalace a konfigurace Postgresu pro ORBITALFREIGHT.
+#
+# Role nesahá na tabulky. Zakládá cluster, schémata, role vlastníků a čtecí
+# roli of_analytics_ro; DDL z §2 SPEC.md žije v db/ jako migrace a pouští je
+# pipeline. Rozdělení má důvod: migrace se musí dát pustit i mimo Ansible,
+# například při rollbacku, kdy je stroj v pořádku a špatná je jen verze schématu.
+# =============================================================================
+
+- name: Nainstalovat Postgres a PostGIS
+  ansible.builtin.package:
+    name:
+      - "postgresql-{{ of_postgres_version }}"
+      - "postgresql-{{ of_postgres_version }}-postgis-3"
+      - "postgresql-client-{{ of_postgres_version }}"
+      - python3-psycopg2
+    state: present
+  tags: [postgres, packages]
+
+- name: Zajistit datový adresář
+  ansible.builtin.file:
+    path: "{{ of_postgres_data_dir }}"
+    state: directory
+    owner: postgres
+    group: postgres
+    mode: "0700"
+  tags: [postgres]
+
+- name: Nasadit postgresql.conf
+  ansible.builtin.template:
+    src: postgresql.conf.j2
+    dest: "{{ of_postgres_conf_dir }}/postgresql.conf"
+    owner: postgres
+    group: postgres
+    mode: "0640"
+  notify: Restartovat Postgres
+  tags: [postgres, config]
+
+- name: Nasadit pg_hba.conf
+  ansible.builtin.template:
+    src: pg_hba.conf.j2
+    dest: "{{ of_postgres_conf_dir }}/pg_hba.conf"
+    owner: postgres
+    group: postgres
+    mode: "0640"
+  notify: Znovu načíst Postgres
+  tags: [postgres, config]
+
+- name: Spustit Postgres
+  ansible.builtin.service:
+    name: "postgresql@{{ of_postgres_version }}-main"
+    enabled: true
+    state: started
+  tags: [postgres]
+
+- name: Vyprázdnit obsluhy před prací s objekty
+  ansible.builtin.meta: flush_handlers
+
+- name: Založit databázi
+  community.postgresql.postgresql_db:
+    name: "{{ of_postgres_database }}"
+    encoding: UTF-8
+    lc_collate: C
+    lc_ctype: C
+    template: template0
+    state: present
+  become_user: postgres
+  when: of_postgres_manage_objects | bool
+  tags: [postgres, objects]
+
+- name: Založit role vlastníků schémat
+  community.postgresql.postgresql_user:
+    db: "{{ of_postgres_database }}"
+    name: "{{ item.owner_role }}"
+    password: "{{ vault_db_passwords[item.name] | default(omit) }}"
+    role_attr_flags: NOSUPERUSER,NOCREATEDB,NOCREATEROLE,LOGIN
+    state: present
+  become_user: postgres
+  loop: "{{ of_postgres_schemas }}"
+  loop_control:
+    label: "{{ item.owner_role }}"
+  no_log: true
+  when: of_postgres_manage_objects | bool
+  tags: [postgres, objects]
+
+- name: Založit schémata
+  community.postgresql.postgresql_schema:
+    db: "{{ of_postgres_database }}"
+    name: "{{ item.name }}"
+    owner: "{{ item.owner_role }}"
+    state: present
+  become_user: postgres
+  loop: "{{ of_postgres_schemas }}"
+  loop_control:
+    label: "{{ item.name }}"
+  when: of_postgres_manage_objects | bool
+  tags: [postgres, objects]
+
+- name: Zapnout rozšíření
+  community.postgresql.postgresql_ext:
+    db: "{{ of_postgres_database }}"
+    name: "{{ item.name }}"
+    schema: "{{ item.schema }}"
+    version: "{{ item.version }}"
+    state: present
+  become_user: postgres
+  loop: "{{ of_postgres_extensions }}"
+  loop_control:
+    label: "{{ item.name }}"
+  when: of_postgres_manage_objects | bool
+  tags: [postgres, objects]
+
+- name: Založit čtecí roli pro analytics-pipeline
+  # Jediná role, která smí číst napříč schématy. Podle §2 SPEC.md je to
+  # výjimka z pravidla "žádná služba nečte cizí schéma" a zároveň jediný důvod,
+  # proč je databáze sdílená. Kdyby ji dostal někdo další, přestane platit
+  # pravidlo 2 z §7 a join přes schémata se objeví v aplikačním kódu.
+  community.postgresql.postgresql_user:
+    db: "{{ of_postgres_database }}"
+    name: "{{ of_postgres_readonly_role }}"
+    password: "{{ vault_db_passwords['analytics-ro'] }}"
+    role_attr_flags: NOSUPERUSER,NOCREATEDB,NOCREATEROLE,LOGIN
+    state: present
+  become_user: postgres
+  no_log: true
+  when: of_postgres_manage_objects | bool
+  tags: [postgres, objects]
+
+- name: Dát čtecí roli práva na všechna schémata
+  community.postgresql.postgresql_privs:
+    db: "{{ of_postgres_database }}"
+    roles: "{{ of_postgres_readonly_role }}"
+    type: schema
+    objs: "{{ item.name }}"
+    privs: USAGE
+    state: present
+  become_user: postgres
+  loop: "{{ of_postgres_schemas }}"
+  loop_control:
+    label: "{{ item.name }}"
+  when: of_postgres_manage_objects | bool
+  tags: [postgres, objects]
+
+- name: Dát čtecí roli SELECT na existující tabulky
+  community.postgresql.postgresql_privs:
+    db: "{{ of_postgres_database }}"
+    roles: "{{ of_postgres_readonly_role }}"
+    type: table
+    objs: ALL_IN_SCHEMA
+    schema: "{{ item.name }}"
+    privs: SELECT
+    state: present
+  become_user: postgres
+  loop: "{{ of_postgres_schemas }}"
+  loop_control:
+    label: "{{ item.name }}"
+  when: of_postgres_manage_objects | bool
+  tags: [postgres, objects]
+
+- name: Nastavit výchozí práva pro budoucí tabulky
+  # Bez tohohle by každá nová migrace v db/ znamenala, že analytics-pipeline
+  # o novou tabulku přijde a materializovaný pohled se tiše postaví z prázdna.
+  community.postgresql.postgresql_privs:
+    db: "{{ of_postgres_database }}"
+    roles: "{{ of_postgres_readonly_role }}"
+    type: default_privs
+    objs: TABLES
+    schema: "{{ item.name }}"
+    privs: SELECT
+    target_roles: "{{ item.owner_role }}"
+    state: present
+  become_user: postgres
+  loop: "{{ of_postgres_schemas }}"
+  loop_control:
+    label: "{{ item.name }}"
+  when: of_postgres_manage_objects | bool
+  tags: [postgres, objects]
+
+- name: Založit replikační sloty
+  community.postgresql.postgresql_slot:
+    db: "{{ of_postgres_database }}"
+    name: "{{ item.name }}"
+    slot_type: logical
+    output_plugin: pgoutput
+    state: present
+  become_user: postgres
+  loop: "{{ of_postgres_replication_slots }}"
+  loop_control:
+    label: "{{ item.name }}"
+  when: of_postgres_manage_objects | bool
+  tags: [postgres, replication]

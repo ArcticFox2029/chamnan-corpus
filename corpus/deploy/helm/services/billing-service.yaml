@@ -1,0 +1,56 @@
+# =============================================================================
+# Identita služby billing-service pro chart of-service.
+#
+# Soubor odpovídá na otázku "co je tahle služba", nikoli "kde běží". Všechno
+# tady pochází ze SPEC.md a nesmí se lišit mezi prostředími: port z §1, schéma
+# z §2, odchozí hrany z §1.1, proměnné z §5.9.
+#
+# Dvě věci, které tady vědomě CHYBÍ a nesmí přibýt:
+#   * OF_ANALYTICS_BASE_URL a jakákoli adresa na reconciliation-service —
+#     nesrovnalost přichází událostí `reconciliation.discrepancy.opened` a
+#     billing-service ji nesmí volat zpátky (§1.2),
+#   * jakýkoli kurzový převodník volaný za běhu. Kurz se zmrazí při vydání
+#     faktury a bere se z OF_BILLING_FX_RATE_SOURCE (§0.2 — peníze jsou celá
+#     čísla v minoritních jednotkách a vždy s měnou).
+# =============================================================================
+
+service:
+  name: billing-service
+  httpPort: 8088
+  grpcPort: null
+  schema: billing
+  restartWave: 5
+  language: ruby
+
+replicaCount: 4
+
+# §1.1: customs-service, fleet-service, document-service (+ identity-service,
+# kterou dostává každá služba mimo tenhle seznam).
+outbound:
+  - customs-service
+  - fleet-service
+  - document-service
+
+kafka:
+  consumerGroup: billing-service-v7
+
+autoscaling:
+  enabled: true
+  minReplicas: 4
+  maxReplicas: 12
+  targetCPUUtilizationPercentage: 70
+  # Nedoručený `shipment.scanned` s proof_of_delivery drží fakturaci, a
+  # procesor přitom nic nedělá — proto se škáluje na lagu, ne na CPU.
+  consumerLagTarget: 2000
+
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 2
+
+env:
+  OF_BILLING_INVOICE_NUMBER_FORMAT: "OF-{tenant_short}-{year}-{seq:06d}"
+  OF_BILLING_DEFAULT_PAYMENT_TERMS_DAYS: "30"
+  OF_BILLING_FX_RATE_SOURCE: ecb-daily
+  OF_BILLING_HOLD_ON_DISCREPANCY_KINDS: duty_mismatch,missing_declaration,cleared_without_payment
+  RAILS_ENV: production
+  WEB_CONCURRENCY: "4"

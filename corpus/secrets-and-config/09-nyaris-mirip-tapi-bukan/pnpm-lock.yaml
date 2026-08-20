@@ -1,0 +1,158 @@
+# Berkas kunci dependensi konsol operator dan dua paket internal @orbitalfreight/*.
+#
+# Dikumpulkan di direktori ini sebagai contoh yang tidak boleh disamarkan. Setiap nilai
+# `integrity:` di bawah adalah hash sha512 dalam base64 sepanjang 88 karakter — bentuk yang
+# sangat mirip kunci API dan sering ikut tersapu pemindai rahasia. Menyamarkan salah satunya
+# membuat `pnpm install --frozen-lockfile` gagal dengan galat integritas yang tidak masuk akal,
+# dan itu sudah pernah terjadi sekali ketika sebuah pemindai menulis ulang berkas ini.
+#
+# Nilai `resolution.tarball` menunjuk ke cermin internal karena node depot tidak bisa mencapai
+# registry publik. URL cermin memuat nama pengguna tanpa kata sandi: kata sandinya ada di
+# ~/.npmrc runner, tidak pernah di dalam URL, dan tidak pernah di dalam berkas ini.
+#
+# Berkas ini dihasilkan `pnpm install`; jangan disunting dengan tangan.
+
+lockfileVersion: '9.0'
+
+settings:
+  autoInstallPeers: true
+  excludeLinksFromLockfile: false
+
+registries:
+  '@orbitalfreight': https://of-ci-reader@npm-mirror.orbitalfreight.internal/
+  default: https://registry.npmjs.org/
+
+importers:
+
+  .:
+    dependencies:
+      '@orbitalfreight/event-envelope':
+        specifier: ^3.4.1
+        version: 3.4.1
+      '@orbitalfreight/identity-client':
+        specifier: ^2.9.0
+        version: 2.9.0
+      '@orbitalfreight/region-codes':
+        specifier: ^1.2.0
+        version: 1.2.0
+      '@aws-sdk/client-secrets-manager':
+        specifier: ^3.556.0
+        version: 3.556.0
+      '@google-cloud/secret-manager':
+        specifier: ^5.2.0
+        version: 5.2.0
+      '@azure/keyvault-secrets':
+        specifier: ^4.8.0
+        version: 4.8.0
+
+packages:
+
+  '@orbitalfreight/event-envelope@3.4.1':
+    resolution:
+      integrity: sha512-aZdWNywKTxZhbCOTLYrrvCKVuDtelPhiptDKiEqbJaZ9fsfMuiY+bKpLryv+8iYyQ7p1ZrY8gjYEivfLOCXMlw==
+      tarball: https://of-ci-reader@npm-mirror.orbitalfreight.internal/@orbitalfreight/event-envelope/-/event-envelope-3.4.1.tgz
+    engines: {node: '>=18.0.0'}
+    dependencies:
+      ajv: 8.12.0
+
+  '@orbitalfreight/identity-client@2.9.0':
+    resolution:
+      integrity: sha512-EiDpHEkkLkULpJCQPr+NwnC9dHpzZj4hpNsWES84kUVBjYuvYhmnigiaGkKDIgsFeYt8makJB8HJnKsmLxGPNQ==
+      tarball: https://of-ci-reader@npm-mirror.orbitalfreight.internal/@orbitalfreight/identity-client/-/identity-client-2.9.0.tgz
+    engines: {node: '>=18.0.0'}
+    dependencies:
+      '@grpc/grpc-js': 1.10.6
+
+  '@orbitalfreight/region-codes@1.2.0':
+    resolution:
+      integrity: sha512-WRefa6LhybzkJpRE806I+yxmUxmsWhKu+RURZZJKetk7mhVRjPYzmWM5Q0Jltco+UlPwVKVvFXvM2875nlmviw==
+      tarball: https://of-ci-reader@npm-mirror.orbitalfreight.internal/@orbitalfreight/region-codes/-/region-codes-1.2.0.tgz
+    engines: {node: '>=18.0.0'}
+
+  '@aws-sdk/client-secrets-manager@3.556.0':
+    resolution:
+      integrity: sha512-dcAVUyyYB2iY3s9tUK7sCe0zgLJupl9c8Ic0yrKBZGq6eCKfEJhaOwY3SCpA1+2JSMLlK2Nt/uHJcTwCX4eApg==
+    engines: {node: '>=18.0.0'}
+    dependencies:
+      '@smithy/smithy-client': 2.5.1
+
+  '@google-cloud/secret-manager@5.2.0':
+    resolution:
+      integrity: sha512-qYO/iQc8PrzaVxLi0P07sA2YomHIBrWxE4Ef1J1eVNwbwfXEf6Ecbc+wLXtGr41guUI8CscST8Cu9/d1h+3FCQ==
+    engines: {node: '>=18.0.0'}
+    dependencies:
+      google-gax: 4.3.2
+
+  '@azure/keyvault-secrets@4.8.0':
+    resolution:
+      integrity: sha512-nqv96eAu8GZ+uzLxKlb1wIotWgglYUUeIJOHnlZ8didPsTIqCVP9S8J/T8idSokkyIsgX93qxt9NoXA2kD6Ecg==
+    engines: {node: '>=18.0.0'}
+    dependencies:
+      '@azure/core-http-compat': 2.1.2
+
+  '@grpc/grpc-js@1.10.6':
+    resolution:
+      integrity: sha512-TdBHdvLtVFq4Tnxoy2YVjOq2K5WTE+aXSknpe+S4tA/8hCetGCOEfMSQfyJ8rdrDD3P1LA5yUnIcSj9gh7YKVA==
+    engines: {node: '>=18.0.0'}
+    dependencies:
+      '@js-sdsl/ordered-map': 4.4.2
+
+  ajv@8.12.0:
+    resolution:
+      integrity: sha512-xYhEVvBa9/Y+Ojfo/31HhFQ2vntRsHtLnhuKzXF3rWZ0BiaXSaXGrPt19fTFcFEEkQf6ZjHHLLEzvNeiJVL6zQ==
+    engines: {node: '>=18.0.0'}
+    dependencies:
+      fast-deep-equal: 3.1.3
+
+  fast-deep-equal@3.1.3:
+    resolution:
+      integrity: sha512-E5CJNaS1cdPqcJ8+c7cZYBbeseo3pS6emjj+p5XtBBRUlaebOyWDeahd2K3mAUSb314GMJERRVdof7s6TL2L7Q==
+    engines: {node: '>=18.0.0'}
+
+  google-gax@4.3.2:
+    resolution:
+      integrity: sha512-cdGJyH5xaclLSskgrfL8S1Er5qFdaCr6i+Ave49VPmB0JOm5Ff8Mz4LmoLGAxPqjUcsCAjNppwjzXqxZsWgtpA==
+    engines: {node: '>=18.0.0'}
+    dependencies:
+      protobufjs: 7.2.6
+
+  protobufjs@7.2.6:
+    resolution:
+      integrity: sha512-4h76v4D5OufCSHbAoxTWShoafz0XP0sVuH3WRRdmvdahOshIGUXmxD4ju1Ug0s7vi0oHCgEIx58fOBAAcxwngw==
+    engines: {node: '>=18.0.0'}
+    dependencies:
+      long: 5.2.3
+
+  long@5.2.3:
+    resolution:
+      integrity: sha512-Uib4oaWBR2CtNddpIvzVAkfP4CxQb999tcLDyEQerAETesxCP9pLIxgM+6mVJA0jPEfP6q/VrAjS43Ux9yjKKw==
+    engines: {node: '>=18.0.0'}
+
+  pino@8.19.0:
+    resolution:
+      integrity: sha512-cpT9NutT6jEXQfPEgfuj6fpudKWcgF5pS70RZW9sgyw0RUrW4RusaWTduW5hylCPZF6Bp6BXAoqtpDCu5V4jVw==
+    engines: {node: '>=18.0.0'}
+    dependencies:
+      sonic-boom: 3.8.1
+
+  sonic-boom@3.8.1:
+    resolution:
+      integrity: sha512-FzGfLQ+SZOYUE7FNSmMasMaWYziQaFwhUDufoJ1HdkWuJMUtMVteTkyLuMKJjwsiSO9WGdaSIxGYtofsxXrFNQ==
+    engines: {node: '>=18.0.0'}
+
+  undici@6.13.0:
+    resolution:
+      integrity: sha512-Zt0O4wwnm7CX9FCo50q6vrVK0ncnuqZRKxNDpAiR6Y+dbsd0C/DuQmugnQVJ0ZA679q+BYXeDAz+WvcbFDij1g==
+    engines: {node: '>=18.0.0'}
+
+snapshots:
+
+  '@orbitalfreight/event-envelope@3.4.1':
+    dependencies:
+      ajv: 8.12.0
+
+  '@orbitalfreight/identity-client@2.9.0':
+    dependencies:
+      '@grpc/grpc-js': 1.10.6
+
+  '@orbitalfreight/region-codes@1.2.0': {}

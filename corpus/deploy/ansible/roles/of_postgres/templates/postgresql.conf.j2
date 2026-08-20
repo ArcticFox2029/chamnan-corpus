@@ -1,0 +1,94 @@
+# =============================================================================
+# postgresql.conf pro cluster ORBITALFREIGHT.
+#
+# Jeden cluster nese deset schémat s naprosto nesouměřitelnou zátěží: schéma
+# `telemetry` zapisuje podle §2 SPEC.md o tři řády víc než všechna ostatní
+# dohromady, kdežto `customs` a `billing` skoro nezapisují, ale musí přežít
+# deset let (OF_CUSTOMS_RETENTION_YEARS). Konfigurace je proto kompromis
+# vážený k zápisu, ne k analytickému čtení — to jde stejně přes repliku.
+#
+# Generováno rolí of_postgres.
+# =============================================================================
+
+listen_addresses = '*'
+port = {{ of_postgres_port }}
+max_connections = {{ of_postgres_max_connections }}
+superuser_reserved_connections = 5
+
+shared_buffers = {{ of_postgres_shared_buffers }}
+effective_cache_size = {{ of_postgres_effective_cache_size }}
+work_mem = {{ of_postgres_work_mem }}
+maintenance_work_mem = {{ of_postgres_maintenance_work_mem }}
+huge_pages = try
+
+wal_level = {{ of_postgres_wal_level }}
+max_wal_senders = {{ of_postgres_max_wal_senders }}
+max_replication_slots = {{ of_postgres_max_replication_slots }}
+wal_keep_size = {{ of_postgres_wal_keep_size }}
+wal_compression = zstd
+checkpoint_timeout = {{ of_postgres_checkpoint_timeout }}
+checkpoint_completion_target = 0.9
+max_wal_size = 32GB
+min_wal_size = 4GB
+synchronous_commit = {{ of_postgres_synchronous_commit }}
+{% if of_postgres_synchronous_standby_names %}
+synchronous_standby_names = '{{ of_postgres_synchronous_standby_names }}'
+{% endif %}
+
+random_page_cost = {{ of_postgres_random_page_cost }}
+effective_io_concurrency = 200
+default_statistics_target = 200
+
+# Timeout musí zůstat nad OF_DATABASE_STATEMENT_TIMEOUT_MS aplikací, jinak
+# databáze zabije dotaz dřív, než ho stihne zrušit klient, a služba dostane
+# chybu spojení místo své vlastní chyby s trace_id.
+statement_timeout = {{ of_postgres_statement_timeout_ms }}ms
+idle_in_transaction_session_timeout = {{ of_postgres_idle_in_transaction_timeout_ms }}ms
+lock_timeout = 5s
+deadlock_timeout = 1s
+
+# Partice schématu `telemetry` se počítají v tisících; bez zvednutého stropu
+# plánovač zamyká víc partic, než se vejde do locks_per_transaction.
+max_locks_per_transaction = 512
+max_pred_locks_per_transaction = 512
+
+autovacuum = on
+autovacuum_max_workers = 8
+autovacuum_naptime = 15s
+autovacuum_vacuum_scale_factor = 0.02
+autovacuum_analyze_scale_factor = 0.01
+{% if of_postgres_role == 'primary' %}
+# Na primáru běží agresivnější vacuum kvůli platform.outbox_messages: řádky
+# tam žijí od zápisu stavové změny po odeslání relaye, tedy typicky pod
+# {{ of_outbox_relay_interval_ms | default(250) }} ms, a tabulka se jinak nafoukne bagrem mrtvých verzí.
+autovacuum_vacuum_cost_limit = 4000
+{% endif %}
+
+logging_collector = on
+log_destination = 'jsonlog'
+log_directory = '/var/log/postgresql'
+log_filename = 'postgresql-%Y-%m-%d.log'
+log_rotation_age = 1d
+log_min_duration_statement = 500ms
+log_checkpoints = on
+log_lock_waits = on
+log_temp_files = 0
+log_autovacuum_min_duration = 1s
+log_line_prefix = '%m [%p] %q%u@%d app=%a '
+
+shared_preload_libraries = 'pg_stat_statements'
+pg_stat_statements.max = 10000
+pg_stat_statements.track = top
+
+timezone = 'UTC'
+log_timezone = 'UTC'
+datestyle = 'iso, ymd'
+lc_messages = 'C'
+
+{% if of_postgres_role == 'replica' %}
+hot_standby = on
+hot_standby_feedback = on
+max_standby_streaming_delay = 30s
+primary_conninfo = 'host={{ of_postgres_primary_endpoint }} port={{ of_postgres_port }} user=of_replication application_name={{ inventory_hostname_short | replace("-", "_") }} sslmode=verify-full'
+primary_slot_name = '{{ inventory_hostname_short | replace("-", "_") }}'
+{% endif %}

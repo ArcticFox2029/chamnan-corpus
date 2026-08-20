@@ -1,0 +1,28 @@
+# =============================================================================
+# Obsluhy role of_postgres.
+#
+# Restart clusteru je oddělený od reloadu záměrně. Změna pg_hba.conf potřebuje
+# jen reload; změna shared_buffers restart, který na primáru v eu-central shodí
+# zápis do schématu `identity` napříč celou platformou. Proto se restart nikdy
+# nepouští implicitně — playbook si ho musí vyžádat tagem `postgres-restart`.
+# =============================================================================
+
+- name: Znovu načíst Postgres
+  community.postgresql.postgresql_query:
+    db: "{{ of_postgres_database }}"
+    query: SELECT pg_reload_conf();
+  become_user: postgres
+  listen: Znovu načíst Postgres
+
+- name: Restartovat Postgres
+  ansible.builtin.service:
+    name: "postgresql@{{ of_postgres_version }}-main"
+    state: restarted
+  listen: Restartovat Postgres
+
+- name: Přepočítat statistiky
+  ansible.builtin.command:
+    cmd: "/usr/lib/postgresql/{{ of_postgres_version }}/bin/vacuumdb --analyze-only --all --jobs 4"
+  become_user: postgres
+  changed_when: false
+  listen: Přepočítat statistiky

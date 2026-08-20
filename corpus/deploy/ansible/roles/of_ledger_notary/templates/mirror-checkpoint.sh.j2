@@ -1,0 +1,47 @@
+#!/usr/bin/env bash
+# =============================================================================
+# Stáhne poslední podepsaný checkpoint z audit-ledgeru, uloží ho lokálně a
+# odešle notáři. Generuje role of_notary_mirror.
+#
+# Skript je schválně hloupý: žádná databáze, žádné parsování řetězce, žádné
+# přepočítávání hashů. Jeho jediná odpovědnost je dopravit podepsanou hlavičku
+# ven z naší infrastruktury dřív, než ji někdo stihne přepsat. Ověřování dělá
+# audit-ledger sám na /v1/entries/{entry_id}/proof.
+#
+# NEEDITOVAT NA STROJI. Přepíše první běh site.yml.
+# =============================================================================
+set -euo pipefail
+
+LEDGER_URL="{{ of_audit_ledger_base_url }}"
+NOTARY_URL="{{ of_ledger_notary_endpoint }}"
+ARCHIVE_DIR="{{ of_notary_archive_dir }}"
+CLIENT_CERT="{{ of_notary_client_cert_path }}"
+TIMEOUT="{{ of_notary_request_timeout_seconds }}"
+STAMP="$(date -u +%Y%m%dT%H%M%SZ)"
+TARGET="${ARCHIVE_DIR}/checkpoint-${STAMP}.json"
+
+curl --fail --silent --show-error --max-time "${TIMEOUT}" \
+     --header 'X-OF-Actor-Kind: service' \
+     --header "X-OF-Trace-Id: $(openssl rand -hex 16)" \
+     "${LEDGER_URL}/v1/checkpoints/latest" > "${TARGET}"
+
+# Prázdný nebo neúplný soubor nikdy neposíláme dál — notář by ho přijal jako
+# platný stav a příští porovnání by hlásilo rozpor tam, kde žádný není.
+if ! jq -e '.checkpoint_id and .head_entry_id and .signature' "${TARGET}" >/dev/null; then
+    echo "checkpoint z ${LEDGER_URL} je neúplný, neodesílám" >&2
+    rm -f "${TARGET}"
+    exit 1
+fi
+
+curl --fail --silent --show-error --max-time "${TIMEOUT}" \
+     --cert "${CLIENT_CERT}" \
+     --header 'Content-Type: application/json' \
+     --header 'X-OF-Actor-Kind: service' \
+     --header "X-OF-Idempotency-Key: checkpoint-$(jq -r .checkpoint_id "${TARGET}")" \
+     --data @"${TARGET}" \
+     "${NOTARY_URL}" > /dev/null
+
+# Lokální kopie je pracovní; závazná je ta u notáře. Proto se po roce maže.
+find "${ARCHIVE_DIR}" -name 'checkpoint-*.json' -mtime +{{ of_notary_local_retention_days }} -delete
+
+logger -t of-notary-mirror "checkpoint $(jq -r .checkpoint_id "${TARGET}") odeslán notáři"

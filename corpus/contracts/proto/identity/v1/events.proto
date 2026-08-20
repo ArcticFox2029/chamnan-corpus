@@ -1,0 +1,60 @@
+syntax = "proto3";
+
+package identity.v1;
+
+import "common/v1/identifiers.proto";
+import "google/protobuf/timestamp.proto";
+
+// Payload degli eventi del topic of.identity.v1 (12 partizioni, 30 giorni di retention).
+// identity-service non chiama nessuno sincronamente: tutto ciò che gli altri devono sapere di lui
+// passa da qui. I due eventi hanno pesi molto diversi — il primo è cronaca, il secondo è un
+// obbligo con una scadenza di cinque secondi.
+
+option go_package = "github.com/orbitalfreight/contracts/gen/go/identity/v1;identityv1";
+option java_package = "com.orbitalfreight.contracts.identity.v1";
+option java_multiple_files = true;
+
+// event_name: identity.session.opened
+// Consumatori: audit-ledger, analytics-pipeline. partition_key: user_id.
+message SessionOpened {
+  string session_id = 1;
+  string user_id = 2;
+  string tenant_id = 3;
+  common.v1.ActorKind actor_kind = 4;
+
+  // Indirizzo di origine come stringa INET; può essere IPv6.
+  string ip_inet = 5;
+
+  string user_agent = 6;
+
+  // Se il secondo fattore è stato effettivamente presentato in questa apertura di sessione.
+  // audit-ledger lo registra perché è la prima domanda di ogni verifica di conformità.
+  bool mfa_used = 7;
+
+  google.protobuf.Timestamp issued_at = 8;
+  google.protobuf.Timestamp expires_at = 9;
+}
+
+// event_name: identity.credential.revoked
+// Consumatori: partner-portal-api, telemetry-ingest, audit-ledger. partition_key: credential_id.
+//
+// I consumatori devono sfrattare dalla propria cache di introspezione la voce relativa a
+// `key_prefix` entro cinque secondi. Non è una raccomandazione: fra la revoca e lo sfratto la
+// credenziale continua a funzionare, ed è esattamente la finestra che un partner compromesso userebbe.
+message CredentialRevoked {
+  string credential_id = 1;
+  string tenant_id = 2;
+
+  // Le dodici cifre di identity.api_credentials.key_prefix. È questa, non credential_id, la chiave
+  // su cui i consumatori hanno costruito la cache.
+  string key_prefix = 3;
+
+  // Testo libero fissato dal chiamante di DELETE /v1/credentials/{credential_id}:
+  // 'rotated', 'compromised', 'tenant_closed', 'unused'.
+  string revoked_reason = 4;
+
+  google.protobuf.Timestamp revoked_at = 5;
+
+  // usr_… di chi ha revocato, oppure il nome del servizio per le revoche automatiche.
+  string revoked_by = 6;
+}

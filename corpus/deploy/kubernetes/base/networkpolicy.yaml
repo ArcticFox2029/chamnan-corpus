@@ -1,0 +1,366 @@
+# =============================================================================
+# Síťové politiky — graf §1.1 SPEC.md vynucený na úrovni sítě.
+#
+# Tabulka odchozích volání v §1.1 není doporučení a tenhle soubor je místo,
+# kde se z ní stává skutečnost. Když někdo do customs-service přidá HTTP
+# klienta na billing-service, kód se zkompiluje, testy projdou a chyba se
+# projeví až tady — spojení se prostě nenaváže. To je levnější způsob, jak se
+# to dozvědět, než rozjetý cyklus v produkci.
+#
+# Základ je zakázat všechno oběma směry a povolovat po jedné hraně. DNS a
+# telemetrie mají výjimku, protože bez nich neběží nic a nejsou to hrany grafu.
+#
+# Pořadí čtení: default-deny → infrastruktura (DNS, Postgres, Kafka, OTel) →
+# univerzální hrana na identity-service → jednotlivé hrany podle §1.1.
+# =============================================================================
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny
+  namespace: orbitalfreight
+spec:
+  podSelector: {}
+  policyTypes: [Ingress, Egress]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-dns-and-telemetry
+  namespace: orbitalfreight
+spec:
+  podSelector: {}
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels: { kubernetes.io/metadata.name: kube-system }
+          podSelector:
+            matchLabels: { k8s-app: kube-dns }
+      ports:
+        - { protocol: UDP, port: 53 }
+        - { protocol: TCP, port: 53 }
+    - to:
+        - podSelector:
+            matchLabels: { app.kubernetes.io/name: otel-collector }
+      ports:
+        - { protocol: TCP, port: 4317 }
+        - { protocol: TCP, port: 4318 }
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-datastores
+  namespace: orbitalfreight
+spec:
+  # Postgres a Kafka pro všechny služby, které je mají v prostředí. Politika
+  # nerozlišuje schéma — o to, aby služba nesahala do cizího schématu, se
+  # stará search_path a práva role, ne síť (pravidlo 2 v §7).
+  podSelector:
+    matchLabels: { app.kubernetes.io/part-of: orbitalfreight }
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels: { kubernetes.io/metadata.name: data }
+          podSelector:
+            matchLabels: { app.kubernetes.io/name: postgres }
+      ports:
+        - { protocol: TCP, port: 5432 }
+    - to:
+        - namespaceSelector:
+            matchLabels: { kubernetes.io/metadata.name: data }
+          podSelector:
+            matchLabels: { app.kubernetes.io/name: kafka }
+      ports:
+        - { protocol: TCP, port: 9092 }
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: identity-service-ingress
+  namespace: orbitalfreight
+spec:
+  # Univerzální závislost z §1.2: introspekci volá všech třináct zbylých
+  # služeb, takže se sem pouští celý namespace. Je to jediná politika, kde je
+  # takhle široký selektor na místě.
+  podSelector:
+    matchLabels: { app.kubernetes.io/name: identity-service }
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels: { app.kubernetes.io/part-of: orbitalfreight }
+      ports:
+        - { protocol: TCP, port: 8081 }
+        - { protocol: TCP, port: 9081 }
+    - from:
+        - namespaceSelector:
+            matchLabels: { kubernetes.io/metadata.name: ingress-nginx }
+      ports:
+        - { protocol: TCP, port: 8081 }
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: geo-service-ingress
+  namespace: orbitalfreight
+spec:
+  # Podle §1.1 volá geo-service pět služeb a nikdo jiný. Je to list grafu s
+  # nejvíc volajícími, takže výčet je tu delší než jinde — a přesto konečný.
+  podSelector:
+    matchLabels: { app.kubernetes.io/name: geo-service }
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector: { matchLabels: { app.kubernetes.io/name: container-registry } }
+        - podSelector: { matchLabels: { app.kubernetes.io/name: routing-service } }
+        - podSelector: { matchLabels: { app.kubernetes.io/name: telemetry-ingest } }
+        - podSelector: { matchLabels: { app.kubernetes.io/name: fleet-service } }
+        - podSelector: { matchLabels: { app.kubernetes.io/name: analytics-pipeline } }
+      ports:
+        - { protocol: TCP, port: 8086 }
+        - { protocol: TCP, port: 9086 }
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: document-service-ingress
+  namespace: orbitalfreight
+spec:
+  # Druhý list. Diamant B z §1.2: billing-service i customs-service sem pošlou
+  # tutéž fakturu v PDF a druhý zápis se musí poznat podle sha256.
+  podSelector:
+    matchLabels: { app.kubernetes.io/name: document-service }
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector: { matchLabels: { app.kubernetes.io/name: container-registry } }
+        - podSelector: { matchLabels: { app.kubernetes.io/name: customs-service } }
+        - podSelector: { matchLabels: { app.kubernetes.io/name: billing-service } }
+        - podSelector: { matchLabels: { app.kubernetes.io/name: notification-service } }
+        - podSelector: { matchLabels: { app.kubernetes.io/name: fleet-service } }
+      ports:
+        - { protocol: TCP, port: 8089 }
+    - from:
+        - namespaceSelector:
+            matchLabels: { kubernetes.io/metadata.name: ingress-nginx }
+      ports:
+        - { protocol: TCP, port: 8089 }
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: customs-service-egress
+  namespace: orbitalfreight
+spec:
+  # Klíčová politika celého souboru. customs-service smí ven na
+  # document-service, audit-ledger, identity-service a na celní správu.
+  # Na billing-service NE — o zaplacení cla se dozvídá z události
+  # `billing.invoice.settled` (§1.2). Přidání téhle hrany zavře cyklus, který
+  # celá architektura obchází.
+  podSelector:
+    matchLabels: { app.kubernetes.io/name: customs-service }
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - podSelector: { matchLabels: { app.kubernetes.io/name: document-service } }
+      ports:
+        - { protocol: TCP, port: 8089 }
+    - to:
+        - podSelector: { matchLabels: { app.kubernetes.io/name: audit-ledger } }
+      ports:
+        - { protocol: TCP, port: 9092 }
+    - to:
+        - podSelector: { matchLabels: { app.kubernetes.io/name: identity-service } }
+      ports:
+        - { protocol: TCP, port: 8081 }
+        - { protocol: TCP, port: 9081 }
+    - to:
+        # OF_CUSTOMS_AUTHORITY_ENDPOINT — jediný odchozí provoz mimo cluster,
+        # a jde přes klientský certifikát z zapečetěného secretu.
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 10.0.0.0/8
+              - 172.16.0.0/12
+              - 192.168.0.0/16
+      ports:
+        - { protocol: TCP, port: 443 }
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: billing-service-egress
+  namespace: orbitalfreight
+spec:
+  # billing-service volá customs-service, fleet-service a document-service.
+  # Na reconciliation-service nesmí — nesrovnalost se k němu dostane událostí
+  # `reconciliation.discrepancy.opened` a faktura jde na `on_hold` (§1.2).
+  podSelector:
+    matchLabels: { app.kubernetes.io/name: billing-service }
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - podSelector: { matchLabels: { app.kubernetes.io/name: customs-service } }
+      ports: [{ protocol: TCP, port: 8087 }]
+    - to:
+        - podSelector: { matchLabels: { app.kubernetes.io/name: fleet-service } }
+      ports: [{ protocol: TCP, port: 8082 }]
+    - to:
+        - podSelector: { matchLabels: { app.kubernetes.io/name: document-service } }
+      ports: [{ protocol: TCP, port: 8089 }]
+    - to:
+        - podSelector: { matchLabels: { app.kubernetes.io/name: identity-service } }
+      ports:
+        - { protocol: TCP, port: 8081 }
+        - { protocol: TCP, port: 9081 }
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: fleet-service-egress
+  namespace: orbitalfreight
+spec:
+  # Nejvíc hran ze všech služeb (§1.1). Diamant A vzniká právě tady.
+  podSelector:
+    matchLabels: { app.kubernetes.io/name: fleet-service }
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - podSelector: { matchLabels: { app.kubernetes.io/name: container-registry } }
+      ports: [{ protocol: TCP, port: 9083 }, { protocol: TCP, port: 8083 }]
+    - to:
+        - podSelector: { matchLabels: { app.kubernetes.io/name: routing-service } }
+      ports: [{ protocol: TCP, port: 8085 }]
+    - to:
+        - podSelector: { matchLabels: { app.kubernetes.io/name: geo-service } }
+      ports: [{ protocol: TCP, port: 9086 }]
+    - to:
+        - podSelector: { matchLabels: { app.kubernetes.io/name: document-service } }
+      ports: [{ protocol: TCP, port: 8089 }]
+    - to:
+        - podSelector: { matchLabels: { app.kubernetes.io/name: identity-service } }
+      ports: [{ protocol: TCP, port: 8081 }, { protocol: TCP, port: 9081 }]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: telemetry-ingest-egress
+  namespace: orbitalfreight
+spec:
+  # Volá container-registry (freight.v1.ContainerLookup/ResolveShipmentForContainer)
+  # a geo-service. Nikdy nevolá notification-service — poplach se šíří
+  # událostí `telemetry.alert.raised`.
+  podSelector:
+    matchLabels: { app.kubernetes.io/name: telemetry-ingest }
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - podSelector: { matchLabels: { app.kubernetes.io/name: container-registry } }
+      ports: [{ protocol: TCP, port: 9083 }]
+    - to:
+        - podSelector: { matchLabels: { app.kubernetes.io/name: geo-service } }
+      ports: [{ protocol: TCP, port: 9086 }]
+    - to:
+        - podSelector: { matchLabels: { app.kubernetes.io/name: identity-service } }
+      ports: [{ protocol: TCP, port: 9081 }]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: telemetry-ingest-ingress
+  namespace: orbitalfreight
+spec:
+  # Jediná služba, do které smí provoz z depotních bran zvenčí. Podpis dávky
+  # se ověřuje v aplikaci (OF_TELEMETRY_SIGNATURE_REQUIRED), síť jen zužuje
+  # plochu na tenhle jeden pod a dva porty.
+  podSelector:
+    matchLabels: { app.kubernetes.io/name: telemetry-ingest }
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels: { kubernetes.io/metadata.name: ingress-nginx }
+      ports:
+        - { protocol: TCP, port: 8084 }
+        - { protocol: TCP, port: 9084 }
+    - from:
+        - podSelector: { matchLabels: { app.kubernetes.io/part-of: orbitalfreight } }
+      ports:
+        - { protocol: TCP, port: 8084 }
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: partner-portal-api-policy
+  namespace: orbitalfreight
+spec:
+  # Vnější plocha. Dovnitř jen z externího ingressu, ven na tři služby z §1.1
+  # a nikam jinam — partner nesmí nepřímo dosáhnout na telemetrii ani na
+  # auditní stopu.
+  podSelector:
+    matchLabels: { app.kubernetes.io/name: partner-portal-api }
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels: { kubernetes.io/metadata.name: ingress-nginx }
+      ports: [{ protocol: TCP, port: 8091 }]
+  egress:
+    - to:
+        - podSelector: { matchLabels: { app.kubernetes.io/name: billing-service } }
+      ports: [{ protocol: TCP, port: 8088 }]
+    - to:
+        - podSelector: { matchLabels: { app.kubernetes.io/name: customs-service } }
+      ports: [{ protocol: TCP, port: 8087 }]
+    - to:
+        - podSelector: { matchLabels: { app.kubernetes.io/name: container-registry } }
+      ports: [{ protocol: TCP, port: 9083 }, { protocol: TCP, port: 8083 }]
+    - to:
+        - podSelector: { matchLabels: { app.kubernetes.io/name: identity-service } }
+      ports: [{ protocol: TCP, port: 8081 }, { protocol: TCP, port: 9081 }]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: audit-ledger-ingress
+  namespace: orbitalfreight
+spec:
+  # Zapisovat do řetězce smí jenom přes audit.v1.LedgerService/Append. Čtenáři
+  # (konzole, reconciliation-service) chodí na HTTP port.
+  podSelector:
+    matchLabels: { app.kubernetes.io/name: audit-ledger }
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector: { matchLabels: { app.kubernetes.io/name: customs-service } }
+        - podSelector: { matchLabels: { app.kubernetes.io/name: reconciliation-service } }
+      ports: [{ protocol: TCP, port: 9092 }]
+    - from:
+        - podSelector: { matchLabels: { app.kubernetes.io/part-of: orbitalfreight } }
+      ports: [{ protocol: TCP, port: 8092 }]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: analytics-pipeline-egress
+  namespace: orbitalfreight
+spec:
+  # Kromě dvou hran z §1.1 potřebuje ven do objektového úložiště
+  # (OF_ANALYTICS_WAREHOUSE_URI) a na Kubernetes API kvůli Spark executorům.
+  podSelector:
+    matchLabels: { app.kubernetes.io/name: analytics-pipeline }
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - podSelector: { matchLabels: { app.kubernetes.io/name: container-registry } }
+      ports: [{ protocol: TCP, port: 9083 }]
+    - to:
+        - podSelector: { matchLabels: { app.kubernetes.io/name: geo-service } }
+      ports: [{ protocol: TCP, port: 9086 }]
+    - to:
+        - podSelector: { matchLabels: { app.kubernetes.io/name: identity-service } }
+      ports: [{ protocol: TCP, port: 9081 }]
+    - to:
+        - ipBlock: { cidr: 10.64.0.1/32 }     # kubernetes.default.svc
+      ports: [{ protocol: TCP, port: 443 }]

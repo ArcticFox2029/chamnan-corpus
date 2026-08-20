@@ -1,0 +1,18 @@
+<!--
+  Warstwa domenowa: model hali, polityka adresowania, planer ścieżek i planista inwentaryzacji.
+  Projekt celowo nie ma żadnej zależności poza biblioteką standardową — dzięki temu reguły, które
+  decydują o miejscu kontenera, dają się uruchomić w teście bez bazy, brokera i sieci.
+-->
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <RootNamespace>OrbitalFreight.Warehouse.Domain</RootNamespace>
+    <AssemblyName>OrbitalFreight.Warehouse.Domain</AssemblyName>
+  </PropertyGroup>
+
+  <!--
+    Brak sekcji ItemGroup z PackageReference jest tu decyzją architektoniczną, a nie przeoczeniem.
+    Każde dołożenie paczki do tego projektu wymaga zgody na przeglądzie — ADR-0031 w docs/.
+  -->
+
+</Project>

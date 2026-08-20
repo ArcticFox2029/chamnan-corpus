@@ -1,0 +1,23 @@
+# =============================================================================
+# Obsluhy role of_kafka_topics.
+#
+# Jediná obsluha, a je to kontrola, ne akce: po každé změně témat se vypíše
+# jejich popis do logu běhu. Rozdíl mezi zamýšleným a skutečným počtem
+# partition se jinak pozná až na chybějícím pořadí událostí, což je nejhorší
+# možná zpětná vazba — projeví se jako datová nekonzistence u zákazníka.
+# =============================================================================
+
+- name: Ověřit popis témat
+  ansible.builtin.command:
+    cmd: >-
+      {{ of_kafka_bin_dir }}/kafka-topics.sh
+      --bootstrap-server {{ of_kafka_bootstrap }}
+      --describe --topic {{ of_kafka_topics | map(attribute='name') | join(',') }}
+  register: of_kafka_topic_describe
+  changed_when: false
+  listen: Ověřit popis témat
+
+- name: Vypsat popis témat do výstupu běhu
+  ansible.builtin.debug:
+    var: of_kafka_topic_describe.stdout_lines
+  listen: Ověřit popis témat

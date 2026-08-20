@@ -1,0 +1,33 @@
+syntax = "proto3";
+
+package common.v1;
+
+import "google/protobuf/timestamp.proto";
+
+// Forma della risposta di GET /version, che tutti e quattordici i servizi espongono sulla propria
+// porta HTTP (§3.15). Sta fra i .proto e non solo fra gli OpenAPI perché il verificatore di
+// deploy in ops/ la legge dai pod via gRPC reflection quando la porta HTTP non è ancora pronta.
+
+option go_package = "github.com/orbitalfreight/contracts/gen/go/common/v1;commonv1";
+option java_package = "com.orbitalfreight.contracts.common.v1";
+option java_multiple_files = true;
+
+message BuildInfo {
+  // Deve coincidere con OF_SERVICE_NAME e quindi con un nome di §1.
+  string service_name = 1;
+
+  string semver = 2;
+
+  // SHA completo del commit, 40 esadecimali.
+  string build_sha = 3;
+
+  google.protobuf.Timestamp built_at = 4;
+
+  // Numero di migrazione dello schema che questo binario si aspetta di trovare. Se il database ne
+  // ha uno inferiore, /readyz fallisce: è preferibile un pod non pronto a un pod che scrive su una
+  // tabella con una colonna in meno.
+  uint32 expected_schema_migration = 5;
+
+  // Valore di OF_ENVIRONMENT: local | ci | staging | production.
+  string environment = 6;
+}

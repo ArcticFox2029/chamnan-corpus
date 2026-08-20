@@ -1,0 +1,97 @@
+syntax = "proto3";
+
+package telemetry.v1;
+
+import "common/v1/identifiers.proto";
+import "common/v1/money.proto";
+import "google/protobuf/timestamp.proto";
+
+// Payload degli eventi del topic of.telemetry.v1 — 96 partizioni, appena 7 giorni di retention,
+// il volume di scrittura più alto della piattaforma di tre ordini di grandezza. Qui dentro sta
+// anche l'arco che spezza il ciclo fra telemetry-ingest e container-registry: il secondo non viene
+// chiamato, consuma AlertRaised e porta da sé la spedizione in `at_risk`.
+
+option go_package = "github.com/orbitalfreight/contracts/gen/go/telemetry/v1;telemetryv1";
+option java_package = "com.orbitalfreight.contracts.telemetry.v1";
+option java_multiple_files = true;
+
+// event_name: telemetry.reading.recorded — produttore telemetry-ingest.
+// Consumatori: container-registry, analytics-pipeline. partition_key: container_id.
+//
+// Campionato: viene pubblicata una lettura ogni OF_TELEMETRY_PUBLISH_SAMPLE_RATE per contenitore
+// (20 in produzione), più ogni lettura che ha superato una soglia. Nessuno deve quindi contare le
+// letture da questo topic: la serie completa sta in telemetry.telemetry_readings e si legge da
+// GET /v1/containers/{container_id}/readings.
+message ReadingRecorded {
+  string reading_id = 1;
+  common.v1.RegionCode region_code = 2;
+  string container_id = 3;
+
+  // Risolto al momento dell'ingest tramite
+  // freight.v1.ContainerLookup/ResolveShipmentForContainer. Vuoto per un contenitore fermo a
+  // magazzino.
+  string shipment_id = 4;
+
+  string gateway_id = 5;
+  google.protobuf.Timestamp recorded_at = 6;
+
+  common.v1.Decimal temperature_c = 7;
+  common.v1.Decimal humidity_pct = 8;
+  common.v1.Decimal shock_g = 9;
+  bool door_open = 10;
+  uint32 battery_pct = 11;
+  common.v1.GeoPoint position = 12;
+}
+
+// event_name: telemetry.alert.raised — produttore telemetry-ingest.
+// Consumatori: container-registry, notification-service, billing-service, analytics-pipeline,
+// audit-ledger.
+//
+// container-registry porta la spedizione in `at_risk` quando `severity` raggiunge
+// OF_FREIGHT_AUTO_AT_RISK_SEVERITY; billing-service ne ricava una riga accessoria (tipicamente
+// `reefer_power` o `demurrage`) con source_kind = 'alert'.
+message AlertRaised {
+  string alert_id = 1;
+  string container_id = 2;
+  string shipment_id = 3;
+
+  // Stringa snake_case corrispondente a telemetry.v1.AlertRuleCode e al CHECK su
+  // telemetry.telemetry_alerts.rule_code.
+  string rule_code = 4;
+
+  // 1..5.
+  uint32 severity = 5;
+
+  common.v1.Decimal threshold_value = 6;
+
+  // Valore estremo osservato che ha fatto scattare la regola. Nullo per `gateway_silent`, che non
+  // nasce da una misura.
+  common.v1.Decimal peak_value = 7;
+
+  string first_reading_id = 8;
+  google.protobuf.Timestamp opened_at = 9;
+}
+
+// event_name: gateway.heartbeat.missed — produttore telemetry-ingest.
+// Consumatori: notification-service, analytics-pipeline. partition_key: gateway_id.
+//
+// Nasce dal silenzio, non da un messaggio: nessun POST /v1/gateways/{gateway_id}/heartbeat per
+// più di OF_TELEMETRY_HEARTBEAT_TIMEOUT_MINUTES. È anche la forma di allerta che §4.19 regola 4
+// prende a modello per segnalare i messaggi avvelenati finiti in <topic>.dlq.
+message GatewayHeartbeatMissed {
+  string gateway_id = 1;
+  string serial = 2;
+
+  // dep_<ULID>; vuoto per un gateway mobile montato sul veicolo, che può legittimamente tacere
+  // in un tunnel.
+  string depot_id = 3;
+
+  common.v1.RegionCode region_code = 4;
+  google.protobuf.Timestamp last_heartbeat_at = 5;
+  uint32 silent_minutes = 6;
+
+  // Semver del firmware in firmware/sensor-node. Presente perché un'ondata di silenzi che
+  // riguarda una sola versione è un problema di rilascio, non di copertura radio, e questa è
+  // l'unica informazione che permette di distinguere i due casi in tempo reale.
+  string firmware_version = 7;
+}

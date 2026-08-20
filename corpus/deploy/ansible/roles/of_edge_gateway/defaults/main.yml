@@ -1,0 +1,67 @@
+# =============================================================================
+# Výchozí hodnoty role, která instaluje agenta depotní brány (adresář edge/).
+#
+# Agent je jediný producent dat pro telemetry-ingest. Všechno, co tady stojí,
+# se odvíjí od dvou limitů druhé strany: OF_TELEMETRY_BATCH_MAX_READINGS
+# (strop dávky) a OF_TELEMETRY_HEARTBEAT_TIMEOUT_MINUTES (ticho, po kterém
+# ingest publikuje `gateway.heartbeat.missed`). Hodnoty tu jsou schválně
+# konzervativnější než limity ingestu — brána, která se do stropu trefí přesně,
+# ho při retransmisi po výpadku spojení překročí.
+#
+# Skupinové proměnné v inventories/*/group_vars/of_edge.yml tyhle defaulty
+# přebíjejí; tady je jen to, co platí i pro depo, které nikdo nekonfiguroval.
+# =============================================================================
+
+of_edge_agent_version: "4.2.0"
+of_edge_agent_user: ofgateway
+of_edge_agent_group: ofgateway
+of_edge_agent_home: /opt/orbitalfreight/gateway-agent
+of_edge_agent_binary: "{{ of_edge_agent_home }}/bin/of-edge-agent"
+of_edge_agent_unit: of-edge-agent.service
+
+of_edge_spool_dir: /var/spool/orbitalfreight/readings
+of_edge_spool_max_bytes: 2147483648
+of_edge_batch_max_readings: 4000
+of_edge_batch_flush_interval_ms: 15000
+of_edge_batch_compression: zstd
+of_edge_heartbeat_interval_seconds: 120
+
+of_edge_signing_key_path: /etc/orbitalfreight/keys/gateway-ed25519.key
+of_edge_firmware_channel: stable
+
+# Sériové porty senzorových koncentrátorů v depu. Firmware uzlu (firmware/)
+# mluví přes RS-485; brána poslouchá na obou linkách, protože depa s víc než
+# stovkou kontejnerů mají koncentrátor zdvojený.
+of_edge_serial_devices:
+  - /dev/ttyOF0
+  - /dev/ttyOF1
+of_edge_serial_baud: 115200
+
+# Kolik dní si brána drží odeslané dávky pro případ, že si ingest vyžádá
+# retransmisi. Dedup na (region_code, ingest_batch_id, container_id,
+# recorded_at) z něj dělá no-op, takže opakované poslání nic nerozbije.
+of_edge_replay_retention_days: 3
+of_edge_max_open_files: 16384
+
+# Zavřený seznam regionů z §0.6 SPEC.md. Kontroluje se proti němu of_region
+# ještě před instalací: brána s regionem mimo seznam by posílala dávky, které
+# telemetry-ingest odmítne 403, a čtení by se hromadila ve spoolu až do stropu.
+of_region_codes:
+  - eu-west
+  - eu-central
+  - na-east
+  - na-west
+  - apac-sg
+  - apac-jp
+  - latam-br
+  - mea-ae
+
+# gRPC stream místo dávkového POSTu zapínáme jen tam, kde depo má vlastní
+# optiku. Na LTE lince se stream trhá a retransmise celé dávky je levnější.
+of_edge_stable_link: false
+of_edge_verify_heartbeat: true
+
+# gateway_id (gwy_<ULID>) přiděluje telemetry-ingest při provisioningu; do
+# inventáře se doplňuje do host_vars. Prázdná hodnota znamená, že se brána
+# teprve registruje a ověření heartbeatu se přeskočí.
+of_gateway_id: ""

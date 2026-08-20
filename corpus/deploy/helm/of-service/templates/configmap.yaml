@@ -1,0 +1,22 @@
+{{- /*
+=============================================================================
+ConfigMapa s proměnnými, které patří jenom téhle službě (§5.2 až §5.15).
+
+Společné proměnné (§5.1) jsou v of-common-config a adresy v
+of-service-addresses; obojí je mimo tenhle chart, protože je sdílí všechny
+služby v namespace.
+
+Hodnoty se vypisují seřazené, aby se checksum v deploymentu neměnil jen kvůli
+pořadí klíčů — jinak by každý `helm upgrade` restartoval pody bez důvodu.
+=============================================================================
+*/ -}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "of-service.fullname" . }}
+  labels:
+    {{- include "of-service.labels" . | nindent 4 }}
+data:
+  {{- range $key, $value := .Values.env }}
+  {{ $key }}: {{ $value | quote }}
+  {{- end }}

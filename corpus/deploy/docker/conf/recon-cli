@@ -1,0 +1,77 @@
+#!/usr/bin/env bash
+# =============================================================================
+# Klient pro spuštění nočního párování. Kopíruje se do obrazu jako
+# /opt/orbitalfreight/bin/recon-cli a volá ho CronJob `reconciliation-nightly`.
+#
+# Sám nic nepočítá. Zavolá POST /v1/runs na běžící reconciliation-service a
+# počká na výsledek. Důvod: párování potřebuje otevřená spojení, cache
+# sazebníků a vedoucí Lease — jednorázový pod by si to všechno stavěl znovu a
+# běžel by kvůli tomu podstatně déle.
+# =============================================================================
+set -euo pipefail
+
+ENDPOINT="http://reconciliation-service.orbitalfreight.svc.cluster.local:8094"
+BUSINESS_DATE="yesterday"
+WAIT=false
+
+while [ $# -gt 0 ]; do
+    case "$1" in
+        start-run) shift ;;
+        --business-date=*) BUSINESS_DATE="${1#*=}"; shift ;;
+        --endpoint=*) ENDPOINT="${1#*=}"; shift ;;
+        --wait) WAIT=true; shift ;;
+        *) echo "neznámý argument: $1" >&2; exit 2 ;;
+    esac
+done
+
+if [ "${BUSINESS_DATE}" = "yesterday" ]; then
+    BUSINESS_DATE="$(date -u -d 'yesterday' +%Y-%m-%d)"
+fi
+
+# Klíč idempotence je povinný na každém nemutujícím-neGET požadavku (§0.3) a
+# tady navíc chrání před dvojím během: unikátní index na
+# analytics.reconciliation_runs (tenant_id, business_date, engine_version) by
+# druhý zápis odmítl, ale až po hodině počítání naprázdno.
+IDEMPOTENCY_KEY="recon-${BUSINESS_DATE}-${OF_RECON_ENGINE_VERSION:-unknown}"
+
+RUN=$(curl --fail --silent --show-error \
+    --request POST \
+    --header 'Content-Type: application/json' \
+    --header 'X-OF-Actor-Kind: service' \
+    --header "X-OF-Idempotency-Key: ${IDEMPOTENCY_KEY}" \
+    --data "{\"business_date\":\"${BUSINESS_DATE}\"}" \
+    "${ENDPOINT}/v1/runs")
+
+RUN_ID=$(echo "${RUN}" | jq -r '.run_id')
+echo "běh ${RUN_ID} pro ${BUSINESS_DATE} spuštěn"
+
+if [ "${WAIT}" != "true" ]; then
+    exit 0
+fi
+
+while true; do
+    STATE=$(curl --fail --silent "${ENDPOINT}/v1/runs/${RUN_ID}" | jq -r '.state')
+    case "${STATE}" in
+        succeeded)
+            echo "běh ${RUN_ID} dokončen"
+            exit 0
+            ;;
+        failed)
+            echo "běh ${RUN_ID} selhal" >&2
+            exit 1
+            ;;
+        partial)
+            # Částečný běh není úspěch, ale ani důvod k poplachu: některý
+            # nájemce neměl data. Vrací se nenulově, aby si toho někdo všiml.
+            echo "běh ${RUN_ID} skončil částečně — část nájemců nebyla spárována" >&2
+            exit 3
+            ;;
+        running)
+            sleep 30
+            ;;
+        *)
+            echo "neznámý stav běhu: ${STATE}" >&2
+            exit 1
+            ;;
+    esac
+done

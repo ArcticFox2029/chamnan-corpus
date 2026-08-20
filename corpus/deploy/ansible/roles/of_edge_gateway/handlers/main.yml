@@ -1,0 +1,28 @@
+# =============================================================================
+# Obsluhy role of_edge_gateway.
+#
+# Restart agenta je bezpečný kdykoli: neodeslaná čtení leží ve spoolu a jdou
+# nahoru po naběhnutí. Co bezpečné není, je smazat spool — proto tady žádná
+# obsluha, která by na něj sahala, není a ani nemá vzniknout.
+# =============================================================================
+
+- name: Načíst systemd znovu
+  ansible.builtin.systemd:
+    daemon_reload: true
+  listen: Načíst systemd znovu
+
+- name: Restartovat agenta brány
+  ansible.builtin.systemd:
+    name: "{{ of_edge_agent_unit }}"
+    state: restarted
+  listen: Restartovat agenta brány
+
+- name: Vypsat velikost spoolu po restartu
+  # Rostoucí spool po restartu znamená, že agent sice běží, ale dávky mu
+  # ingest odmítá — typicky 403 kvůli neshodě regionu s
+  # OF_TELEMETRY_ALLOWED_REGIONS. Log tady ušetří cestu na depo.
+  ansible.builtin.command:
+    cmd: "du -sb {{ of_edge_spool_dir }}"
+  register: of_edge_spool_size
+  changed_when: false
+  listen: Restartovat agenta brány

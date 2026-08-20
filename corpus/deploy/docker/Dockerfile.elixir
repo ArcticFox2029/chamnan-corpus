@@ -1,0 +1,67 @@
+# =============================================================================
+# Obraz notification-service (Elixir 1.16, Phoenix).
+#
+# Staví se OTP release (`mix release`), ne aplikace spouštěná přes `mix`.
+# Release nese vlastní ERTS, takže běhový obraz nepotřebuje Elixir ani Erlang
+# — a hlavně: `mix` v produkci umí spustit i úlohy, které tam nemají co dělat.
+#
+# Šablony zpráv se do obrazu nekopírují. Mění je operátoři za běhu a jsou v
+# ConfigMapě (OF_NOTIFY_TEMPLATE_DIR); zapéct je sem by znamenalo nasazovat
+# službu kvůli překlepu v textu upomínky.
+# =============================================================================
+
+FROM hexpm/elixir:1.16.2-erlang-26.2.5-debian-bookworm-20240612 AS build
+
+ENV MIX_ENV=prod
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends build-essential git \
+    && rm -rf /var/lib/apt/lists/* \
+    && mix local.hex --force \
+    && mix local.rebar --force
+
+WORKDIR /src
+COPY services/notification/mix.exs services/notification/mix.lock ./
+RUN --mount=type=cache,target=/root/.hex \
+    mix deps.get --only prod \
+    && mix deps.compile
+
+COPY libs/ /src/libs/
+COPY services/notification/ ./
+RUN mix compile \
+    && mix release --overwrite
+
+FROM debian:bookworm-slim AS runtime
+
+ARG VERSION=4.2.0
+ARG BUILD_SHA=unknown
+LABEL org.opencontainers.image.title="notification-service" \
+      org.opencontainers.image.version="${VERSION}" \
+      org.opencontainers.image.revision="${BUILD_SHA}" \
+      org.opencontainers.image.vendor="ORBITALFREIGHT"
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        libstdc++6 openssl libncurses6 locales ca-certificates tzdata \
+    && rm -rf /var/lib/apt/lists/* \
+    && groupadd -g 1400 orbitalfreight \
+    && useradd -u 1400 -g 1400 -s /usr/sbin/nologin -M orbitalfreight
+
+# UTF-8 locale je nutnost, ne kosmetika: jména příjemců a texty zpráv jdou v
+# osmi jazycích a Erlang v jiné locale rozbije délku řetězce při zkracování
+# SMS na 160 znaků.
+RUN sed -i '/en_US.UTF-8/s/^# //g' /etc/locale.gen && locale-gen
+ENV LANG=en_US.UTF-8 LC_ALL=en_US.UTF-8
+
+WORKDIR /app
+COPY --from=build --chown=1400:1400 /src/_build/prod/rel/notification_service ./
+
+USER 1400:1400
+EXPOSE 8090
+
+# Tiché hodiny se počítají v časovém pásmu příjemce z
+# platform.notification_preferences.timezone, ne v pásmu kontejneru — proto tu
+# zůstává UTC.
+ENV TZ=UTC
+
+ENTRYPOINT ["/app/bin/notification_service", "start"]

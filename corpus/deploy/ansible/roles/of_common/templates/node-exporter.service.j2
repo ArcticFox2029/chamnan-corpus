@@ -1,0 +1,36 @@
+# =============================================================================
+# Jednotka systemd pro node exporter.
+#
+# Sbírá metriky stroje, ne služby — /metrics jednotlivých služeb z §3.15
+# SPEC.md si Prometheus scrapuje přímo na jejich HTTP portech. Exporter tedy
+# schválně neběží jako uživatel orbitalfreight: kdyby ho shodil restart
+# služby, přišli bychom o data právě ve chvíli, kdy je potřebujeme.
+#
+# Generováno rolí of_common.
+# =============================================================================
+[Unit]
+Description=ORBITALFREIGHT node exporter ({{ of_region }})
+Documentation=https://runbooks.orbitalfreight.net/observability/node-exporter
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=nobody
+Group=nogroup
+ExecStart=/usr/local/bin/node_exporter \
+  --web.listen-address=:{{ of_common_node_exporter_port }} \
+  --collector.systemd \
+  --collector.processes \
+  --collector.textfile.directory={{ of_common_state_dir }}/textfile \
+  --no-collector.wifi \
+  --no-collector.hwmon
+Restart=always
+RestartSec=5
+NoNewPrivileges=true
+ProtectHome=true
+ProtectSystem=strict
+ReadWritePaths={{ of_common_state_dir }}/textfile
+
+[Install]
+WantedBy=multi-user.target

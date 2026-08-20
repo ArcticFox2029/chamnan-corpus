@@ -1,0 +1,117 @@
+{{- /*
+=============================================================================
+Síťová politika odvozená přímo z hodnoty `outbound`.
+
+Je to nejsilnější vlastnost tohohle chartu: seznam odchozích hran se píše na
+jednom místě, prostředí i síť z něj vychází, a rozejít se nemůžou. Když
+někdo přidá do `outbound` cíl, který §1.1 SPEC.md nezná, `of-service.addressEnv`
+nasazení zastaví — a když ho tam nepřidá, ale zavolá ho z kódu, spojení se
+nenaváže.
+
+Vstup se povoluje jen z podů platformy; vnější provoz chodí přes ingress a
+týká se dvou služeb (partner-portal-api, telemetry-ingest), které si ho
+přidávají přes `networkPolicy.extraIngressFrom`.
+=============================================================================
+*/ -}}
+{{- if .Values.networkPolicy.enabled -}}
+{{- $catalogue := include "of-service.catalogue" . | fromYaml -}}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "of-service.fullname" . }}
+  labels:
+    {{- include "of-service.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "of-service.selectorLabels" . | nindent 6 }}
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/part-of: orbitalfreight
+      ports:
+        - protocol: TCP
+          port: {{ .Values.service.httpPort }}
+        {{- if .Values.service.grpcPort }}
+        - protocol: TCP
+          port: {{ .Values.service.grpcPort }}
+        {{- end }}
+    {{- with .Values.networkPolicy.extraIngressFrom }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+  egress:
+    {{- /* DNS a kolektor telemetrie. Nejsou to hrany grafu §1.1, ale bez
+           nich neběží nic. */}}
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - protocol: UDP
+          port: 53
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: otel-collector
+      ports:
+        - protocol: TCP
+          port: 4317
+    {{- /* Univerzální závislost z §1.2 — introspekci volá každá služba
+           kromě identity-service samotné. */}}
+    {{- if ne (include "of-service.name" .) "identity-service" }}
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: identity-service
+      ports:
+        - protocol: TCP
+          port: 9081
+        - protocol: TCP
+          port: 8081
+    {{- end }}
+    {{- if .Values.service.schema }}
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: data
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: postgres
+      ports:
+        - protocol: TCP
+          port: 5432
+    {{- end }}
+    {{- if .Values.kafka.consumerGroup }}
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: data
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: kafka
+      ports:
+        - protocol: TCP
+          port: 9092
+    {{- end }}
+    {{- range .Values.outbound }}
+    {{- $target := index $catalogue . }}
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: {{ . }}
+      ports:
+        - protocol: TCP
+          port: {{ $target.http }}
+        {{- if $target.grpc }}
+        - protocol: TCP
+          port: {{ $target.grpc }}
+        {{- end }}
+    {{- end }}
+{{- end }}

@@ -1,0 +1,99 @@
+// Payload degli eventi del topic of.billing.v1 (12 partizioni, 90 giorni). Due soli eventi, ma il
+// secondo è strutturale: `billing.invoice.settled` è l'unica via per cui customs-service viene a
+// sapere che il dazio è stato pagato, ed è l'unica cosa che valorizza
+// customs.customs_declarations.duty_paid.
+//
+// L'arco inverso non esiste e non deve esistere: billing-service chiama customs-service in
+// sincrono, customs-service risponde con l'evento. Una pull request che aggiunge un client HTTP
+// verso billing-service dentro customs-service viene rifiutata a vista (§1.2).
+
+syntax = "proto3";
+
+package billing.v1;
+
+import "common/v1/money.proto";
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/orbitalfreight/contracts/gen/go/billing/v1;billingv1";
+option java_package = "com.orbitalfreight.contracts.billing.v1";
+option java_multiple_files = true;
+option ruby_package = "OrbitalFreight::Contracts::Billing::V1";
+
+// Rispecchia il CHECK su billing.invoices.status.
+enum InvoiceStatus {
+  INVOICE_STATUS_UNSPECIFIED = 0;
+  INVOICE_STATUS_DRAFT = 1;
+  INVOICE_STATUS_ISSUED = 2;
+  INVOICE_STATUS_PART_PAID = 3;
+  INVOICE_STATUS_SETTLED = 4;
+
+  // Impostato consumando reconciliation.discrepancy.opened; il motivo finisce in
+  // billing.invoices.hold_reason. billing-service non richiama mai reconciliation-service.
+  INVOICE_STATUS_ON_HOLD = 5;
+
+  INVOICE_STATUS_VOID = 6;
+  INVOICE_STATUS_WRITTEN_OFF = 7;
+}
+
+// Rispecchia il CHECK su billing.invoice_lines.charge_code.
+enum ChargeCode {
+  CHARGE_CODE_UNSPECIFIED = 0;
+  CHARGE_CODE_LINEHAUL = 1;
+  CHARGE_CODE_FUEL_SURCHARGE = 2;
+  CHARGE_CODE_DEMURRAGE = 3;
+  CHARGE_CODE_DETENTION = 4;
+  CHARGE_CODE_REEFER_POWER = 5;
+  CHARGE_CODE_CUSTOMS_CLEARANCE = 6;
+  CHARGE_CODE_DUTY_DISBURSEMENT = 7;
+  CHARGE_CODE_HAZMAT_HANDLING = 8;
+  CHARGE_CODE_WAITING_TIME = 9;
+}
+
+// event_name: billing.invoice.issued — produttore billing-service.
+// Consumatori: notification-service, partner-portal-api, reconciliation-service,
+// analytics-pipeline, audit-ledger.
+message InvoiceIssued {
+  string invoice_id = 1;
+  string tenant_id = 2;
+  string shipment_id = 3;
+
+  // Formato da OF_BILLING_INVOICE_NUMBER_FORMAT, per esempio 'OF-ACME-2026-000318'. Senza salti
+  // per tenant e per anno: un buco nella numerazione è un rilievo fiscale, non un dettaglio.
+  string invoice_number = 4;
+
+  // Le quattro grandezze condividono la stessa valuta, congelata all'emissione insieme al cambio
+  // preso da OF_BILLING_FX_RATE_SOURCE.
+  common.v1.Money subtotal = 5;
+  common.v1.Money duty = 6;
+  common.v1.Money tax = 7;
+  common.v1.Money total = 8;
+
+  // Data di scadenza, YYYY-MM-DD, calcolata con OF_BILLING_DEFAULT_PAYMENT_TERMS_DAYS.
+  string due_on = 9;
+
+  // doc_<ULID> del PDF prodotto e depositato su document-service con kind `rendered_invoice`.
+  string rendered_document_id = 10;
+
+  google.protobuf.Timestamp issued_at = 11;
+}
+
+// event_name: billing.invoice.settled — produttore billing-service.
+// Consumatori: customs-service, reconciliation-service, notification-service, analytics-pipeline,
+// audit-ledger.
+message InvoiceSettled {
+  string invoice_id = 1;
+  string tenant_id = 2;
+  string shipment_id = 3;
+
+  // dcl_<ULID> della dichiarazione il cui dazio è stato disborsato su questa fattura. È il campo
+  // per cui customs-service consuma l'evento: senza, non saprebbe quale riga di
+  // customs.customs_declarations segnare come pagata.
+  string declaration_id = 4;
+
+  common.v1.Money total = 5;
+
+  google.protobuf.Timestamp settled_at = 6;
+
+  // pay_<ULID> del pagamento che ha portato il saldo a zero.
+  string final_payment_id = 7;
+}

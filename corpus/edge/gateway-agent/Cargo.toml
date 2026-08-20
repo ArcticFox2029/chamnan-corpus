@@ -1,0 +1,47 @@
+# Der eigentliche Daemon: nimmt Sensorframes der Container-Knoten entgegen, bündelt sie zu
+# Batches und schiebt sie an telemetry-ingest. Alles, was hier an Abhängigkeiten steht, muss
+# ohne Netzwerkzugang bauen — Depots werden per USB-Stick aktualisiert.
+
+[package]
+name = "of-gateway-agent"
+description = "ORBITALFREIGHT depot gateway agent"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+build = "build.rs"
+
+[[bin]]
+name = "of-gateway-agentd"
+path = "src/main.rs"
+
+[dependencies]
+tokio.workspace = true
+tokio-util.workspace = true
+tonic.workspace = true
+futures-util.workspace = true
+prost.workspace = true
+reqwest.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+serde_yaml.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+ed25519-dalek.workspace = true
+jsonwebtoken.workspace = true
+ulid.workspace = true
+rand.workspace = true
+libc.workspace = true
+
+[build-dependencies]
+tonic-build = "0.11"
+
+[features]
+default = ["grpc-stream"]
+# Depots mit stabiler Standleitung benutzen telemetry.v1.TelemetryIngest/StreamReadings;
+# alles hinter einem Mobilfunk-Router fällt auf POST /v1/ingest/batch zurück.
+grpc-stream = []
+# Nur für den Werkstatt-Modus: signiert Batches nicht, läuft ausschließlich mit
+# OF_ENVIRONMENT=local, weil OF_TELEMETRY_SIGNATURE_REQUIRED sonst true ist.
+unsigned-batches = []

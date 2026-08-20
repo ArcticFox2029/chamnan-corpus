@@ -1,0 +1,554 @@
+# Superficie REST di identity-service (Go 1.22, porta 8081). È la radice del grafo di §1.1: emette
+# token e non chiama nessun altro servizio in sincrono. Tutto ciò che gli altri devono sapere di
+# lui passa da qui oppure dai due eventi su `of.identity.v1`.
+#
+# La superficie gRPC — `identity.v1.TokenIntrospection/Introspect` e `BatchIntrospect`, quella che
+# fa davvero volume — è descritta in proto/identity/v1/identity.proto, non qui.
+
+openapi: 3.1.0
+
+info:
+  title: identity-service
+  version: 4.2.0
+  description: |
+    Emette e ispeziona token; possiede tenant, utenti, la gerarchia di unità organizzative, i ruoli
+    e le credenziali API. Lo schema `identity` è replicato in ogni regione ma scritto soltanto in
+    `eu-central`: una PATCH su un'unità organizzativa servita altrove viene inoltrata, non eseguita
+    in locale.
+  contact:
+    name: Team Identity
+    url: https://wiki.orbitalfreight.internal/teams/identity
+
+servers:
+  - url: http://identity-service.orbitalfreight.svc.cluster.local:8081
+    description: In-cluster.
+
+tags:
+  - name: auth
+    description: Emissione, rotazione e revoca dei token.
+  - name: users
+    description: Utenti e ruoli effettivi.
+  - name: org
+    description: Gerarchia delle unità organizzative.
+  - name: credentials
+    description: Credenziali macchina per servizi e partner.
+  - name: operations
+
+security:
+  - bearerAuth: []
+
+paths:
+
+  /v1/auth/token:
+    post:
+      operationId: issueToken
+      tags: [auth]
+      summary: Scambia credenziali per una coppia access/refresh
+      description: |
+        Due flussi in un solo endpoint. `password` richiede il secondo fattore quando l'utente ha
+        `mfa_enrolled_at` valorizzato; `client_credentials` autentica una riga di
+        `identity.api_credentials` per prefisso e segreto e non apre alcuna sessione — le
+        credenziali macchina non compaiono in `identity.sessions`.
+
+        In caso di successo viene scritta una riga di outbox che diventerà `identity.session.opened`
+        per il solo flusso `password`.
+      security: []
+      parameters:
+        - $ref: './_shared/components.yaml#/components/parameters/TraceHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              oneOf:
+                - $ref: '#/components/schemas/PasswordGrant'
+                - $ref: '#/components/schemas/ClientCredentialsGrant'
+              discriminator:
+                propertyName: grant_type
+            examples:
+              password:
+                summary: Utente con secondo fattore
+                value:
+                  grant_type: password
+                  tenant_id: tnt_01J7A0000000000000000000AA
+                  email: dispatcher@hamburg.example
+                  password: '••••••••'
+                  mfa_code: '418923'
+              clientCredentials:
+                summary: Servizio o partner
+                value:
+                  grant_type: client_credentials
+                  key_prefix: ofk_2f9a1c
+                  client_secret: '••••••••••••'
+      responses:
+        '200':
+          description: Coppia di token emessa.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TokenPair' }
+              examples:
+                emessa:
+                  value:
+                    access_token: eyJhbGciOiJSUzI1NiIsImtpZCI6ImswOSJ9...
+                    refresh_token: rft_9f2b71c4e0a84d3f
+                    token_type: Bearer
+                    expires_in: 900
+                    session_id: ses_01J8ZK5F2C4H8Q1WERTY0PLMNB
+                    home_region_code: eu-central
+        '400': { $ref: './_shared/components.yaml#/components/responses/BadRequest' }
+        '401':
+          description: |
+            Credenziali errate, secondo fattore mancante o utente in stato `locked`. Il corpo non
+            distingue i tre casi.
+          content:
+            application/json:
+              schema: { $ref: './_shared/components.yaml#/components/schemas/Error' }
+        '429': { $ref: './_shared/components.yaml#/components/responses/TooManyRequests' }
+
+  /v1/auth/token/refresh:
+    post:
+      operationId: refreshToken
+      tags: [auth]
+      summary: Ruota il refresh token
+      description: |
+        Ogni rotazione emette un refresh nuovo e invalida quello presentato. Se arriva un refresh
+        già consumato, l'intera famiglia `refresh_family_id` viene revocata con motivo
+        `rotation_reuse` — non solo il token riusato: il riuso significa che qualcuno ha una copia,
+        e non sappiamo quale delle due parti sia quella legittima.
+      security: []
+      parameters:
+        - $ref: './_shared/components.yaml#/components/parameters/TraceHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [refresh_token]
+              properties:
+                refresh_token: { type: string }
+      responses:
+        '200':
+          description: Nuova coppia emessa.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TokenPair' }
+        '401':
+          description: Token sconosciuto, scaduto, o già consumato (famiglia revocata).
+          content:
+            application/json:
+              schema: { $ref: './_shared/components.yaml#/components/schemas/Error' }
+              examples:
+                riuso:
+                  value:
+                    error:
+                      code: refresh_token_reuse_detected
+                      http_status: 401
+                      message: 'refresh family ses_fam_01J8ZK revoked after reuse'
+                      trace_id: 9f1c2d3e4a5b60718293a4b5c6d7e8f9
+                      retryable: false
+
+  /v1/auth/token/revoke:
+    post:
+      operationId: revokeToken
+      tags: [auth]
+      summary: Revoca una sessione o un'intera famiglia
+      parameters:
+        - $ref: './_shared/components.yaml#/components/parameters/TenantHeader'
+        - $ref: './_shared/components.yaml#/components/parameters/IdempotencyHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                session_id: { $ref: './_shared/components.yaml#/components/schemas/Ulid' }
+                refresh_family_id: { type: string }
+                reason:
+                  type: string
+                  enum: [logout, rotation_reuse, admin, password_change, mfa_reset]
+              anyOf:
+                - required: [session_id]
+                - required: [refresh_family_id]
+      responses:
+        '204':
+          description: Revocata. Idempotente su una sessione già revocata.
+        '404': { $ref: './_shared/components.yaml#/components/responses/NotFound' }
+
+  /v1/users/{user_id}:
+    get:
+      operationId: getUser
+      tags: [users]
+      summary: Legge un utente
+      parameters:
+        - $ref: './_shared/components.yaml#/components/parameters/TenantHeader'
+        - name: user_id
+          in: path
+          required: true
+          schema: { $ref: './_shared/components.yaml#/components/schemas/Ulid' }
+      responses:
+        '200':
+          description: Utente.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/User' }
+              examples:
+                utente:
+                  value:
+                    user_id: usr_01J7B3K9WQ2ERTYUIOPASDFGHJ
+                    tenant_id: tnt_01J7A0000000000000000000AA
+                    primary_org_unit_id: org_01J7A1HAMBURGDESK00000000
+                    email: dispatcher@hamburg.example
+                    display_name: Greta Voss
+                    locale: de-DE
+                    status: active
+                    mfa_enrolled_at: '2025-11-04T08:12:00Z'
+                    last_login_at: '2026-03-14T06:44:21Z'
+        '404': { $ref: './_shared/components.yaml#/components/responses/NotFound' }
+
+  /v1/users/{user_id}/effective-roles:
+    get:
+      operationId: getEffectiveRoles
+      tags: [users]
+      summary: Concessioni appiattite lungo tutta la gerarchia
+      description: |
+        Restituisce le concessioni dirette e quelle ereditate da ogni antenato in
+        `identity.org_units`. Esiste perché nessun altro servizio ha il diritto di leggere lo
+        schema `identity` (§7 regola 2), e senza questo endpoint dovrebbe risalire l'albero da sé.
+
+        Il campo `materialised_path` di ciascuna riga permette al chiamante di rispondere a
+        «questa unità sta sotto quella» con un confronto di prefisso.
+      parameters:
+        - $ref: './_shared/components.yaml#/components/parameters/TenantHeader'
+        - name: user_id
+          in: path
+          required: true
+          schema: { $ref: './_shared/components.yaml#/components/schemas/Ulid' }
+        - name: include_expired
+          in: query
+          schema: { type: boolean, default: false }
+          description: Include le concessioni con `expires_at` nel passato. Serve solo alle verifiche di conformità.
+      responses:
+        '200':
+          description: Ruoli effettivi.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: '#/components/schemas/EffectiveRole' }
+              examples:
+                due_unita:
+                  summary: Spedizioniere ad Amburgo, osservatore a Rotterdam
+                  value:
+                    items:
+                      - role_id: rol_01J7A0DISPATCHER000000000A
+                        code: dispatcher
+                        scope_level: org_unit
+                        org_unit_id: org_01J7A1HAMBURGDESK00000000
+                        materialised_path: /org_root/org_emea/org_de/org_hamburg
+                        is_system: true
+                        expires_at: null
+                      - role_id: rol_01J7A0OBSERVER0000000000B
+                        code: observer
+                        scope_level: org_unit
+                        org_unit_id: org_01J7A1ROTTERDAMDESK000000
+                        materialised_path: /org_root/org_emea/org_nl/org_rotterdam
+                        is_system: true
+                        expires_at: '2026-06-30T23:59:59Z'
+
+  /v1/tenants/{tenant_id}/org-units:
+    post:
+      operationId: createOrgUnit
+      tags: [org]
+      summary: Crea un'unità organizzativa
+      description: |
+        Ricalcola `materialised_path` e `depth` con un trigger BEFORE. La profondità massima è 12,
+        e il valore è rispecchiato da `OF_IDENTITY_MAX_ORG_DEPTH`: superarla fallisce con 422 prima
+        che il vincolo del database intervenga, così l'errore è leggibile.
+      parameters:
+        - $ref: './_shared/components.yaml#/components/parameters/TenantHeader'
+        - $ref: './_shared/components.yaml#/components/parameters/IdempotencyHeader'
+        - name: tenant_id
+          in: path
+          required: true
+          schema: { $ref: './_shared/components.yaml#/components/schemas/TenantId' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name: { type: string, maxLength: 200 }
+                parent_org_unit_id:
+                  $ref: './_shared/components.yaml#/components/schemas/Ulid'
+                cost_centre: { type: string }
+      responses:
+        '201':
+          description: Creata.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/OrgUnit' }
+        '409':
+          description: Esiste già una radice non archiviata per questo tenant.
+          content:
+            application/json:
+              schema: { $ref: './_shared/components.yaml#/components/schemas/Error' }
+        '422': { $ref: './_shared/components.yaml#/components/responses/UnprocessableEntity' }
+
+  /v1/tenants/{tenant_id}/org-units/{org_unit_id}:
+    patch:
+      operationId: updateOrgUnit
+      tags: [org]
+      summary: Rinomina o riappende un'unità
+      description: |
+        Un riappendimento riscrive `materialised_path` di tutto il sottoalbero in una sola
+        transazione. Su un'organizzazione grande sono decine di migliaia di righe: l'operazione è
+        deliberatamente lenta e serializzata per tenant, perché due riappendimenti concorrenti
+        producevano percorsi incoerenti che nessuna lettura successiva sapeva riparare.
+      parameters:
+        - $ref: './_shared/components.yaml#/components/parameters/TenantHeader'
+        - $ref: './_shared/components.yaml#/components/parameters/IdempotencyHeader'
+        - name: tenant_id
+          in: path
+          required: true
+          schema: { $ref: './_shared/components.yaml#/components/schemas/TenantId' }
+        - name: org_unit_id
+          in: path
+          required: true
+          schema: { $ref: './_shared/components.yaml#/components/schemas/Ulid' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name: { type: string }
+                parent_org_unit_id:
+                  $ref: './_shared/components.yaml#/components/schemas/Ulid'
+                cost_centre: { type: string }
+                archived: { type: boolean }
+      responses:
+        '200':
+          description: Aggiornata.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/OrgUnit' }
+        '409':
+          description: Il nuovo genitore è un discendente dell'unità, oppure coincide con l'unità stessa.
+          content:
+            application/json:
+              schema: { $ref: './_shared/components.yaml#/components/schemas/Error' }
+
+  /v1/credentials:
+    post:
+      operationId: createCredential
+      tags: [credentials]
+      summary: Conia una credenziale API
+      description: |
+        Il segreto compare **una sola volta**, in questa risposta. In `identity.api_credentials`
+        finisce soltanto il suo hash argon2id, con i parametri di costo da
+        `OF_IDENTITY_ARGON2_MEMORY_KIB`; non esiste alcun endpoint che lo restituisca di nuovo, e
+        perderlo significa revocare e riconiare.
+      parameters:
+        - $ref: './_shared/components.yaml#/components/parameters/TenantHeader'
+        - $ref: './_shared/components.yaml#/components/parameters/IdempotencyHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [label, scopes]
+              properties:
+                label: { type: string, examples: ['broker Rotterdam — filing'] }
+                scopes:
+                  type: array
+                  items: { type: string }
+                  examples: [['customs:read', 'customs:file', 'documents:write']]
+      responses:
+        '201':
+          description: Coniata.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [credential_id, key_prefix, secret]
+                properties:
+                  credential_id: { $ref: './_shared/components.yaml#/components/schemas/Ulid' }
+                  key_prefix:
+                    type: string
+                    minLength: 12
+                    maxLength: 12
+                    description: Mostrato nella console; è la maniglia di ricerca e la chiave del limite di frequenza del portale partner.
+                  secret:
+                    type: string
+                    description: Non recuperabile dopo questa risposta.
+                  scopes: { type: array, items: { type: string } }
+                  created_at: { $ref: './_shared/components.yaml#/components/schemas/Timestamp' }
+
+  /v1/credentials/{credential_id}:
+    delete:
+      operationId: revokeCredential
+      tags: [credentials]
+      summary: Revoca una credenziale
+      description: |
+        Pubblica `identity.credential.revoked`. I consumatori — partner-portal-api,
+        telemetry-ingest, audit-ledger — devono sfrattare dalla propria cache di introspezione la
+        voce relativa a `key_prefix` entro cinque secondi: fino ad allora la credenziale continua a
+        funzionare, ed è precisamente la finestra che conta.
+      parameters:
+        - $ref: './_shared/components.yaml#/components/parameters/TenantHeader'
+        - $ref: './_shared/components.yaml#/components/parameters/IdempotencyHeader'
+        - name: credential_id
+          in: path
+          required: true
+          schema: { $ref: './_shared/components.yaml#/components/schemas/Ulid' }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                reason:
+                  type: string
+                  examples: ['compromised']
+      responses:
+        '204':
+          description: Revocata. Idempotente.
+        '404': { $ref: './_shared/components.yaml#/components/responses/NotFound' }
+
+  /.well-known/jwks.json:
+    get:
+      operationId: jwks
+      tags: [auth]
+      summary: Chiavi pubbliche per la verifica offline
+      description: |
+        Le chiavi RS256 correnti e quella precedente durante la rotazione. È ciò che rende
+        sopportabile un guasto di identity-service: i chiamanti la tengono in cache e verificano da
+        soli per `OF_IDENTITY_JWKS_GRACE_SECONDS` secondi. Passata la finestra rifiutano tutto,
+        perché una firma valida non dice nulla su una sessione revocata nel frattempo.
+      security: []
+      responses:
+        '200':
+          description: Insieme di chiavi JWK.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [keys]
+                properties:
+                  keys:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        kty: { type: string, examples: ['RSA'] }
+                        kid: { type: string }
+                        use: { type: string, examples: ['sig'] }
+                        alg: { type: string, examples: ['RS256'] }
+                        n: { type: string }
+                        e: { type: string, examples: ['AQAB'] }
+
+  /healthz:
+    $ref: './_shared/universal-paths.yaml#/paths/~1healthz'
+  /readyz:
+    $ref: './_shared/universal-paths.yaml#/paths/~1readyz'
+  /metrics:
+    $ref: './_shared/universal-paths.yaml#/paths/~1metrics'
+  /version:
+    $ref: './_shared/universal-paths.yaml#/paths/~1version'
+
+components:
+  securitySchemes:
+    bearerAuth:
+      $ref: './_shared/components.yaml#/components/securitySchemes/bearerAuth'
+
+  schemas:
+    PasswordGrant:
+      type: object
+      required: [grant_type, tenant_id, email, password]
+      properties:
+        grant_type: { type: string, const: password }
+        tenant_id: { $ref: './_shared/components.yaml#/components/schemas/TenantId' }
+        email:
+          type: string
+          format: email
+          description: |
+            Unica per tenant, non globalmente: gli spedizionieri doganali hanno legittimamente un
+            conto presso più committenti con lo stesso indirizzo.
+        password: { type: string, format: password }
+        mfa_code:
+          type: string
+          description: Obbligatorio quando l'utente ha `mfa_enrolled_at` valorizzato.
+
+    ClientCredentialsGrant:
+      type: object
+      required: [grant_type, key_prefix, client_secret]
+      properties:
+        grant_type: { type: string, const: client_credentials }
+        key_prefix: { type: string, minLength: 12, maxLength: 12 }
+        client_secret: { type: string, format: password }
+
+    TokenPair:
+      type: object
+      required: [access_token, token_type, expires_in]
+      properties:
+        access_token: { type: string }
+        refresh_token:
+          type: string
+          description: Assente per `client_credentials`, che non apre sessione.
+        token_type: { type: string, const: Bearer }
+        expires_in:
+          type: integer
+          description: Secondi. Copia di `OF_IDENTITY_ACCESS_TOKEN_TTL_SECONDS`, oggi 900.
+        session_id: { $ref: './_shared/components.yaml#/components/schemas/Ulid' }
+        home_region_code: { $ref: './_shared/components.yaml#/components/schemas/RegionCode' }
+
+    User:
+      type: object
+      properties:
+        user_id: { $ref: './_shared/components.yaml#/components/schemas/Ulid' }
+        tenant_id: { $ref: './_shared/components.yaml#/components/schemas/TenantId' }
+        primary_org_unit_id: { $ref: './_shared/components.yaml#/components/schemas/Ulid' }
+        email: { type: string, format: email }
+        display_name: { type: string }
+        locale: { type: string, default: en-GB }
+        status: { type: string, enum: [invited, active, locked, disabled] }
+        mfa_enrolled_at: { $ref: './_shared/components.yaml#/components/schemas/Timestamp' }
+        last_login_at: { $ref: './_shared/components.yaml#/components/schemas/Timestamp' }
+
+    OrgUnit:
+      type: object
+      properties:
+        org_unit_id: { $ref: './_shared/components.yaml#/components/schemas/Ulid' }
+        tenant_id: { $ref: './_shared/components.yaml#/components/schemas/TenantId' }
+        parent_org_unit_id: { $ref: './_shared/components.yaml#/components/schemas/Ulid' }
+        name: { type: string }
+        materialised_path:
+          type: string
+          description: Denormalizzato di proposito, così che «tutte le unità sotto org_01H…» sia una LIKE su indice invece di una CTE ricorsiva sul percorso caldo dell'autorizzazione.
+          examples: ['/org_root/org_emea/org_de']
+        depth: { type: integer, minimum: 0, maximum: 12 }
+        cost_centre: { type: string }
+        archived_at: { $ref: './_shared/components.yaml#/components/schemas/Timestamp' }
+
+    EffectiveRole:
+      type: object
+      properties:
+        role_id: { $ref: './_shared/components.yaml#/components/schemas/Ulid' }
+        code: { type: string, examples: ['dispatcher', 'customs_broker', 'auditor'] }
+        scope_level: { type: string, enum: [tenant, org_unit, shipment] }
+        org_unit_id: { $ref: './_shared/components.yaml#/components/schemas/Ulid' }
+        materialised_path: { type: string }
+        is_system:
+          type: boolean
+          description: I ruoli di sistema non sono modificabili dal tenant.
+        expires_at: { $ref: './_shared/components.yaml#/components/schemas/Timestamp' }

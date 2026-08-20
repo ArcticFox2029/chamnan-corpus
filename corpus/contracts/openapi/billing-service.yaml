@@ -1,0 +1,410 @@
+# Superficie REST di billing-service (Ruby 3.3, Rails 7 API, porta 8088). Trasforma spedizioni,
+# dazio accertato e accessori in fatture, e registra i pagamenti.
+#
+# È il servizio con più archi in entrata e in uscita del grafo: chiama identity-service,
+# customs-service, fleet-service e document-service, e consuma sei eventi diversi. Due di quei
+# consumi sono strutturali — `customs.declaration.cleared` per il dazio definitivo e
+# `reconciliation.discrepancy.opened` per il blocco — e in nessuno dei due casi risponde con una
+# chiamata sincrona al produttore.
+
+openapi: 3.1.0
+
+info:
+  title: billing-service
+  version: 4.2.0
+  description: |
+    Possiede lo schema `billing`. Il vincolo `invoice_total_is_consistent` impone
+    `total_minor = subtotal_minor + duty_minor + tax_minor` a livello di tabella: non esiste stato
+    in cui i quattro numeri non tornino, nemmeno per un istante dentro una transazione.
+
+    La numerazione è senza salti per tenant e per anno secondo
+    `OF_BILLING_INVOICE_NUMBER_FORMAT`, e viene assegnata soltanto all'emissione: una bozza
+    annullata non consuma un numero.
+
+servers:
+  - url: http://billing-service.orbitalfreight.svc.cluster.local:8088
+
+tags:
+  - name: invoices
+  - name: payments
+  - name: operations
+
+security:
+  - bearerAuth: []
+
+paths:
+
+  /v1/invoices:
+    post:
+      operationId: createInvoice
+      tags: [invoices]
+      summary: Apre una fattura in bozza per una spedizione
+      description: |
+        Non emette e non assegna alcun numero. L'emissione aspetta la prova di consegna, che arriva
+        come `shipment.scanned` con `scan_type = proof_of_delivery`: è l'unico tipo di scansione a
+        cui questo servizio reagisce.
+      parameters:
+        - $ref: './_shared/components.yaml#/components/parameters/TenantHeader'
+        - $ref: './_shared/components.yaml#/components/parameters/IdempotencyHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [shipment_id, currency]
+              properties:
+                shipment_id: { $ref: './_shared/components.yaml#/components/schemas/Ulid' }
+                currency: { $ref: './_shared/components.yaml#/components/schemas/CurrencyCode' }
+                due_on: { $ref: './_shared/components.yaml#/components/schemas/LocalDate' }
+      responses:
+        '201':
+          description: Bozza creata.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Invoice' }
+
+  /v1/invoices/{invoice_id}/lines:
+    post:
+      operationId: addInvoiceLine
+      tags: [invoices]
+      summary: Aggiunge una riga di addebito
+      description: |
+        `source_kind` e `source_id` dicono da quale fatto nasce la riga. È una provenienza
+        deliberatamente non referenziale: le sorgenti vivono in quattro schemi di quattro servizi
+        diversi — una tratta di `routing`, un allarme di `telemetry`, una dichiarazione di
+        `customs`, un assegnamento di `fleet` — e nessuna chiave esterna le potrebbe coprire tutte.
+      parameters:
+        - $ref: './_shared/components.yaml#/components/parameters/TenantHeader'
+        - $ref: './_shared/components.yaml#/components/parameters/IdempotencyHeader'
+        - name: invoice_id
+          in: path
+          required: true
+          schema: { $ref: './_shared/components.yaml#/components/schemas/Ulid' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [charge_code, description, unit_price_minor]
+              properties:
+                charge_code: { $ref: '#/components/schemas/ChargeCode' }
+                description: { type: string }
+                quantity: { type: string, default: '1' }
+                unit_price_minor: { $ref: './_shared/components.yaml#/components/schemas/MinorAmount' }
+                source_kind:
+                  type: string
+                  enum: [leg, alert, declaration, assignment, manual]
+                source_id: { $ref: './_shared/components.yaml#/components/schemas/Ulid' }
+            examples:
+              corrente_reefer:
+                summary: Riga nata da un allarme di escursione termica
+                value:
+                  charge_code: reefer_power
+                  description: 'reefer power supply, 3 days at Sofia rail terminal'
+                  quantity: '3'
+                  unit_price_minor: 4500
+                  source_kind: alert
+                  source_id: alr_01J8ZM2TEMPHIGH0000000001
+      responses:
+        '200':
+          description: Riga aggiunta, totali ricalcolati.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Invoice' }
+        '409':
+          description: La fattura non è più in bozza.
+          content:
+            application/json:
+              schema: { $ref: './_shared/components.yaml#/components/schemas/Error' }
+
+  /v1/invoices/{invoice_id}/issue:
+    post:
+      operationId: issueInvoice
+      tags: [invoices]
+      summary: Emette la fattura
+      description: |
+        Assegna `invoice_number`, congela il cambio preso da `OF_BILLING_FX_RATE_SOURCE`, produce
+        il PDF e lo deposita su document-service con `kind = rendered_invoice`, poi pubblica
+        `billing.invoice.issued`.
+
+        Se lo stesso PDF esiste già per lo stesso proprietario — succede quando anche
+        customs-service ha allegato la stessa fattura commerciale — document-service riconosce
+        l'impronta e restituisce il `doc_` esistente invece di memorizzare il blob due volte.
+      parameters:
+        - $ref: './_shared/components.yaml#/components/parameters/TenantHeader'
+        - $ref: './_shared/components.yaml#/components/parameters/TraceHeader'
+        - $ref: './_shared/components.yaml#/components/parameters/IdempotencyHeader'
+        - name: invoice_id
+          in: path
+          required: true
+          schema: { $ref: './_shared/components.yaml#/components/schemas/Ulid' }
+      responses:
+        '200':
+          description: Emessa.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Invoice' }
+              examples:
+                emessa:
+                  value:
+                    invoice_id: inv_01J8ZQ1INVOICE00000000001
+                    tenant_id: tnt_01J7A0000000000000000000AA
+                    shipment_id: shp_01J8ZK4T9QW3RM7XN2VB6HD5PC
+                    invoice_number: OF-ACME-2026-000318
+                    currency: EUR
+                    subtotal_minor: 384000
+                    duty_minor: 1417500
+                    tax_minor: 4693500
+                    total_minor: 6495000
+                    status: issued
+                    issued_at: '2026-04-27T08:00:11Z'
+                    due_on: '2026-05-27'
+                    rendered_document_id: doc_01J8ZQ1RENDERED0000000001
+        '409':
+          description: Già emessa, oppure senza righe.
+          content:
+            application/json:
+              schema: { $ref: './_shared/components.yaml#/components/schemas/Error' }
+        '422':
+          description: La spedizione non ha ancora una scansione `proof_of_delivery`.
+          content:
+            application/json:
+              schema: { $ref: './_shared/components.yaml#/components/schemas/Error' }
+
+  /v1/invoices/{invoice_id}/payments:
+    post:
+      operationId: recordPayment
+      tags: [payments]
+      summary: Registra un pagamento
+      description: |
+        Quando il saldo raggiunge lo zero la fattura passa a `settled` e viene pubblicato
+        `billing.invoice.settled` — l'unico modo in cui customs-service viene a sapere che il dazio
+        è stato pagato, e l'unica cosa che valorizza `customs.customs_declarations.duty_paid`.
+
+        La coppia `(method, external_ref)` è unica: reimportare due volte lo stesso file di
+        estratto conto non produce due pagamenti.
+      parameters:
+        - $ref: './_shared/components.yaml#/components/parameters/TenantHeader'
+        - $ref: './_shared/components.yaml#/components/parameters/TraceHeader'
+        - $ref: './_shared/components.yaml#/components/parameters/IdempotencyHeader'
+        - name: invoice_id
+          in: path
+          required: true
+          schema: { $ref: './_shared/components.yaml#/components/schemas/Ulid' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [method, amount_minor, currency, received_at]
+              properties:
+                method: { type: string, enum: [sepa_dd, swift, card, credit_note, cash] }
+                amount_minor:
+                  allOf:
+                    - $ref: './_shared/components.yaml#/components/schemas/MinorAmount'
+                  description: Strettamente positivo. Uno storno è una riga separata, con `reversed_at`.
+                currency: { $ref: './_shared/components.yaml#/components/schemas/CurrencyCode' }
+                received_at: { $ref: './_shared/components.yaml#/components/schemas/Timestamp' }
+                external_ref: { type: string }
+      responses:
+        '201':
+          description: Pagamento registrato.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Invoice' }
+        '409':
+          description: |
+            `(method, external_ref)` già presente — la reimportazione è già stata assorbita — oppure
+            la fattura è `on_hold` per una discrepanza aperta.
+          content:
+            application/json:
+              schema: { $ref: './_shared/components.yaml#/components/schemas/Error' }
+              examples:
+                bloccata:
+                  value:
+                    error:
+                      code: invoice_on_hold
+                      http_status: 409
+                      message: 'invoice inv_01J8ZQ1 is on hold: duty_mismatch opened by rec_01J8ZR0'
+                      trace_id: 5c6b7a8990a1b2c3d4e5f60718293a4b
+                      retryable: false
+
+  /v1/invoices/{invoice_id}/void:
+    post:
+      operationId: voidInvoice
+      tags: [invoices]
+      summary: Annulla una fattura emessa
+      description: |
+        Richiede una nota di credito già caricata su document-service. Non cancella nulla: una
+        fattura annullata resta a registro con stato `void`, e l'annullamento è a sua volta una
+        voce di `platform.audit_ledger_entries` (§7 regola 6).
+      parameters:
+        - $ref: './_shared/components.yaml#/components/parameters/TenantHeader'
+        - $ref: './_shared/components.yaml#/components/parameters/IdempotencyHeader'
+        - name: invoice_id
+          in: path
+          required: true
+          schema: { $ref: './_shared/components.yaml#/components/schemas/Ulid' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [credit_note_document_id, reason]
+              properties:
+                credit_note_document_id: { $ref: './_shared/components.yaml#/components/schemas/Ulid' }
+                reason: { type: string }
+      responses:
+        '200':
+          description: Annullata.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Invoice' }
+        '422':
+          description: Documento di nota di credito assente o di tipo sbagliato.
+          content:
+            application/json:
+              schema: { $ref: './_shared/components.yaml#/components/schemas/Error' }
+
+  /v1/invoices/{invoice_id}:
+    get:
+      operationId: getInvoice
+      tags: [invoices]
+      summary: Legge una fattura
+      parameters:
+        - $ref: './_shared/components.yaml#/components/parameters/TenantHeader'
+        - name: invoice_id
+          in: path
+          required: true
+          schema: { $ref: './_shared/components.yaml#/components/schemas/Ulid' }
+      responses:
+        '200':
+          description: Fattura.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Invoice' }
+        '404': { $ref: './_shared/components.yaml#/components/responses/NotFound' }
+
+  /v1/tenants/{tenant_id}/invoices:
+    get:
+      operationId: listTenantInvoices
+      tags: [invoices]
+      summary: Fatture di un tenant
+      description: |
+        Senza filtri usa l'indice parziale `invoices_unsettled_idx`, che copre soltanto `issued`,
+        `part_paid` e `on_hold`. Chiedere esplicitamente `settled` su un tenant grande è una
+        scansione, e va accompagnato da `due_before`.
+      parameters:
+        - $ref: './_shared/components.yaml#/components/parameters/TenantHeader'
+        - $ref: './_shared/components.yaml#/components/parameters/LimitParam'
+        - $ref: './_shared/components.yaml#/components/parameters/CursorParam'
+        - name: tenant_id
+          in: path
+          required: true
+          schema: { $ref: './_shared/components.yaml#/components/schemas/TenantId' }
+        - name: status
+          in: query
+          schema: { $ref: '#/components/schemas/InvoiceStatus' }
+        - name: due_before
+          in: query
+          schema: { $ref: './_shared/components.yaml#/components/schemas/LocalDate' }
+      responses:
+        '200':
+          description: Pagina di fatture.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: '#/components/schemas/Invoice' }
+                  next_cursor: { type: [string, 'null'] }
+
+  /healthz:
+    $ref: './_shared/universal-paths.yaml#/paths/~1healthz'
+  /readyz:
+    $ref: './_shared/universal-paths.yaml#/paths/~1readyz'
+  /metrics:
+    $ref: './_shared/universal-paths.yaml#/paths/~1metrics'
+  /version:
+    $ref: './_shared/universal-paths.yaml#/paths/~1version'
+
+components:
+  securitySchemes:
+    bearerAuth:
+      $ref: './_shared/components.yaml#/components/securitySchemes/bearerAuth'
+
+  schemas:
+    InvoiceStatus:
+      type: string
+      enum: [draft, issued, part_paid, settled, on_hold, void, written_off]
+
+    ChargeCode:
+      type: string
+      enum:
+        - linehaul
+        - fuel_surcharge
+        - demurrage
+        - detention
+        - reefer_power
+        - customs_clearance
+        - duty_disbursement
+        - hazmat_handling
+        - waiting_time
+
+    Invoice:
+      type: object
+      properties:
+        invoice_id: { $ref: './_shared/components.yaml#/components/schemas/Ulid' }
+        tenant_id: { $ref: './_shared/components.yaml#/components/schemas/TenantId' }
+        shipment_id: { $ref: './_shared/components.yaml#/components/schemas/Ulid' }
+        invoice_number:
+          type: [string, 'null']
+          description: Nullo finché la fattura non è emessa. Senza salti per tenant e anno.
+        currency: { $ref: './_shared/components.yaml#/components/schemas/CurrencyCode' }
+        subtotal_minor: { $ref: './_shared/components.yaml#/components/schemas/MinorAmount' }
+        duty_minor:
+          allOf:
+            - $ref: './_shared/components.yaml#/components/schemas/MinorAmount'
+          description: Proviene da customs-service, mai calcolato qui.
+        tax_minor: { $ref: './_shared/components.yaml#/components/schemas/MinorAmount' }
+        total_minor: { $ref: './_shared/components.yaml#/components/schemas/MinorAmount' }
+        status: { $ref: '#/components/schemas/InvoiceStatus' }
+        hold_reason:
+          type: [string, 'null']
+          description: Scritto dal consumo di `reconciliation.discrepancy.opened`, a partire dal suo `kind`.
+        issued_at: { $ref: './_shared/components.yaml#/components/schemas/Timestamp' }
+        due_on: { $ref: './_shared/components.yaml#/components/schemas/LocalDate' }
+        settled_at: { $ref: './_shared/components.yaml#/components/schemas/Timestamp' }
+        rendered_document_id: { $ref: './_shared/components.yaml#/components/schemas/Ulid' }
+        lines:
+          type: array
+          items:
+            type: object
+            properties:
+              invoice_line_id: { $ref: './_shared/components.yaml#/components/schemas/Ulid' }
+              seq_no: { type: integer }
+              charge_code: { $ref: '#/components/schemas/ChargeCode' }
+              description: { type: string }
+              quantity: { type: string }
+              unit_price_minor: { $ref: './_shared/components.yaml#/components/schemas/MinorAmount' }
+              amount_minor: { $ref: './_shared/components.yaml#/components/schemas/MinorAmount' }
+              source_kind: { type: [string, 'null'] }
+              source_id: { type: [string, 'null'] }
+        payments:
+          type: array
+          items:
+            type: object
+            properties:
+              payment_id: { $ref: './_shared/components.yaml#/components/schemas/Ulid' }
+              method: { type: string, enum: [sepa_dd, swift, card, credit_note, cash] }
+              amount_minor: { $ref: './_shared/components.yaml#/components/schemas/MinorAmount' }
+              currency: { $ref: './_shared/components.yaml#/components/schemas/CurrencyCode' }
+              received_at: { $ref: './_shared/components.yaml#/components/schemas/Timestamp' }
+              external_ref: { type: [string, 'null'] }
+              reversed_at: { $ref: './_shared/components.yaml#/components/schemas/Timestamp' }

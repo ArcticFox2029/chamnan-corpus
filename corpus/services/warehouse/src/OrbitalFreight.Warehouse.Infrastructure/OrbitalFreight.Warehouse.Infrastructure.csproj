@@ -1,0 +1,51 @@
+<!--
+  Warstwa infrastruktury: EF Core nad schematem warehouse, klienci HTTP i gRPC do container-registry,
+  geo-service, document-service, audit-ledger i analytics-pipeline oraz konsumenci Kafki. Tutaj
+  mieszka wszystko, co rozmawia ze światem — domena nie zna żadnej z tych bibliotek.
+-->
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <RootNamespace>OrbitalFreight.Warehouse.Infrastructure</RootNamespace>
+    <AssemblyName>OrbitalFreight.Warehouse.Infrastructure</AssemblyName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\OrbitalFreight.Warehouse.Domain\OrbitalFreight.Warehouse.Domain.csproj" />
+
+    <!--
+      Konsumenci zdarzeń i zadania okresowe wołają przypadki użycia wprost, dlatego infrastruktura
+      zależy od aplikacji, a nie na odwrót. Odwrócenie tej strzałki wymagałoby zestawu interfejsów
+      wejściowych, których nikt poza jednym wołającym by nie potrzebował — ADR-0035 w docs/.
+    -->
+    <ProjectReference Include="..\OrbitalFreight.Warehouse.Application\OrbitalFreight.Warehouse.Application.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.EntityFrameworkCore" Version="8.0.6" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Relational" Version="8.0.6" />
+    <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="8.0.4" />
+
+    <!-- Klient Kafki dla konsumentów z §4 i dla przekaźnika skrzynki nadawczej z §0.7. -->
+    <PackageReference Include="Confluent.Kafka" Version="2.4.0" />
+
+    <!-- gRPC: geo.v1.GeoService i audit.v1.LedgerService. Reszta zależności idzie po HTTP. -->
+    <PackageReference Include="Grpc.Net.Client" Version="2.63.0" />
+    <PackageReference Include="Google.Protobuf" Version="3.27.1" />
+
+    <PackageReference Include="Microsoft.Extensions.Hosting.Abstractions" Version="8.0.0" />
+    <PackageReference Include="Microsoft.Extensions.Http" Version="8.0.0" />
+    <PackageReference Include="Microsoft.Extensions.Options.DataAnnotations" Version="8.0.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!--
+      Kontrakty protobuf są wspólne dla całej platformy i leżą w libs/. Generat trafia do obj/,
+      nigdy do repozytorium — pliki spod **/gen/ nosiłyby własny nagłówek generatora (§6.4).
+    -->
+    <Protobuf Include="..\..\..\..\libs\proto\geo\v1\geo.proto" GrpcServices="Client" />
+    <Protobuf Include="..\..\..\..\libs\proto\audit\v1\ledger.proto" GrpcServices="Client" />
+    <Protobuf Include="..\..\..\..\libs\proto\identity\v1\introspection.proto" GrpcServices="Client" />
+  </ItemGroup>
+
+</Project>

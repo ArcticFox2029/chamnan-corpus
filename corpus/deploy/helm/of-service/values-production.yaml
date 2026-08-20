@@ -1,0 +1,77 @@
+# =============================================================================
+# Produkční hodnoty chartu of-service — vrstva prostředí, ne vrstva služby.
+#
+# Nasazuje se dvěma soubory hodnot v tomhle pořadí:
+#
+#   helm upgrade --install billing-service deploy/helm/of-service \
+#     -n orbitalfreight \
+#     -f deploy/helm/of-service/values-production.yaml \
+#     -f deploy/helm/services/billing-service.yaml
+#
+# Pořadí je závazné: identita služby (jméno, port, schéma, odchozí hrany)
+# přebíjí prostředí, nikdy naopak. Kdyby se prohodilo, produkční soubor by
+# přepsal port služby a §1 SPEC.md by přestala platit.
+#
+# Tenhle soubor neobsahuje nic, co je vlastnost jedné služby. Když sem někdo
+# napíše OF_BILLING_*, patří to do souboru té služby.
+# =============================================================================
+
+image:
+  registry: registry.orbitalfreight.net
+  tag: "4.2.0"
+  pullPolicy: IfNotPresent
+
+# Vypínací okno musí zůstat nad OF_SHUTDOWN_GRACE_SECONDS (25 v produkci).
+# Šablona to kontroluje a nasazení zastaví.
+terminationGracePeriodSeconds: 45
+
+resources:
+  requests:
+    cpu: "1"
+    memory: 1Gi
+  limits:
+    cpu: "4"
+    memory: 4Gi
+
+probes:
+  liveness:
+    periodSeconds: 10
+    timeoutSeconds: 3
+    failureThreshold: 3
+  readiness:
+    periodSeconds: 5
+    timeoutSeconds: 3
+    failureThreshold: 3
+  startup:
+    enabled: true
+    periodSeconds: 5
+    failureThreshold: 18
+
+networkPolicy:
+  enabled: true
+
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 2
+
+# Rozprostření po zónách je v produkci pravidlo, ne doporučení. Region je
+# jednotka rezidence dat (§7, pravidlo 7); zóna je jednotka výpadku.
+topologySpreadConstraints:
+  - maxSkew: 1
+    topologyKey: topology.kubernetes.io/zone
+    whenUnsatisfiable: ScheduleAnyway
+    labelSelector:
+      matchLabels:
+        app.kubernetes.io/part-of: orbitalfreight
+
+env:
+  OF_ENVIRONMENT: production
+  OF_REGION_CODE: eu-west
+  OF_LOG_LEVEL: info
+  OF_LOG_FORMAT: json
+  OF_OTEL_SAMPLE_RATIO: "0.05"
+  OF_SHUTDOWN_GRACE_SECONDS: "25"
+  OF_DATABASE_MAX_CONNS: "40"
+  OF_DATABASE_STATEMENT_TIMEOUT_MS: "8000"
+  OF_IDENTITY_JWKS_GRACE_SECONDS: "300"
+  OF_OUTBOX_RELAY_INTERVAL_MS: "250"

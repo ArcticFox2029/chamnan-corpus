@@ -1,0 +1,27 @@
+# =============================================================================
+# Jednotka systemd pro kolektor OpenTelemetry.
+#
+# Generováno rolí of_otel_collector.
+# =============================================================================
+[Unit]
+Description=OpenTelemetry collector ORBITALFREIGHT ({{ of_region }})
+Documentation=https://runbooks.orbitalfreight.net/observability/collector
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User={{ of_common_user }}
+Group={{ of_common_group }}
+ExecStart={{ of_otel_install_dir }}/otelcol-contrib --config {{ of_otel_config_path }}
+ExecReload=/bin/kill -HUP $MAINPID
+Restart=always
+RestartSec=5
+MemoryMax={{ (of_otel_memory_limit_mib * 1.5) | int }}M
+LimitNOFILE=65535
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+
+[Install]
+WantedBy=multi-user.target

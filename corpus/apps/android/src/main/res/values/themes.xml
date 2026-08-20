@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    ऐप की एकमात्र थीम। यह दो दुनियाओं को जोड़ती है: पुरानी Java स्क्रीनें View
+    व्यवस्था पर चलती हैं और नई स्क्रीन Compose पर, पर दोनों एक ही रंग और एक ही
+    स्थिति-पट्टी दिखनी चाहिए — कर्मचारी को यह पता नहीं होता (और होना भी नहीं
+    चाहिए) कि वह किस पीढ़ी की स्क्रीन पर खड़ा है।
+
+    रंग गोदाम की रोशनी के लिए चुने गए हैं, ब्रांड के लिए नहीं: गहरी नीली पृष्ठभूमि
+    पर सफ़ेद पाठ धूप में लगे शेड के नीचे भी पढ़ा जाता है, और चेतावनी का नारंगी
+    telemetry.alert.raised वाली सूचनाओं के लिए आरक्षित है — कहीं और उसका प्रयोग
+    नहीं होता, ताकि नारंगी दिखते ही अर्थ एक ही रहे।
+-->
+<resources xmlns:tools="http://schemas.android.com/tools">
+
+    <style name="Theme.OrbitalFreight.Warehouse" parent="Theme.AppCompat.DayNight.NoActionBar">
+        <item name="colorPrimary">@color/of_navy</item>
+        <item name="colorPrimaryDark">@color/of_navy_dark</item>
+        <item name="colorAccent">@color/of_amber</item>
+        <item name="android:statusBarColor">@color/of_navy_dark</item>
+        <item name="android:windowBackground">@color/of_surface</item>
+        <!-- स्क्रीन हमेशा जागी रहती है जब तक ऐप सामने है: लदान के बीच उपकरण का
+             सो जाना स्कैन की लय तोड़ देता है और कर्मचारी उसे दोबारा जगाने में
+             दस्ताने उतारता है। -->
+        <item name="android:keepScreenOn">true</item>
+        <item name="android:textColorPrimary" tools:targetApi="21">@color/of_on_surface</item>
+    </style>
+
+    <color name="of_navy">#0E2A47</color>
+    <color name="of_navy_dark">#081B2E</color>
+    <color name="of_amber">#F2A03D</color>
+    <color name="of_surface">#FAFAF7</color>
+    <color name="of_on_surface">#101418</color>
+</resources>

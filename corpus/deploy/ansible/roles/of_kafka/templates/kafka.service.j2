@@ -1,0 +1,33 @@
+# =============================================================================
+# Jednotka systemd pro broker Kafky.
+#
+# TimeoutStopSec je štědrý schválně: řízené vypnutí brokeru přesouvá vedení
+# oddílů na ostatní repliky a teprve pak končí. Zabitý broker to nestihne a
+# producenti — tedy relaye z platform.outbox_messages ve všech čtrnácti
+# službách — pak čekají na volbu nového vedoucího.
+#
+# Generováno rolí of_kafka.
+# =============================================================================
+[Unit]
+Description=Apache Kafka broker {{ of_kafka_broker_id }} ({{ of_region }})
+Documentation=https://runbooks.orbitalfreight.net/kafka
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User={{ of_common_user }}
+Group={{ of_common_group }}
+Environment=KAFKA_HEAP_OPTS={{ of_kafka_heap_opts }}
+Environment=LOG_DIR={{ of_kafka_log_dir }}
+Environment=KAFKA_JMX_OPTS=-Dcom.sun.management.jmxremote=true -Dcom.sun.management.jmxremote.port=9999 -Dcom.sun.management.jmxremote.authenticate=false -Dcom.sun.management.jmxremote.ssl=false
+ExecStart={{ of_kafka_install_dir }}/bin/kafka-server-start.sh {{ of_kafka_install_dir }}/config/kraft/server.properties
+ExecStop={{ of_kafka_install_dir }}/bin/kafka-server-stop.sh
+Restart=on-failure
+RestartSec=15
+TimeoutStopSec=300
+LimitNOFILE=131072
+OOMScoreAdjust=-500
+
+[Install]
+WantedBy=multi-user.target

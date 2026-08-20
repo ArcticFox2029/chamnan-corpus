@@ -1,0 +1,64 @@
+# =============================================================================
+# Produkční overlay pro region eu-west.
+#
+# Jeden overlay = jeden region = jeden cluster. Regionů je v produkci víc a
+# každý má vlastní adresář odvozený z tohohle; liší se v OF_REGION_CODE,
+# v bucketu dokumentů a v tom, které regiony smí telemetry-ingest přijímat.
+# Slučovat je do jednoho overlaye s podmínkami nejde — rezidence dat (§7,
+# pravidlo 7) je vlastnost nasazení, ne konfigurace za běhu.
+#
+# Co se tu přepisuje proti base a proč:
+#   * počty replik — base drží konzervativní minimum,
+#   * vzorkování trace na 5 %, protože plný objem by zaplnil backend,
+#   * hodnoty specifické pro region.
+#
+# Co se tu nepřepisuje: nic z §5, co má být stejné všude. Když se produkce
+# odchýlí od stagingu ve věci, která není regionální, testuje staging něco
+# jiného, než co běží zákazníkům.
+# =============================================================================
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: orbitalfreight
+
+resources:
+  - ../../base
+
+commonLabels:
+  orbitalfreight.net/environment: production
+  orbitalfreight.net/region: eu-west
+
+configMapGenerator:
+  - name: of-common-config
+    behavior: merge
+    literals:
+      - OF_ENVIRONMENT=production
+      - OF_REGION_CODE=eu-west
+      - OF_LOG_LEVEL=info
+      - OF_OTEL_SAMPLE_RATIO=0.05
+      - OF_IDENTITY_JWKS_GRACE_SECONDS=300
+
+# Generátor přidává hash do jména ConfigMapy, takže změna hodnoty vyvolá
+# rolling restart podů, které ji čtou. To je chtěné — služby čtou prostředí
+# jenom při startu a bez restartu by běžely dál se starou hodnotou.
+generatorOptions:
+  disableNameSuffixHash: false
+
+patches:
+  - path: patch-production.yaml
+
+replicas:
+  - { name: identity-service, count: 6 }
+  - { name: geo-service, count: 8 }
+  - { name: container-registry, count: 8 }
+  - { name: telemetry-ingest, count: 12 }
+  - { name: routing-service, count: 6 }
+  - { name: fleet-service, count: 5 }
+  - { name: customs-service, count: 4 }
+  - { name: billing-service, count: 4 }
+  - { name: document-service, count: 4 }
+  - { name: notification-service, count: 4 }
+  - { name: partner-portal-api, count: 4 }
+  - { name: analytics-pipeline, count: 3 }
+  - { name: audit-ledger, count: 3 }
+  - { name: reconciliation-service, count: 2 }

@@ -1,0 +1,251 @@
+# Superficie REST di notification-service (Elixir 1.16 su Phoenix, porta 8090). Distribuisce gli
+# eventi verso le persone su e-mail, SMS, push e webhook di partner, rispettando le preferenze per
+# utente e le finestre di silenzio.
+#
+# Chiama identity-service e document-service, e nient'altro. È il consumatore più vorace della
+# piattaforma — undici dei diciotto eventi di §4 finiscono qui — e l'unico che considera il non
+# inviare un esito legittimo e non un fallimento.
+
+openapi: 3.1.0
+
+info:
+  title: notification-service
+  version: 4.2.0
+  description: |
+    Possiede `platform.notifications` e `platform.notification_preferences`. L'unicità
+    `(source_event_id, channel, recipient_user_id)` è ciò che rende innocua la riconsegna
+    at-least-once: lo stesso evento consegnato due volte da Kafka produce una sola notifica.
+
+    Dopo `OF_NOTIFY_MAX_ATTEMPTS` tentativi falliti — otto, come la regola DLQ di §4.19 — la
+    notifica passa a `failed` e viene pubblicato `notification.delivery.failed`.
+
+servers:
+  - url: http://notification-service.orbitalfreight.svc.cluster.local:8090
+
+tags: [{ name: dispatch }, { name: preferences }, { name: audit }, { name: operations }]
+
+security:
+  - bearerAuth: []
+
+paths:
+
+  /v1/notifications/dispatch:
+    post:
+      operationId: dispatchNotification
+      tags: [dispatch]
+      summary: Invio diretto
+      description: |
+        Usato dagli operatori e dalla console per mandare qualcosa che nessun evento avrebbe
+        generato. Rispetta comunque le preferenze e le ore di silenzio: un invio diretto fuori
+        finestra diventa `suppressed`, non un'eccezione alla regola.
+
+        `source_event_id` è obbligatorio anche qui — per un invio manuale si passa l'`evt_…`
+        dell'evento che ha motivato la decisione — perché è la chiave che rende i ritentativi
+        idempotenti.
+      parameters:
+        - $ref: './_shared/components.yaml#/components/parameters/TenantHeader'
+        - $ref: './_shared/components.yaml#/components/parameters/IdempotencyHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [channel, template_code, source_event_id, payload]
+              properties:
+                recipient_user_id:
+                  $ref: './_shared/components.yaml#/components/schemas/Ulid'
+                webhook_url:
+                  type: string
+                  format: uri
+                  description: Alternativo a `recipient_user_id` quando il destinatario è un partner.
+                channel: { $ref: '#/components/schemas/NotificationChannel' }
+                template_code:
+                  type: string
+                  examples: ['shipment_delayed', 'invoice_overdue', 'alert_raised']
+                source_event_id: { $ref: './_shared/components.yaml#/components/schemas/Ulid' }
+                payload:
+                  type: object
+                  additionalProperties: true
+      responses:
+        '202':
+          description: Accodata, oppure soppressa dalle preferenze.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Notification' }
+              examples:
+                soppressa:
+                  value:
+                    notification_id: ntf_01J8ZT1NOTIF00000000000001
+                    tenant_id: tnt_01J7A0000000000000000000AA
+                    recipient_user_id: usr_01J7B3K9WQ2ERTYUIOPASDFGHJ
+                    channel: sms
+                    template_code: alert_raised
+                    source_event_id: evt_01J8ZM2ALERT00000000000001
+                    state: suppressed
+                    attempts: 0
+                    queued_at: '2026-03-14T23:41:02Z'
+                    failed_reason: quiet_hours
+        '409':
+          description: Già esistente per la stessa terna (evento, canale, destinatario).
+          content:
+            application/json:
+              schema: { $ref: './_shared/components.yaml#/components/schemas/Error' }
+
+  /v1/users/{user_id}/preferences:
+    get:
+      operationId: getPreferences
+      tags: [preferences]
+      summary: Legge le preferenze di un utente
+      parameters:
+        - $ref: './_shared/components.yaml#/components/parameters/TenantHeader'
+        - name: user_id
+          in: path
+          required: true
+          schema: { $ref: './_shared/components.yaml#/components/schemas/Ulid' }
+      responses:
+        '200':
+          description: Preferenze.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items: { type: array, items: { $ref: '#/components/schemas/Preference' } }
+
+    put:
+      operationId: replacePreferences
+      tags: [preferences]
+      summary: Sostituisce l'intero insieme
+      description: |
+        Sostituzione, non fusione: ciò che non compare nel corpo viene rimosso. La riga con
+        `event_name = '*'` fa da valore predefinito e viene applicata solo quando non esiste una
+        riga specifica per quell'evento.
+      parameters:
+        - $ref: './_shared/components.yaml#/components/parameters/TenantHeader'
+        - $ref: './_shared/components.yaml#/components/parameters/IdempotencyHeader'
+        - name: user_id
+          in: path
+          required: true
+          schema: { $ref: './_shared/components.yaml#/components/schemas/Ulid' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [items]
+              properties:
+                items: { type: array, items: { $ref: '#/components/schemas/Preference' } }
+            examples:
+              silenzio_notturno:
+                value:
+                  items:
+                    - channel: email
+                      event_name: '*'
+                      enabled: true
+                      timezone: Europe/Hamburg
+                    - channel: sms
+                      event_name: telemetry.alert.raised
+                      enabled: true
+                      quiet_hours_start: '22:00'
+                      quiet_hours_end: '06:00'
+                      timezone: Europe/Hamburg
+                    - channel: push
+                      event_name: billing.invoice.issued
+                      enabled: false
+                      timezone: Europe/Hamburg
+      responses:
+        '200':
+          description: Sostituite.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items: { type: array, items: { $ref: '#/components/schemas/Preference' } }
+
+  /v1/notifications:
+    get:
+      operationId: listNotifications
+      tags: [audit]
+      summary: Schermata di controllo delle consegne
+      parameters:
+        - $ref: './_shared/components.yaml#/components/parameters/TenantHeader'
+        - $ref: './_shared/components.yaml#/components/parameters/LimitParam'
+        - $ref: './_shared/components.yaml#/components/parameters/CursorParam'
+        - name: state
+          in: query
+          schema: { type: string, enum: [queued, sending, sent, failed, suppressed] }
+        - name: channel
+          in: query
+          schema: { $ref: '#/components/schemas/NotificationChannel' }
+        - name: since
+          in: query
+          schema: { $ref: './_shared/components.yaml#/components/schemas/Timestamp' }
+      responses:
+        '200':
+          description: Pagina di notifiche.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items: { type: array, items: { $ref: '#/components/schemas/Notification' } }
+                  next_cursor: { type: [string, 'null'] }
+
+  /healthz:
+    $ref: './_shared/universal-paths.yaml#/paths/~1healthz'
+  /readyz:
+    $ref: './_shared/universal-paths.yaml#/paths/~1readyz'
+  /metrics:
+    $ref: './_shared/universal-paths.yaml#/paths/~1metrics'
+  /version:
+    $ref: './_shared/universal-paths.yaml#/paths/~1version'
+
+components:
+  securitySchemes:
+    bearerAuth:
+      $ref: './_shared/components.yaml#/components/securitySchemes/bearerAuth'
+
+  schemas:
+    NotificationChannel:
+      type: string
+      enum: [email, sms, push, webhook, console]
+
+    Notification:
+      type: object
+      properties:
+        notification_id: { $ref: './_shared/components.yaml#/components/schemas/Ulid' }
+        tenant_id: { $ref: './_shared/components.yaml#/components/schemas/TenantId' }
+        recipient_user_id: { type: [string, 'null'] }
+        webhook_url: { type: [string, 'null'] }
+        channel: { $ref: '#/components/schemas/NotificationChannel' }
+        template_code: { type: string }
+        source_event_id:
+          allOf:
+            - $ref: './_shared/components.yaml#/components/schemas/Ulid'
+          description: Rende idempotenti i ritentativi e collega la consegna al fatto che l'ha provocata.
+        state: { type: string, enum: [queued, sending, sent, failed, suppressed] }
+        attempts: { type: integer }
+        queued_at: { $ref: './_shared/components.yaml#/components/schemas/Timestamp' }
+        sent_at: { $ref: './_shared/components.yaml#/components/schemas/Timestamp' }
+        failed_reason:
+          type: [string, 'null']
+          examples: ['smtp_5xx', 'invalid_number', 'apns_unregistered', 'webhook_timeout', 'quiet_hours']
+
+    Preference:
+      type: object
+      required: [channel, event_name, enabled]
+      properties:
+        channel: { $ref: '#/components/schemas/NotificationChannel' }
+        event_name:
+          type: string
+          description: Uno dei nomi di §4, oppure `*` come valore predefinito.
+        enabled: { type: boolean }
+        quiet_hours_start: { type: [string, 'null'], examples: ['22:00'] }
+        quiet_hours_end: { type: [string, 'null'], examples: ['06:00'] }
+        timezone:
+          type: string
+          default: UTC
+          description: Fuso IANA. Le ore di silenzio si valutano in questo fuso, non in quello del server.

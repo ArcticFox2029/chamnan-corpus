@@ -1,0 +1,66 @@
+# =============================================================================
+# Co se nesmí dostat do build kontextu.
+#
+# Kontext je celý repozitář — všechny Dockerfily kopírují z kořene, protože
+# každá služba potřebuje libs/ se sdílenými protobuf definicemi. Bez tohohle
+# souboru by se do démona posílalo několik gigabajtů včetně .git a build
+# artefaktů, a hlavně by se do vrstev mohly dostat věci, které tam nemají co
+# dělat.
+#
+# Tři skupiny jsou tu z bezpečnostních důvodů, ne kvůli velikosti:
+#   * secrets-and-config/ a .env — živé klíče,
+#   * deploy/ansible/inventories/*/group_vars/vault_* — šifrované, ale v
+#     obrazu by neměly ležet vůbec,
+#   * *.pem, *.p12, *.key — pojistka proti nedopatření.
+# =============================================================================
+
+.git/
+.gitignore
+.github/
+**/.DS_Store
+
+# Build artefakty všech čtrnácti služeb.
+**/target/
+**/build/
+**/dist/
+**/node_modules/
+**/_build/
+**/deps/
+**/.gradle/
+**/vendor/
+**/__pycache__/
+**/*.pyc
+**/.venv/
+**/venv/
+**/bin/Debug/
+**/bin/Release/
+**/obj/
+
+# Tajemství. Nikdy, za žádných okolností.
+secrets-and-config/
+**/.env
+**/.env.*
+*.pem
+*.p12
+*.pfx
+*.key
+deploy/ansible/inventories/*/group_vars/vault_*
+
+# Nasazovací materiál — do obrazu služby nepatří. Výjimka jsou conf soubory,
+# které Dockerfily vědomě kopírují; ty proto níž vracíme zpět.
+deploy/
+!deploy/docker/conf/
+
+# Dokumentace a testovací data.
+docs/
+**/*.md
+**/testdata/
+**/fixtures/
+**/coverage/
+**/.pytest_cache/
+
+# Mapové a modelové soubory. Silniční graf (OF_GEO_ROAD_GRAPH_PATH) i model
+# ETA (OF_ROUTING_ETA_MODEL_PATH) se připojují svazkem, ne pečou do obrazu.
+**/*.mmap
+**/*.bin
+**/*.parquet

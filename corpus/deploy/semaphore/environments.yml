@@ -1,0 +1,61 @@
+# =============================================================================
+# Prostředí Semaphoru — proměnné, které se předávají běhu ansible-playbook.
+#
+# Pozor na rozdíl proti §5 SPEC.md: tohle nejsou proměnné služeb. Proměnné
+# služeb (OF_*) generuje šablona of-service.env.j2 z katalogu v group_vars.
+# Tady stojí jen to, co potřebuje samotný nástroj — cesta ke konfiguraci,
+# heslo k vaultu, cíl běhu. Kdyby se sem propašovala OF_DATABASE_URL, měli
+# bychom produkční připojovací řetězec ve dvou zdrojích pravdy a jeden z nich
+# by časem zastaral.
+#
+# `secret` položky drží Semaphore šifrované; jejich hodnoty tu nejsou a nikdy
+# tu být nesmí — viz keystore.yml.
+# =============================================================================
+---
+environments:
+
+  - name: production
+    env:
+      ANSIBLE_CONFIG: deploy/ansible/ansible.cfg
+      ANSIBLE_FORCE_COLOR: "1"
+      ANSIBLE_STDOUT_CALLBACK: yaml
+      OF_ENVIRONMENT: production
+      OF_TARGET_INVENTORY: deploy/ansible/inventories/production/hosts.yml
+    extra_vars:
+      of_environment: production
+      of_release_channel: stable
+      of_verify_version_after_restart: true
+      # Rychlost rolloutu. 25 % znamená čtyři vlny přes aplikační uzly regionu;
+      # víc nedáváme, protože identity-service při restartu neobslouží
+      # introspekci a zbytek platformy visí v JWKS grace okně.
+      of_rollout_serial: "25%"
+    secrets:
+      - key: vault_production_password
+        vault_id: production
+
+  - name: staging
+    env:
+      ANSIBLE_CONFIG: deploy/ansible/ansible.cfg
+      ANSIBLE_STDOUT_CALLBACK: yaml
+      OF_ENVIRONMENT: staging
+      OF_TARGET_INVENTORY: deploy/ansible/inventories/staging/hosts.yml
+    extra_vars:
+      of_environment: staging
+      of_release_channel: beta
+      of_rollout_serial: "100%"      # dva uzly, čekat nemá na co
+      of_verify_version_after_restart: true
+    secrets:
+      - key: vault_staging_password
+        vault_id: staging
+
+  - name: ci
+    env:
+      ANSIBLE_CONFIG: deploy/ansible/ansible.cfg
+      ANSIBLE_STDOUT_CALLBACK: minimal
+      OF_ENVIRONMENT: ci
+    extra_vars:
+      of_environment: ci
+      of_service_wait_for_ready: false   # na runneru nic neposlouchá na /readyz
+      of_edge_verify_heartbeat: false
+      of_verify_version_after_restart: false
+    secrets: []

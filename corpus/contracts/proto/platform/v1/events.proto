@@ -1,0 +1,132 @@
+syntax = "proto3";
+
+package platform.v1;
+
+import "common/v1/identifiers.proto";
+import "common/v1/money.proto";
+import "platform/v1/documents.proto";
+import "google/protobuf/timestamp.proto";
+
+// Payload degli eventi del topic of.platform.v1 (24 partizioni, 30 giorni). È l'unico topic con
+// quattro produttori — document-service, notification-service, routing-service e
+// reconciliation-service — messi insieme non perché siano affini ma perché nessuno dei quattro
+// produce abbastanza volume da meritare un topic proprio.
+//
+// Chi consuma qui deve filtrare su envelope.event_name prima di deserializzare: quattro forme di
+// payload diverse arrivano sulla stessa sottoscrizione.
+
+option go_package = "github.com/orbitalfreight/contracts/gen/go/platform/v1;platformv1";
+option java_package = "com.orbitalfreight.contracts.platform.v1";
+option java_multiple_files = true;
+
+// event_name: route.replanned — produttore routing-service.
+// Consumatori: fleet-service, notification-service, container-registry, analytics-pipeline.
+//
+// fleet-service è il consumatore che agisce: rilascia via fleet.v1.FleetService/Release ogni
+// assegnamento la cui leg_id non compare più fra le tratte della nuova versione.
+message RouteReplanned {
+  string route_id = 1;
+  string shipment_id = 2;
+
+  // Versione sostituita e versione nuova. Sono monotone per spedizione; un salto significa che un
+  // evento è andato perso e il consumatore deve rileggere GET /v1/shipments/{shipment_id}/route.
+  uint32 previous_version = 3;
+  uint32 version = 4;
+
+  // Da routing.routes.strategy: 'cheapest', 'fastest', 'lowest_carbon', 'customs_optimised',
+  // 'manual'.
+  string strategy = 5;
+
+  // Perché si è ripianificato: 'traffic', 'crossing_congestion', 'vehicle_breakdown',
+  // 'customs_hold', 'operator_request'. Le ripianificazioni a raffica sono contenute da
+  // OF_ROUTING_REPLAN_COOLDOWN_SECONDS, non da questo campo.
+  string reason_code = 6;
+
+  common.v1.Distance total_distance_m = 7;
+  uint32 total_duration_s = 8;
+
+  // leg_<ULID> delle tratte cambiate fra le due versioni. Ciò che non compare qui è rimasto
+  // identico e non va toccato: è l'informazione che evita a fleet-service di rilasciare e
+  // riassegnare l'intera rotta a ogni ricalcolo.
+  repeated string legs_changed = 9;
+
+  google.protobuf.Timestamp computed_at = 10;
+}
+
+// event_name: document.uploaded — produttore document-service.
+// Consumatori: customs-service, billing-service, container-registry, audit-ledger.
+message DocumentUploaded {
+  string document_id = 1;
+  string tenant_id = 2;
+  platform.v1.DocumentOwnerType owner_type = 3;
+  string owner_id = 4;
+  platform.v1.DocumentKind kind = 5;
+  string mime_type = 6;
+  int64 byte_size = 7;
+
+  // Esadecimale minuscolo, 64 caratteri. Sul canale JSON l'impronta viaggia come stringa e non
+  // come base64: è il valore che i consumatori confrontano per riconoscere il duplicato del
+  // Diamante B, e va potuto leggere a occhio in un log.
+  string sha256 = 8;
+
+  common.v1.RegionCode region_code = 9;
+  string uploaded_by = 10;
+  google.protobuf.Timestamp uploaded_at = 11;
+}
+
+// event_name: reconciliation.discrepancy.opened — produttore reconciliation-service.
+// Consumatori: billing-service, notification-service, audit-ledger.
+//
+// billing-service mette la fattura ON_HOLD e scrive hold_reason a partire da `kind`, ma solo per
+// i tipi elencati in OF_BILLING_HOLD_ON_DISCREPANCY_KINDS. Non richiama reconciliation-service:
+// la risoluzione passa da POST /v1/discrepancies/{discrepancy_id}/resolve, che è un gesto umano.
+message ReconciliationDiscrepancyOpened {
+  string discrepancy_id = 1;
+  string run_id = 2;
+  string tenant_id = 3;
+  string shipment_id = 4;
+
+  // Possono essere vuoti: è esattamente la loro assenza a costituire la discrepanza quando
+  // `kind` vale 'missing_declaration' o 'missing_invoice'.
+  string declaration_id = 5;
+  string invoice_id = 6;
+
+  // Da analytics.reconciliation_discrepancies.kind.
+  string kind = 7;
+
+  // Ciò che il confronto a tre si aspettava e ciò che ha trovato. Nulli per le discrepanze non
+  // monetarie ('missing_declaration'); la valuta è quella della fattura, non del tenant.
+  common.v1.Money expected = 8;
+  common.v1.Money observed = 9;
+
+  google.protobuf.Timestamp opened_at = 10;
+}
+
+// event_name: notification.delivery.failed — produttore notification-service.
+// Consumatori: analytics-pipeline, audit-ledger.
+//
+// Emesso quando gli OF_NOTIFY_MAX_ATTEMPTS tentativi sono esauriti, non a ogni tentativo fallito.
+message NotificationDeliveryFailed {
+  string notification_id = 1;
+  string tenant_id = 2;
+
+  // Vuoto quando il destinatario era un webhook di partner e non una persona.
+  string recipient_user_id = 3;
+
+  platform.v1.NotificationChannel channel = 4;
+
+  // 'shipment_delayed', 'invoice_overdue', 'alert_raised', 'declaration_held'.
+  string template_code = 5;
+
+  // evt_… dell'evento che aveva chiesto la notifica. È la chiave che rende idempotenti i
+  // ritentativi e che permette di risalire dalla consegna fallita al fatto che l'ha provocata.
+  string source_event_id = 6;
+
+  uint32 attempts = 7;
+
+  // Motivo dell'ultimo tentativo: 'smtp_5xx', 'invalid_number', 'apns_unregistered',
+  // 'webhook_timeout', 'webhook_4xx'.
+  string failed_reason = 8;
+
+  google.protobuf.Timestamp failed_at = 9;
+}

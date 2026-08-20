@@ -1,0 +1,140 @@
+# =============================================================================
+# Stavba a publikace obrazů čtrnácti služeb.
+#
+# Kanonická kopie tohohle souboru leží tady, v deploy/ci/. Do .github/workflows/
+# ho zrcadlí `ops/sync-workflows.sh` při každém commitu do main — GitHub umí
+# spouštět workflow jen z .github/, ale mít nasazovací materiál rozházený mimo
+# deploy/ znamená, že se na něj při revizi zapomene.
+#
+# Matice se generuje z katalogu služeb, ne ručně. Přidání patnácté služby je
+# tím pádem jeden řádek v katalogu a nic tady.
+#
+# Co se sem NEDÁVÁ: nasazení. Runner GitHubu nemá a nedostane SSH klíče k
+# produkčním strojům ani přístup do clusteru — nasazuje Semaphore
+# (deploy/semaphore/). Tady se jenom staví a ověřuje.
+# =============================================================================
+name: build-images
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  # Dva běhy nad stejnou větví si přepisují tag `edge` v registru.
+  group: build-images-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  REGISTRY: registry.orbitalfreight.net
+  IMAGE_PREFIX: of
+  SPEC_VERSION: "4.2.0"
+
+permissions:
+  contents: read
+  id-token: write        # OIDC do registru, žádné statické heslo
+
+jobs:
+
+  matrix:
+    name: sestavit matici ze §1 SPEC.md
+    runs-on: ubuntu-24.04
+    outputs:
+      services: ${{ steps.build.outputs.services }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: build
+        name: Načíst katalog služeb
+        run: |
+          # Katalog je v deploy/ansible; je to jediné místo, kde se tabulka
+          # z §1 SPEC.md opisuje, a čte z něj i Ansible i tenhle workflow.
+          python3 ops/emit-service-matrix.py \
+            --catalogue deploy/ansible/inventories/production/group_vars/all.yml \
+            --format github >> "$GITHUB_OUTPUT"
+
+  build:
+    name: ${{ matrix.service }}
+    needs: matrix
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.matrix.outputs.services) }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0        # potřebné pro popis verze z tagu
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Přihlásit se do registru
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ secrets.OF_REGISTRY_USER }}
+          password: ${{ secrets.OF_REGISTRY_TOKEN }}
+
+      - name: Odvodit verzi
+        id: version
+        run: |
+          if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
+            echo "version=${GITHUB_REF#refs/tags/v}" >> "$GITHUB_OUTPUT"
+          else
+            echo "version=${SPEC_VERSION}-dev.${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Postavit a odeslat
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: deploy/docker/Dockerfile.${{ matrix.runtime }}
+          # SERVICE i COMPONENT: Dockerfile.go i Dockerfile.rust staví víc než
+          # jednu komponentu a rozlišují se argumentem.
+          build-args: |
+            SERVICE=${{ matrix.service }}
+            COMPONENT=${{ matrix.service }}
+            VERSION=${{ steps.version.outputs.version }}
+            BUILD_SHA=${{ github.sha }}
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}/${{ matrix.service }}:${{ steps.version.outputs.version }}
+            ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}/${{ matrix.service }}:${{ github.sha }}
+          cache-from: type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}/${{ matrix.service }}:buildcache
+          cache-to: type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}/${{ matrix.service }}:buildcache,mode=max
+          provenance: true
+          sbom: true
+
+      - name: Ověřit, že obraz neběží pod rootem
+        if: github.event_name != 'pull_request'
+        run: |
+          # Všechny manifesty mají runAsNonRoot: true a runAsUser: 1400.
+          # Obraz s jiným UID se v clusteru neprojeví chybou obrazu, ale
+          # nesrozumitelným selháním na právech k připojenému secretu.
+          UID_IN_IMAGE=$(docker run --rm --entrypoint id \
+            "${REGISTRY}/${IMAGE_PREFIX}/${{ matrix.service }}:${{ steps.version.outputs.version }}" -u)
+          if [ "${UID_IN_IMAGE}" != "1400" ]; then
+            echo "obraz ${{ matrix.service }} běží pod UID ${UID_IN_IMAGE}, očekáváno 1400" >&2
+            exit 1
+          fi
+
+      - name: Prohledat obraz na zranitelnosti
+        if: github.event_name != 'pull_request'
+        uses: aquasecurity/trivy-action@0.24.0
+        with:
+          image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}/${{ matrix.service }}:${{ steps.version.outputs.version }}
+          severity: CRITICAL,HIGH
+          # Nálezy nezastaví build — zastaví nasazení. Rozhodnutí patří
+          # člověku u Semaphoru, ne runneru ve tři ráno.
+          exit-code: "0"
+          format: sarif
+          output: trivy-${{ matrix.service }}.sarif
+
+      - uses: actions/upload-artifact@v4
+        if: github.event_name != 'pull_request'
+        with:
+          name: trivy-${{ matrix.service }}
+          path: trivy-${{ matrix.service }}.sarif
+          retention-days: 30

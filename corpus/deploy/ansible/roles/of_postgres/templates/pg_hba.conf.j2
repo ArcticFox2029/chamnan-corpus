@@ -1,0 +1,41 @@
+# =============================================================================
+# pg_hba.conf pro cluster ORBITALFREIGHT.
+#
+# Přístup se rozděluje podle toho, kdo se připojuje, ne podle databáze:
+#   * uzly aplikací — scram-sha-256 přes TLS, jedna role na schéma;
+#   * of_analytics_ro — jediná role s dosahem napříč schématy (§2 SPEC.md);
+#   * of_replication — pouze z regionálních Postgresů.
+#
+# Rezidence dat (§7 pravidlo 7) je tu vidět jako seznam sítí: uzel z latam-br
+# se nepřipojí, protože ten region jede u partnera a nemá do tohohle clusteru
+# co zapisovat.
+#
+# Generováno rolí of_postgres.
+# =============================================================================
+# TYPE  DATABASE          USER               ADDRESS           METHOD
+
+local   all               postgres                             peer
+local   all               all                                  scram-sha-256
+
+hostssl {{ of_postgres_database }} +of_service_roles  0.0.0.0/0  scram-sha-256 clientcert=verify-ca
+{% for net in of_postgres_hba_networks %}
+# {{ net.comment }}
+hostssl {{ of_postgres_database }} +of_service_roles  {{ net.cidr }}  scram-sha-256
+{% endfor %}
+
+# analytics-pipeline. Read-only role smí odkudkoli z aplikační sítě, ale
+# nikdy ne z partnerských rozsahů — partner-portal-api čte přes billing-service.
+hostssl {{ of_postgres_database }} {{ of_postgres_readonly_role }}  10.40.0.0/14  scram-sha-256
+
+{% if of_postgres_role == 'primary' %}
+{% for slot in of_postgres_replication_slots %}
+# replikační slot {{ slot.name }} ({{ slot.region }})
+hostssl replication  of_replication  10.4{{ loop.index }}.0.0/16  scram-sha-256
+{% endfor %}
+{% endif %}
+
+# Monitoring. Čte jenom pg_stat_*, žádná uživatelská data.
+hostssl {{ of_postgres_database }} of_monitoring  10.44.0.0/16  scram-sha-256
+
+host    all               all                0.0.0.0/0         reject
+host    all               all                ::/0              reject

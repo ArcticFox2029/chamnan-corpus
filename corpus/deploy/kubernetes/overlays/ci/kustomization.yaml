@@ -1,0 +1,74 @@
+# =============================================================================
+# CI overlay.
+#
+# Neexistuje proto, aby se platforma nasadila, ale aby se manifesty daly
+# vyrenderovat a proválcovat kontrolami: `kustomize build | kubeconform`,
+# `kubectl apply --dry-run=server` proti kind clusteru a ops/validate-env.py
+# nad výsledným prostředím. Sem se proto nikdy nedostane pravý secret.
+#
+# Jedna věc je tu jinak než všude jinde a stojí za vysvětlení: obrazy míří na
+# lokální registry `localhost:5000` a mají tag `ci`, protože pipeline právě
+# postavený image nahraje tam. Kdyby se braly z registry.orbitalfreight.net,
+# testoval by se poslední vydaný obraz místo toho, který přinesl commit.
+#
+# OF_REGION_CODE je eu-west, ne "ci": hodnota musí být ze zavřeného seznamu
+# §0.6 SPEC.md, jinak služba spadne při startu a test by hlásil chybu, která s
+# testovanou změnou nesouvisí.
+# =============================================================================
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: orbitalfreight
+
+resources:
+  - ../../base
+
+commonLabels:
+  orbitalfreight.net/environment: ci
+
+configMapGenerator:
+  - name: of-common-config
+    behavior: merge
+    literals:
+      - OF_ENVIRONMENT=ci
+      - OF_REGION_CODE=eu-west
+      - OF_LOG_LEVEL=debug
+      - OF_LOG_FORMAT=text
+      - OF_OTEL_SAMPLE_RATIO=1.0
+      - OF_DATABASE_MAX_CONNS=5
+      - OF_SHUTDOWN_GRACE_SECONDS=2
+
+patches:
+  - path: patch-ci.yaml
+
+replicas:
+  - { name: identity-service, count: 1 }
+  - { name: geo-service, count: 1 }
+  - { name: container-registry, count: 1 }
+  - { name: telemetry-ingest, count: 1 }
+  - { name: routing-service, count: 1 }
+  - { name: fleet-service, count: 1 }
+  - { name: customs-service, count: 1 }
+  - { name: billing-service, count: 1 }
+  - { name: document-service, count: 1 }
+  - { name: notification-service, count: 1 }
+  - { name: partner-portal-api, count: 1 }
+  - { name: analytics-pipeline, count: 1 }
+  - { name: audit-ledger, count: 1 }
+  - { name: reconciliation-service, count: 1 }
+
+images:
+  - { name: registry.orbitalfreight.net/of/identity-service, newName: "localhost:5000/of/identity-service", newTag: ci }
+  - { name: registry.orbitalfreight.net/of/fleet-service, newName: "localhost:5000/of/fleet-service", newTag: ci }
+  - { name: registry.orbitalfreight.net/of/container-registry, newName: "localhost:5000/of/container-registry", newTag: ci }
+  - { name: registry.orbitalfreight.net/of/telemetry-ingest, newName: "localhost:5000/of/telemetry-ingest", newTag: ci }
+  - { name: registry.orbitalfreight.net/of/routing-service, newName: "localhost:5000/of/routing-service", newTag: ci }
+  - { name: registry.orbitalfreight.net/of/geo-service, newName: "localhost:5000/of/geo-service", newTag: ci }
+  - { name: registry.orbitalfreight.net/of/customs-service, newName: "localhost:5000/of/customs-service", newTag: ci }
+  - { name: registry.orbitalfreight.net/of/billing-service, newName: "localhost:5000/of/billing-service", newTag: ci }
+  - { name: registry.orbitalfreight.net/of/document-service, newName: "localhost:5000/of/document-service", newTag: ci }
+  - { name: registry.orbitalfreight.net/of/notification-service, newName: "localhost:5000/of/notification-service", newTag: ci }
+  - { name: registry.orbitalfreight.net/of/partner-portal-api, newName: "localhost:5000/of/partner-portal-api", newTag: ci }
+  - { name: registry.orbitalfreight.net/of/analytics-pipeline, newName: "localhost:5000/of/analytics-pipeline", newTag: ci }
+  - { name: registry.orbitalfreight.net/of/audit-ledger, newName: "localhost:5000/of/audit-ledger", newTag: ci }
+  - { name: registry.orbitalfreight.net/of/reconciliation-service, newName: "localhost:5000/of/reconciliation-service", newTag: ci }

@@ -1,0 +1,182 @@
+# =============================================================================
+# Vstupní body zvenčí. Jsou dva a to je záměr.
+#
+#   * `orbitalfreight-api` — interní konzole a mobilní aplikace. Mountuje
+#     služby pod /v1 podle §3.
+#   * `orbitalfreight-partner` — samostatný ingress s vlastními pravidly WAF
+#     pro partner-portal-api pod /partner/v1. §3 to říká výslovně a je to
+#     jediný důvod, proč má tahle služba jiný prefix než všechny ostatní:
+#     pravidla WAF, rate limit a CORS pro partnery se nesmí míchat s
+#     interním provozem.
+#
+# Co tady schválně NENÍ vystavené ven: geo-service, audit-ledger,
+# reconciliation-service a analytics-pipeline. Sahá na ně jen konzole přes
+# interní síť; publikovat je znamená dát světu k dispozici surové geometrické
+# dotazy a auditní stopu.
+#
+# Hlavičky z §0.3 propouští proxy beze změny, s jedinou výjimkou:
+# X-OF-Trace-Id se na okraji doplní, pokud chybí. Diamant A v §1.2 na něm
+# stojí — bez něj se stejná geofence vyřeší dvakrát.
+# =============================================================================
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: orbitalfreight-api
+  namespace: orbitalfreight
+  labels:
+    app.kubernetes.io/part-of: orbitalfreight
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-body-size: 128m   # OF_DOCUMENT_MAX_UPLOAD_BYTES
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "60"
+    nginx.ingress.kubernetes.io/enable-cors: "false"
+    nginx.ingress.kubernetes.io/configuration-snippet: |
+      # W3C trace-id, 32 hex znaků. Doplňuje se jen když ho klient neposlal.
+      set $of_trace $http_x_of_trace_id;
+      if ($of_trace = "") {
+        set $of_trace $request_id;
+      }
+      proxy_set_header X-OF-Trace-Id $of_trace;
+    cert-manager.io/cluster-issuer: of-internal-ca
+spec:
+  ingressClassName: nginx-internal
+  tls:
+    - hosts: [api.orbitalfreight.net]
+      secretName: of-api-tls
+  rules:
+    - host: api.orbitalfreight.net
+      http:
+        paths:
+          - path: /v1/auth
+            pathType: Prefix
+            backend: { service: { name: identity-service, port: { number: 8081 } } }
+          - path: /v1/users
+            pathType: Prefix
+            backend: { service: { name: identity-service, port: { number: 8081 } } }
+          - path: /v1/tenants
+            pathType: Prefix
+            backend: { service: { name: identity-service, port: { number: 8081 } } }
+          - path: /v1/credentials
+            pathType: Prefix
+            backend: { service: { name: identity-service, port: { number: 8081 } } }
+          - path: /.well-known/jwks.json
+            pathType: Exact
+            backend: { service: { name: identity-service, port: { number: 8081 } } }
+          - path: /v1/shipments
+            pathType: Prefix
+            backend: { service: { name: container-registry, port: { number: 8083 } } }
+          - path: /v1/containers
+            pathType: Prefix
+            backend: { service: { name: container-registry, port: { number: 8083 } } }
+          - path: /v1/vehicles
+            pathType: Prefix
+            backend: { service: { name: fleet-service, port: { number: 8082 } } }
+          - path: /v1/carriers
+            pathType: Prefix
+            backend: { service: { name: fleet-service, port: { number: 8082 } } }
+          - path: /v1/drivers
+            pathType: Prefix
+            backend: { service: { name: fleet-service, port: { number: 8082 } } }
+          - path: /v1/assignments
+            pathType: Prefix
+            backend: { service: { name: fleet-service, port: { number: 8082 } } }
+          - path: /v1/routes
+            pathType: Prefix
+            backend: { service: { name: routing-service, port: { number: 8085 } } }
+          - path: /v1/eta
+            pathType: Prefix
+            backend: { service: { name: routing-service, port: { number: 8085 } } }
+          - path: /v1/crossings
+            pathType: Prefix
+            backend: { service: { name: routing-service, port: { number: 8085 } } }
+          - path: /v1/declarations
+            pathType: Prefix
+            backend: { service: { name: customs-service, port: { number: 8087 } } }
+          - path: /v1/tariffs
+            pathType: Prefix
+            backend: { service: { name: customs-service, port: { number: 8087 } } }
+          - path: /v1/invoices
+            pathType: Prefix
+            backend: { service: { name: billing-service, port: { number: 8088 } } }
+          - path: /v1/documents
+            pathType: Prefix
+            backend: { service: { name: document-service, port: { number: 8089 } } }
+          - path: /v1/notifications
+            pathType: Prefix
+            backend: { service: { name: notification-service, port: { number: 8090 } } }
+          - path: /v1/alerts
+            pathType: Prefix
+            backend: { service: { name: telemetry-ingest, port: { number: 8084 } } }
+          - path: /v1/gateways
+            pathType: Prefix
+            backend: { service: { name: telemetry-ingest, port: { number: 8084 } } }
+          - path: /v1/metrics
+            pathType: Prefix
+            backend: { service: { name: analytics-pipeline, port: { number: 8093 } } }
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: orbitalfreight-partner
+  namespace: orbitalfreight
+  labels:
+    app.kubernetes.io/part-of: orbitalfreight
+    orbitalfreight.net/exposure: external
+  annotations:
+    # Limit na úrovni proxy je jenom hrubá pojistka. Skutečný limit počítá
+    # partner-portal-api na `key_prefix` (OF_PARTNER_RATE_LIMIT_PER_MINUTE),
+    # protože makléřská kancelář sedí za jednou adresou.
+    nginx.ingress.kubernetes.io/limit-rps: "50"
+    nginx.ingress.kubernetes.io/limit-burst-multiplier: "3"
+    nginx.ingress.kubernetes.io/enable-modsecurity: "true"
+    nginx.ingress.kubernetes.io/enable-owasp-core-rules: "true"
+    nginx.ingress.kubernetes.io/proxy-body-size: 32m
+    nginx.ingress.kubernetes.io/cors-allow-origin: "https://portal.orbitalfreight.net,https://broker.orbitalfreight.net"
+    nginx.ingress.kubernetes.io/enable-cors: "true"
+    cert-manager.io/cluster-issuer: of-public-le
+spec:
+  ingressClassName: nginx-external
+  tls:
+    - hosts: [partners.orbitalfreight.net]
+      secretName: of-partner-tls
+  rules:
+    - host: partners.orbitalfreight.net
+      http:
+        paths:
+          - path: /partner/v1
+            pathType: Prefix
+            backend: { service: { name: partner-portal-api, port: { number: 8091 } } }
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: orbitalfreight-ingest
+  # Stejný namespace jako telemetry-ingest — Ingress nesmí odkazovat na Service
+  # v jiném jmenném prostoru. V orbitalfreight-edge běží jen provisioning bran,
+  # samotný příjem dávek zůstává tady.
+  namespace: orbitalfreight
+  labels:
+    app.kubernetes.io/part-of: orbitalfreight
+    orbitalfreight.net/exposure: external
+  annotations:
+    # Depotní brány posílají velké komprimované dávky a jedou po LTE. Delší
+    # timeouty jsou tu nutnost, ne pohodlí.
+    nginx.ingress.kubernetes.io/proxy-body-size: 64m
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "120"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "120"
+    nginx.ingress.kubernetes.io/backend-protocol: GRPC
+    cert-manager.io/cluster-issuer: of-public-le
+spec:
+  ingressClassName: nginx-external
+  tls:
+    - hosts: [ingest.orbitalfreight.net]
+      secretName: of-ingest-tls
+  rules:
+    - host: ingest.orbitalfreight.net
+      http:
+        paths:
+          - path: /v1/ingest
+            pathType: Prefix
+            backend: { service: { name: telemetry-ingest, port: { number: 8084 } } }
+          - path: /telemetry.v1.TelemetryIngest
+            pathType: Prefix
+            backend: { service: { name: telemetry-ingest, port: { number: 9084 } } }

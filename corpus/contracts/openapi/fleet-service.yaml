@@ -1,0 +1,231 @@
+# Superficie REST di fleet-service (Java 21 su Spring Boot 3, porta 8082). Le tre operazioni che
+# contano davvero — riservare, rilasciare, verificare l'idoneità — sono gRPC e stanno in
+# proto/fleet/v1/fleet.proto; qui c'è ciò che console e app leggono e le due scritture che arrivano
+# dal telefono del conducente.
+
+openapi: 3.1.0
+
+info:
+  title: fleet-service
+  version: 4.2.0
+  description: |
+    Possiede lo schema `fleet`. L'unicità di un veicolo o di un conducente nel tempo non è
+    applicata da questo codice ma dai due vincoli EXCLUDE su `fleet.vehicle_assignments`: la app
+    driver-ios e la console operatore scrivono entrambe qui, e un controllo applicativo perderebbe
+    la corsa fra le due.
+
+    Consuma `route.replanned` per rilasciare gli assegnamenti la cui tratta è sparita.
+
+servers:
+  - url: http://fleet-service.orbitalfreight.svc.cluster.local:8082
+
+tags: [{ name: vehicles }, { name: drivers }, { name: assignments }, { name: operations }]
+
+security:
+  - bearerAuth: []
+
+paths:
+
+  /v1/vehicles/{vehicle_id}:
+    get:
+      operationId: getVehicle
+      tags: [vehicles]
+      summary: Legge un veicolo
+      parameters:
+        - $ref: './_shared/components.yaml#/components/parameters/TenantHeader'
+        - name: vehicle_id
+          in: path
+          required: true
+          schema: { $ref: './_shared/components.yaml#/components/schemas/Ulid' }
+      responses:
+        '200':
+          description: Veicolo.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Vehicle' }
+        '404': { $ref: './_shared/components.yaml#/components/responses/NotFound' }
+
+  /v1/carriers/{carrier_id}/vehicles:
+    get:
+      operationId: listCarrierVehicles
+      tags: [vehicles]
+      summary: Parco veicoli di un vettore
+      parameters:
+        - $ref: './_shared/components.yaml#/components/parameters/TenantHeader'
+        - $ref: './_shared/components.yaml#/components/parameters/LimitParam'
+        - $ref: './_shared/components.yaml#/components/parameters/CursorParam'
+        - name: carrier_id
+          in: path
+          required: true
+          schema: { $ref: './_shared/components.yaml#/components/schemas/Ulid' }
+        - name: include_decommissioned
+          in: query
+          schema: { type: boolean, default: false }
+      responses:
+        '200':
+          description: Pagina di veicoli.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items: { type: array, items: { $ref: '#/components/schemas/Vehicle' } }
+                  next_cursor: { type: [string, 'null'] }
+
+  /v1/assignments:
+    get:
+      operationId: listAssignments
+      tags: [assignments]
+      summary: Cerca assegnamenti
+      description: |
+        Con `active=true` restituisce solo quelli il cui `active_period` contiene l'istante
+        corrente. È la stessa colonna generata su cui lavorano i vincoli EXCLUDE, quindi la
+        risposta non può divergere da ciò che il database considera occupato.
+      parameters:
+        - $ref: './_shared/components.yaml#/components/parameters/TenantHeader'
+        - $ref: './_shared/components.yaml#/components/parameters/LimitParam'
+        - $ref: './_shared/components.yaml#/components/parameters/CursorParam'
+        - name: shipment_id
+          in: query
+          schema: { $ref: './_shared/components.yaml#/components/schemas/Ulid' }
+        - name: vehicle_id
+          in: query
+          schema: { $ref: './_shared/components.yaml#/components/schemas/Ulid' }
+        - name: driver_id
+          in: query
+          schema: { $ref: './_shared/components.yaml#/components/schemas/Ulid' }
+        - name: active
+          in: query
+          schema: { type: boolean, default: true }
+      responses:
+        '200':
+          description: Pagina di assegnamenti.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items: { type: array, items: { $ref: '#/components/schemas/Assignment' } }
+                  next_cursor: { type: [string, 'null'] }
+
+  /v1/drivers/{driver_id}/hours-of-service:
+    post:
+      operationId: recordHoursOfService
+      tags: [drivers]
+      summary: Registra un cambio di stato di servizio
+      description: |
+        Scritta dalla app driver-ios. È append-only: correggere una voce sbagliata significa
+        aggiungerne un'altra, mai riscrivere quella precedente — la registrazione delle ore di
+        guida è un documento verso l'ispezione su strada, non uno stato applicativo.
+
+        Quale legge si applica dipende da `OF_FLEET_HOS_RULESET`.
+      parameters:
+        - $ref: './_shared/components.yaml#/components/parameters/TenantHeader'
+        - $ref: './_shared/components.yaml#/components/parameters/IdempotencyHeader'
+        - name: driver_id
+          in: path
+          required: true
+          schema: { $ref: './_shared/components.yaml#/components/schemas/Ulid' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [duty_status, occurred_at]
+              properties:
+                duty_status:
+                  type: string
+                  enum: [driving, on_duty_not_driving, rest, off_duty]
+                occurred_at: { $ref: './_shared/components.yaml#/components/schemas/Timestamp' }
+                position: { $ref: './_shared/components.yaml#/components/schemas/GeoPoint' }
+                odometer_m: { type: integer, format: int64 }
+      responses:
+        '201':
+          description: Registrato; la disponibilità residua è ricalcolata.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DriverAvailability' }
+
+  /v1/drivers/{driver_id}/availability:
+    get:
+      operationId: getDriverAvailability
+      tags: [drivers]
+      summary: Tempo di guida residuo nella finestra corrente
+      parameters:
+        - $ref: './_shared/components.yaml#/components/parameters/TenantHeader'
+        - name: driver_id
+          in: path
+          required: true
+          schema: { $ref: './_shared/components.yaml#/components/schemas/Ulid' }
+      responses:
+        '200':
+          description: Disponibilità.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DriverAvailability' }
+              examples:
+                quasi_esaurito:
+                  value:
+                    driver_id: drv_01J7B8DRIVER0000000000001
+                    ruleset: eu_561
+                    remaining_drive_seconds: 4200
+                    rest_remaining_seconds: 0
+                    licence_expires_on: '2028-09-14'
+                    adr_expires_on: '2027-02-28'
+                    carrier_insurance_expires_on: '2026-12-31'
+
+  /healthz:
+    $ref: './_shared/universal-paths.yaml#/paths/~1healthz'
+  /readyz:
+    $ref: './_shared/universal-paths.yaml#/paths/~1readyz'
+  /metrics:
+    $ref: './_shared/universal-paths.yaml#/paths/~1metrics'
+  /version:
+    $ref: './_shared/universal-paths.yaml#/paths/~1version'
+
+components:
+  securitySchemes:
+    bearerAuth:
+      $ref: './_shared/components.yaml#/components/securitySchemes/bearerAuth'
+
+  schemas:
+    Vehicle:
+      type: object
+      properties:
+        vehicle_id: { $ref: './_shared/components.yaml#/components/schemas/Ulid' }
+        carrier_id: { $ref: './_shared/components.yaml#/components/schemas/Ulid' }
+        plate: { type: string }
+        plate_country: { $ref: './_shared/components.yaml#/components/schemas/CountryCode' }
+        vehicle_class:
+          type: string
+          enum: [van, rigid, tractor, chassis, reefer_tractor, rail_wagon, barge]
+        max_payload_kg: { type: integer }
+        telematics_unit_id:
+          type: [string, 'null']
+          description: Coincide con `telemetry.device_gateways.serial` quando il veicolo porta un gateway mobile.
+        adr_certified: { type: boolean }
+        decommissioned_at: { $ref: './_shared/components.yaml#/components/schemas/Timestamp' }
+
+    Assignment:
+      type: object
+      properties:
+        assignment_id: { $ref: './_shared/components.yaml#/components/schemas/Ulid' }
+        vehicle_id: { $ref: './_shared/components.yaml#/components/schemas/Ulid' }
+        driver_id: { $ref: './_shared/components.yaml#/components/schemas/Ulid' }
+        shipment_id: { $ref: './_shared/components.yaml#/components/schemas/Ulid' }
+        leg_id: { $ref: './_shared/components.yaml#/components/schemas/Ulid' }
+        assigned_at: { $ref: './_shared/components.yaml#/components/schemas/Timestamp' }
+        released_at: { $ref: './_shared/components.yaml#/components/schemas/Timestamp' }
+        assigned_by: { type: string }
+
+    DriverAvailability:
+      type: object
+      properties:
+        driver_id: { $ref: './_shared/components.yaml#/components/schemas/Ulid' }
+        ruleset: { type: string, enum: [eu_561, us_fmcsa, none] }
+        remaining_drive_seconds: { type: integer }
+        rest_remaining_seconds: { type: integer }
+        licence_expires_on: { $ref: './_shared/components.yaml#/components/schemas/LocalDate' }
+        adr_expires_on: { $ref: './_shared/components.yaml#/components/schemas/LocalDate' }
+        carrier_insurance_expires_on: { $ref: './_shared/components.yaml#/components/schemas/LocalDate' }

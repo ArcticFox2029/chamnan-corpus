@@ -1,0 +1,61 @@
+# =============================================================================
+# Stagingový overlay.
+#
+# Staging schválně neduplikuje produkční topologii — jeden region, menší počty
+# replik, žádné rozprostření po zónách. Co ale musí zůstat shodné, je
+# konfigurace chování: prahy, formáty, limity. Když se staging odchýlí ve
+# věci, která není o velikosti, přestane testovat to, co běží zákazníkům.
+#
+# Dvě odchylky jsou vědomé a obě jsou o ladění, ne o chování:
+#   * OF_LOG_LEVEL=debug,
+#   * OF_OTEL_SAMPLE_RATIO=1.0 — na stagingu je objem trace zanedbatelný a
+#     hledat příčinu z pěti procent vzorku je zbytečné trápení.
+# =============================================================================
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: orbitalfreight
+
+resources:
+  - ../../base
+
+commonLabels:
+  orbitalfreight.net/environment: staging
+  orbitalfreight.net/region: eu-west
+
+configMapGenerator:
+  - name: of-common-config
+    behavior: merge
+    literals:
+      - OF_ENVIRONMENT=staging
+      - OF_REGION_CODE=eu-west
+      - OF_LOG_LEVEL=debug
+      - OF_OTEL_SAMPLE_RATIO=1.0
+      - OF_DATABASE_MAX_CONNS=10
+
+patches:
+  - path: patch-staging.yaml
+
+replicas:
+  - { name: identity-service, count: 2 }
+  - { name: geo-service, count: 2 }
+  - { name: container-registry, count: 2 }
+  - { name: telemetry-ingest, count: 2 }
+  - { name: routing-service, count: 2 }
+  - { name: fleet-service, count: 1 }
+  - { name: customs-service, count: 1 }
+  - { name: billing-service, count: 1 }
+  - { name: document-service, count: 1 }
+  - { name: notification-service, count: 1 }
+  - { name: partner-portal-api, count: 1 }
+  - { name: analytics-pipeline, count: 1 }
+  - { name: audit-ledger, count: 1 }
+  - { name: reconciliation-service, count: 1 }
+
+images:
+  - name: registry.orbitalfreight.net/of/identity-service
+    newTag: 4.3.0-rc.2
+  - name: registry.orbitalfreight.net/of/container-registry
+    newTag: 4.3.0-rc.2
+  - name: registry.orbitalfreight.net/of/billing-service
+    newTag: 4.3.0-rc.2

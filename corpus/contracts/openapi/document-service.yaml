@@ -1,0 +1,293 @@
+# Superficie REST di document-service (Node 20 su NestJS, porta 8089). Conserva e serve ogni
+# artefatto binario della piattaforma — polizze di carico, foto, PDF firmati — dietro URL a vita
+# breve, e non restituisce mai i byte da sé.
+#
+# Insieme a geo-service è uno dei due soli servizi foglia: chiama identity-service e nient'altro.
+# È anche il vertice del Diamante B di §1.2, e la deduplica per impronta descritta qui sotto è
+# esattamente ciò che impedisce alla stessa fattura commerciale di essere memorizzata due volte
+# quando billing-service e customs-service la allegano entrambi.
+
+openapi: 3.1.0
+
+info:
+  title: document-service
+  version: 4.2.0
+  description: |
+    Possiede `platform.documents` e `platform.document_owner_types`. L'associazione al proprietario
+    è polimorfa per costruzione — un documento pende da una spedizione, una dichiarazione, una
+    fattura, un contenitore, una scansione o un vettore, e quelle stanno in sei schemi diversi — e
+    nessuna chiave esterna la può coprire.
+
+    Per questo ogni caricamento fa due verifiche: `owner_type` deve comparire in
+    `platform.document_owner_types`, e il servizio proprietario indicato da quella riga deve
+    confermare che l'`owner_id` esista. Solo allora il caricamento viene confermato.
+
+servers:
+  - url: http://document-service.orbitalfreight.svc.cluster.local:8089
+
+tags:
+  - name: documents
+  - name: operations
+
+security:
+  - bearerAuth: []
+
+paths:
+
+  /v1/documents:
+    post:
+      operationId: uploadDocument
+      tags: [documents]
+      summary: Carica un documento
+      description: |
+        Multipart. Il tipo MIME deve comparire in `OF_DOCUMENT_ALLOWED_MIME_TYPES`, altrimenti è
+        415; la dimensione oltre `OF_DOCUMENT_MAX_UPLOAD_BYTES` è 413.
+
+        Se `(tenant_id, sha256, owner_type, owner_id)` esiste già, la risposta è 200 con il
+        documento esistente e `already_exists` vero: il blob non viene riscritto. È il caso normale
+        del Diamante B, non un errore da segnalare all'utente.
+
+        L'oggetto viene cifrato lato server con `OF_DOCUMENT_KMS_KEY_ID` e la chiave di storage è
+        prefissata per regione: un documento `latam-br` non finisce mai in un bucket europeo.
+      parameters:
+        - $ref: './_shared/components.yaml#/components/parameters/TenantHeader'
+        - $ref: './_shared/components.yaml#/components/parameters/TraceHeader'
+        - $ref: './_shared/components.yaml#/components/parameters/IdempotencyHeader'
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [owner_type, owner_id, kind, file]
+              properties:
+                owner_type: { $ref: '#/components/schemas/DocumentOwnerType' }
+                owner_id: { $ref: './_shared/components.yaml#/components/schemas/Ulid' }
+                kind: { $ref: '#/components/schemas/DocumentKind' }
+                region_code: { $ref: './_shared/components.yaml#/components/schemas/RegionCode' }
+                file: { type: string, format: binary }
+            encoding:
+              file:
+                contentType: application/pdf, image/jpeg, image/png
+      responses:
+        '201':
+          description: Caricato.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Document' }
+              examples:
+                polizza:
+                  value:
+                    document_id: doc_01J8ZS1BOL000000000000001
+                    tenant_id: tnt_01J7A0000000000000000000AA
+                    owner_type: shipment
+                    owner_id: shp_01J8ZK4T9QW3RM7XN2VB6HD5PC
+                    kind: bill_of_lading
+                    mime_type: application/pdf
+                    byte_size: 284117
+                    sha256: 9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08
+                    region_code: eu-west
+                    uploaded_by: usr_01J7B3K9WQ2ERTYUIOPASDFGHJ
+                    uploaded_at: '2026-03-14T10:02:44Z'
+                    retained_until: null
+                    already_exists: false
+        '200':
+          description: Documento già presente con la stessa impronta per lo stesso proprietario.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Document' }
+        '415':
+          description: Tipo MIME non ammesso.
+          content:
+            application/json:
+              schema: { $ref: './_shared/components.yaml#/components/schemas/Error' }
+        '422':
+          description: |
+            `owner_type` sconosciuto, oppure il servizio proprietario non conferma l'esistenza di
+            `owner_id`.
+          content:
+            application/json:
+              schema: { $ref: './_shared/components.yaml#/components/schemas/Error' }
+              examples:
+                proprietario_inesistente:
+                  value:
+                    error:
+                      code: document_owner_not_found
+                      http_status: 422
+                      message: 'container-registry does not know shipment shp_01J8ZZZZZ'
+                      trace_id: 2b3c4d5e6f708192a3b4c5d6e7f80912
+                      retryable: false
+                      fields:
+                        - path: owner_id
+                          reason: not_found
+
+    get:
+      operationId: listDocuments
+      tags: [documents]
+      summary: Elenca i documenti di un proprietario
+      parameters:
+        - $ref: './_shared/components.yaml#/components/parameters/TenantHeader'
+        - $ref: './_shared/components.yaml#/components/parameters/LimitParam'
+        - $ref: './_shared/components.yaml#/components/parameters/CursorParam'
+        - name: owner_type
+          in: query
+          required: true
+          schema: { $ref: '#/components/schemas/DocumentOwnerType' }
+        - name: owner_id
+          in: query
+          required: true
+          schema: { $ref: './_shared/components.yaml#/components/schemas/Ulid' }
+        - name: kind
+          in: query
+          schema: { $ref: '#/components/schemas/DocumentKind' }
+      responses:
+        '200':
+          description: |
+            Pagina di documenti non cancellati; l'indice `documents_owner_idx` è parziale su
+            `deleted_at IS NULL` e i cancellati non compaiono mai.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: '#/components/schemas/Document' }
+                  next_cursor: { type: [string, 'null'] }
+
+  /v1/documents/{document_id}:
+    get:
+      operationId: getDocument
+      tags: [documents]
+      summary: Metadati, mai i byte
+      parameters:
+        - $ref: './_shared/components.yaml#/components/parameters/TenantHeader'
+        - name: document_id
+          in: path
+          required: true
+          schema: { $ref: './_shared/components.yaml#/components/schemas/Ulid' }
+      responses:
+        '200':
+          description: Metadati.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Document' }
+        '404': { $ref: './_shared/components.yaml#/components/responses/NotFound' }
+
+    delete:
+      operationId: deleteDocument
+      tags: [documents]
+      summary: Cancellazione logica
+      description: |
+        Timbra `deleted_at`; il blob resta. Rifiutata finché `retained_until` è nel futuro — per i
+        documenti doganali è la data di deposito più `OF_CUSTOMS_RETENTION_YEARS`, dieci anni, e
+        nessun ruolo può scavalcarla.
+      parameters:
+        - $ref: './_shared/components.yaml#/components/parameters/TenantHeader'
+        - $ref: './_shared/components.yaml#/components/parameters/IdempotencyHeader'
+        - name: document_id
+          in: path
+          required: true
+          schema: { $ref: './_shared/components.yaml#/components/schemas/Ulid' }
+      responses:
+        '204':
+          description: Cancellato logicamente.
+        '409':
+          description: Ancora in conservazione obbligatoria.
+          content:
+            application/json:
+              schema: { $ref: './_shared/components.yaml#/components/schemas/Error' }
+              examples:
+                conservazione:
+                  value:
+                    error:
+                      code: document_under_retention
+                      http_status: 409
+                      message: 'doc_01J8ZS1 is retained until 2036-03-16'
+                      trace_id: 0f1e2d3c4b5a69788796a5b4c3d2e1f0
+                      retryable: false
+
+  /v1/documents/{document_id}/signed-url:
+    post:
+      operationId: createSignedUrl
+      tags: [documents]
+      summary: URL di scaricamento a vita breve
+      description: |
+        Valido `OF_DOCUMENT_SIGNED_URL_TTL_SECONDS` secondi, oggi 900. Il servizio non fa da proxy
+        ai byte in nessun caso: il client scarica direttamente dall'object store della regione del
+        documento, che è anche il motivo per cui un documento `latam-br` non è scaricabile da un
+        client instradato in Europa.
+      parameters:
+        - $ref: './_shared/components.yaml#/components/parameters/TenantHeader'
+        - $ref: './_shared/components.yaml#/components/parameters/IdempotencyHeader'
+        - name: document_id
+          in: path
+          required: true
+          schema: { $ref: './_shared/components.yaml#/components/schemas/Ulid' }
+      responses:
+        '201':
+          description: URL firmato.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [url, expires_at]
+                properties:
+                  url: { type: string, format: uri }
+                  expires_at: { $ref: './_shared/components.yaml#/components/schemas/Timestamp' }
+
+  /healthz:
+    $ref: './_shared/universal-paths.yaml#/paths/~1healthz'
+  /readyz:
+    $ref: './_shared/universal-paths.yaml#/paths/~1readyz'
+  /metrics:
+    $ref: './_shared/universal-paths.yaml#/paths/~1metrics'
+  /version:
+    $ref: './_shared/universal-paths.yaml#/paths/~1version'
+
+components:
+  securitySchemes:
+    bearerAuth:
+      $ref: './_shared/components.yaml#/components/securitySchemes/bearerAuth'
+
+  schemas:
+    DocumentOwnerType:
+      type: string
+      description: Vocabolario di `platform.document_owner_types`. Non è testo libero.
+      enum: [shipment, container, scan, declaration, invoice, carrier]
+
+    DocumentKind:
+      type: string
+      enum:
+        - bill_of_lading
+        - commercial_invoice
+        - packing_list
+        - certificate_of_origin
+        - proof_of_delivery
+        - damage_photo
+        - insurance_certificate
+        - customs_decision
+        - rendered_invoice
+        - credit_note
+
+    Document:
+      type: object
+      properties:
+        document_id: { $ref: './_shared/components.yaml#/components/schemas/Ulid' }
+        tenant_id: { $ref: './_shared/components.yaml#/components/schemas/TenantId' }
+        owner_type: { $ref: '#/components/schemas/DocumentOwnerType' }
+        owner_id: { $ref: './_shared/components.yaml#/components/schemas/Ulid' }
+        kind: { $ref: '#/components/schemas/DocumentKind' }
+        mime_type: { type: string }
+        byte_size: { type: integer, format: int64 }
+        sha256:
+          type: string
+          pattern: '^[0-9a-f]{64}$'
+          description: Esadecimale minuscolo. È la chiave della deduplica del Diamante B.
+        region_code: { $ref: './_shared/components.yaml#/components/schemas/RegionCode' }
+        uploaded_by: { $ref: './_shared/components.yaml#/components/schemas/Ulid' }
+        uploaded_at: { $ref: './_shared/components.yaml#/components/schemas/Timestamp' }
+        retained_until: { $ref: './_shared/components.yaml#/components/schemas/LocalDate' }
+        already_exists:
+          type: boolean
+          description: Presente solo nella risposta al caricamento; vero quando il blob esisteva già.

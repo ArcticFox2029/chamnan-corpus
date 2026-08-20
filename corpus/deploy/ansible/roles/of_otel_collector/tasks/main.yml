@@ -1,0 +1,61 @@
+# =============================================================================
+# Nasazení kolektoru OpenTelemetry na observability uzel regionu.
+#
+# Kolektor musí být nahoře dřív než aplikační služby: exportér ve službě sice
+# ztrátu spojení přežije, ale prvních pár minut po nasazení je zrovna to okno,
+# kdy trasování potřebujeme nejvíc. Proto je of_observability v site.yml
+# v samostatném playi před aplikačními uzly.
+# =============================================================================
+
+- name: Rozbalit kolektor
+  ansible.builtin.unarchive:
+    src: "https://artifacts.orbitalfreight.net/otel/otelcol-contrib_{{ of_otel_version }}_linux_amd64.tar.gz"
+    dest: "{{ of_otel_install_dir }}"
+    remote_src: true
+    owner: root
+    group: root
+    mode: "0755"
+    creates: "{{ of_otel_install_dir }}/otelcol-contrib"
+  tags: [otel]
+
+- name: Nasadit konfiguraci kolektoru
+  ansible.builtin.template:
+    src: otel-collector.yaml.j2
+    dest: "{{ of_otel_config_path }}"
+    owner: root
+    group: "{{ of_common_group }}"
+    mode: "0640"
+    validate: "{{ of_otel_install_dir }}/otelcol-contrib validate --config %s"
+  notify: Restartovat kolektor
+  tags: [otel, config]
+
+- name: Nasadit jednotku systemd
+  ansible.builtin.template:
+    src: otel-collector.service.j2
+    dest: /etc/systemd/system/otel-collector.service
+    owner: root
+    group: root
+    mode: "0644"
+  notify:
+    - Načíst systemd znovu
+    - Restartovat kolektor
+  tags: [otel]
+
+- name: Spustit kolektor
+  ansible.builtin.systemd:
+    name: otel-collector.service
+    enabled: true
+    state: started
+    daemon_reload: true
+  tags: [otel]
+
+- name: Ověřit zdravotní endpoint
+  ansible.builtin.uri:
+    url: "http://127.0.0.1:{{ of_otel_health_port }}/"
+    status_code: 200
+  register: of_otel_health
+  retries: 12
+  delay: 5
+  until: of_otel_health is succeeded
+  changed_when: false
+  tags: [otel, health]

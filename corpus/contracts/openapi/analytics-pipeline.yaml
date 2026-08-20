@@ -1,0 +1,232 @@
+# Superficie REST di analytics-pipeline (Scala 2.13 su Spark 3.5, porta 8093). Serve le due viste
+# materializzate dello schema `analytics` e permette di lanciare fuori orario un lavoro batch.
+#
+# È l'unico servizio con un ruolo di sola lettura (`of_analytics_ro`) su tutti gli schemi, ed è
+# l'unica ragione per cui il database fisico è condiviso. Quella deroga vale per la lettura e per
+# nient'altro: le scritture restano confinate allo schema `analytics`, che è derivato e si può
+# buttare e ricostruire senza perdere niente.
+
+openapi: 3.1.0
+
+info:
+  title: analytics-pipeline
+  version: 4.2.0
+  description: |
+    Possiede lo schema `analytics` e ogni vista materializzata della piattaforma.
+    `mv_lane_performance_daily` viene rinfrescata CONCURRENTLY secondo
+    `OF_ANALYTICS_MV_REFRESH_CRON` (`15 3 * * *`); l'indice unico che la accompagna esiste soltanto
+    perché REFRESH CONCURRENTLY ne pretende uno.
+
+    Ricalcola anche `geo.border_crossings.avg_dwell_minutes` ogni notte — è il solo caso in cui
+    scrive fuori dal proprio schema, ed è concordato con geo-service.
+
+servers:
+  - url: http://analytics-pipeline.orbitalfreight.svc.cluster.local:8093
+
+tags: [{ name: metrics }, { name: jobs }, { name: operations }]
+
+security:
+  - bearerAuth: []
+
+paths:
+
+  /v1/metrics/lane-performance:
+    get:
+      operationId: lanePerformance
+      tags: [metrics]
+      summary: Serve `analytics.mv_lane_performance_daily`
+      description: |
+        Due lettori: il cruscotto corsie della console in web/ e routing-service, che usa
+        `avg_transit_seconds` come stima a priori per gli ETA. Quel campo è memorizzato invece che
+        ricalcolato proprio per routing-service, che lo interroga a ogni pianificazione.
+
+        La vista contiene solo spedizioni consegnate. Chiedere la giornata odierna prima delle 03:15
+        UTC restituisce lista vuota: è il comportamento atteso, non un guasto.
+      parameters:
+        - $ref: './_shared/components.yaml#/components/parameters/TenantHeader'
+        - name: from
+          in: query
+          required: true
+          schema: { $ref: './_shared/components.yaml#/components/schemas/LocalDate' }
+        - name: to
+          in: query
+          required: true
+          schema: { $ref: './_shared/components.yaml#/components/schemas/LocalDate' }
+        - name: origin_unlocode
+          in: query
+          schema: { $ref: './_shared/components.yaml#/components/schemas/UnLocode' }
+        - name: destination_unlocode
+          in: query
+          schema: { $ref: './_shared/components.yaml#/components/schemas/UnLocode' }
+      responses:
+        '200':
+          description: Righe di corsia.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: '#/components/schemas/LanePerformanceRow' }
+                  refreshed_at:
+                    allOf:
+                      - $ref: './_shared/components.yaml#/components/schemas/Timestamp'
+                    description: Ultimo rinfresco riuscito. Il client la mostra, così nessuno confonde un dato vecchio con un dato assente.
+              examples:
+                amburgo_singapore:
+                  value:
+                    refreshed_at: '2026-04-28T03:15:41Z'
+                    items:
+                      - business_date: '2026-04-27'
+                        origin_unlocode: DEHAM
+                        destination_unlocode: SGSIN
+                        primary_mode: sea
+                        shipment_count: 41
+                        on_time_count: 37
+                        avg_transit_seconds: 3441600
+                        p95_transit_seconds: 3888000
+                        excursion_alerts: 6
+
+  /v1/metrics/container-utilisation:
+    get:
+      operationId: containerUtilisation
+      tags: [metrics]
+      summary: Serve `analytics.mv_container_utilisation_weekly`
+      description: Alimenta il rapporto «box fermo» della console. Rinfrescata settimanalmente.
+      parameters:
+        - $ref: './_shared/components.yaml#/components/parameters/TenantHeader'
+        - name: week_start
+          in: query
+          required: true
+          schema: { $ref: './_shared/components.yaml#/components/schemas/LocalDate' }
+        - name: iso_size_type
+          in: query
+          schema: { type: string, minLength: 4, maxLength: 4 }
+      responses:
+        '200':
+          description: Righe di utilizzo.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        container_id: { $ref: './_shared/components.yaml#/components/schemas/Ulid' }
+                        iso_size_type: { type: string }
+                        week_start: { $ref: './_shared/components.yaml#/components/schemas/LocalDate' }
+                        trips: { type: integer }
+                        total_gross_kg: { type: integer, format: int64 }
+                        max_gross_kg: { type: integer, format: int64 }
+                        fill_rate_pct: { type: [number, 'null'] }
+
+  /v1/jobs/{job_name}/run:
+    post:
+      operationId: runJob
+      tags: [jobs]
+      summary: Lancia un lavoro batch fuori programma
+      description: |
+        Un solo lavoro per nome alla volta: una seconda richiesta mentre il primo gira restituisce
+        409 con l'identificatore della esecuzione in corso, non ne accoda un'altra. I rinfreschi
+        concorrenti della stessa vista si bloccano a vicenda e lasciano la vista con un lucchetto
+        che nessuno rilascia fino al timeout.
+      parameters:
+        - $ref: './_shared/components.yaml#/components/parameters/TenantHeader'
+        - $ref: './_shared/components.yaml#/components/parameters/IdempotencyHeader'
+        - name: job_name
+          in: path
+          required: true
+          schema:
+            type: string
+            enum:
+              - refresh_lane_performance
+              - refresh_container_utilisation
+              - recompute_crossing_dwell
+              - backfill_readings
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                business_date: { $ref: './_shared/components.yaml#/components/schemas/LocalDate' }
+                backfill_days:
+                  type: integer
+                  description: Predefinito a `OF_ANALYTICS_BACKFILL_DAYS`.
+      responses:
+        '202':
+          description: Avviato.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/JobRun' }
+        '409':
+          description: Un'esecuzione dello stesso lavoro è già in corso.
+          content:
+            application/json:
+              schema: { $ref: './_shared/components.yaml#/components/schemas/Error' }
+
+  /v1/jobs/{run_id}:
+    get:
+      operationId: getJobRun
+      tags: [jobs]
+      summary: Stato di una esecuzione
+      parameters:
+        - $ref: './_shared/components.yaml#/components/parameters/TenantHeader'
+        - name: run_id
+          in: path
+          required: true
+          schema: { $ref: './_shared/components.yaml#/components/schemas/Ulid' }
+      responses:
+        '200':
+          description: Stato.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/JobRun' }
+        '404': { $ref: './_shared/components.yaml#/components/responses/NotFound' }
+
+  /healthz:
+    $ref: './_shared/universal-paths.yaml#/paths/~1healthz'
+  /readyz:
+    $ref: './_shared/universal-paths.yaml#/paths/~1readyz'
+  /metrics:
+    $ref: './_shared/universal-paths.yaml#/paths/~1metrics'
+  /version:
+    $ref: './_shared/universal-paths.yaml#/paths/~1version'
+
+components:
+  securitySchemes:
+    bearerAuth:
+      $ref: './_shared/components.yaml#/components/securitySchemes/bearerAuth'
+
+  schemas:
+    LanePerformanceRow:
+      type: object
+      properties:
+        business_date: { $ref: './_shared/components.yaml#/components/schemas/LocalDate' }
+        origin_unlocode: { $ref: './_shared/components.yaml#/components/schemas/UnLocode' }
+        destination_unlocode: { $ref: './_shared/components.yaml#/components/schemas/UnLocode' }
+        primary_mode: { type: string, enum: [road, rail, sea, air, barge] }
+        shipment_count: { type: integer }
+        on_time_count:
+          type: integer
+          description: Spedizioni con `delivered_at <= sla_deadline_at`.
+        avg_transit_seconds: { type: integer, format: int64 }
+        p95_transit_seconds: { type: integer, format: int64 }
+        excursion_alerts:
+          type: integer
+          description: Allarmi di `telemetry.telemetry_alerts` attribuiti alle spedizioni della corsia.
+
+    JobRun:
+      type: object
+      properties:
+        run_id: { $ref: './_shared/components.yaml#/components/schemas/Ulid' }
+        job_name: { type: string }
+        state: { type: string, enum: [running, succeeded, failed, partial] }
+        started_at: { $ref: './_shared/components.yaml#/components/schemas/Timestamp' }
+        finished_at: { $ref: './_shared/components.yaml#/components/schemas/Timestamp' }
+        rows_written: { type: integer, format: int64 }
+        error: { type: [string, 'null'] }

@@ -1,0 +1,168 @@
+{{- /*
+=============================================================================
+Deployment jedné služby ORBITALFREIGHT.
+
+Šablona je jediná pro všech čtrnáct služeb, a proto v ní není žádná podmínka
+typu "když je to billing-service, tak...". Rozdíly mezi službami se vyjadřují
+hodnotami; kdyby se sem dostala výjimka na jméno, přestal by chart platit pro
+službu, která vznikne příště.
+
+Volání `of-service.validate` na prvním řádku není dekorace: zastaví nasazení
+služby, která není v §1 SPEC.md, a nasazení s vypínacím oknem kratším než
+OF_SHUTDOWN_GRACE_SECONDS.
+=============================================================================
+*/ -}}
+{{- include "of-service.validate" . -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "of-service.fullname" . }}
+  labels:
+    {{- include "of-service.labels" . | nindent 4 }}
+spec:
+  {{- if not .Values.autoscaling.enabled }}
+  replicas: {{ .Values.replicaCount }}
+  {{- end }}
+  revisionHistoryLimit: 3
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 1
+      maxSurge: {{ if gt (int .Values.replicaCount) 4 }}2{{ else }}1{{ end }}
+  selector:
+    matchLabels:
+      {{- include "of-service.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "of-service.labels" . | nindent 8 }}
+      annotations:
+        {{- /* Změna ConfigMapy služby musí vyvolat restart — prostředí se
+               čte jenom při startu procesu. */}}
+        orbitalfreight.net/config-checksum: {{ include "of-service.configChecksum" . }}
+        prometheus.io/scrape: "true"
+        prometheus.io/port: {{ .Values.service.httpPort | quote }}
+        prometheus.io/path: /metrics
+        {{- with .Values.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      serviceAccountName: {{ include "of-service.fullname" . }}
+      automountServiceAccountToken: false
+      imagePullSecrets:
+        - name: {{ .Values.image.pullSecret }}
+      terminationGracePeriodSeconds: {{ .Values.terminationGracePeriodSeconds }}
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1400
+        runAsGroup: 1400
+        fsGroup: 1400
+        seccompProfile:
+          type: RuntimeDefault
+      {{- with .Values.nodeSelector }}
+      nodeSelector: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.topologySpreadConstraints }}
+      topologySpreadConstraints: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: {{ include "of-service.fullname" . }}
+          image: {{ include "of-service.image" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.service.httpPort }}
+              protocol: TCP
+            {{- if .Values.service.grpcPort }}
+            - name: grpc
+              containerPort: {{ .Values.service.grpcPort }}
+              protocol: TCP
+            {{- end }}
+          envFrom:
+            - configMapRef:
+                name: of-common-config
+            - configMapRef:
+                name: {{ include "of-service.fullname" . }}
+            {{- range .Values.secretEnvFrom }}
+            - secretRef:
+                name: {{ . }}
+            {{- end }}
+          env:
+            - name: OF_SERVICE_NAME
+              value: {{ include "of-service.name" . }}
+            - name: OF_HTTP_PORT
+              value: {{ .Values.service.httpPort | quote }}
+            {{- if .Values.service.grpcPort }}
+            - name: OF_GRPC_PORT
+              value: {{ .Values.service.grpcPort | quote }}
+            {{- end }}
+            {{- if .Values.kafka.consumerGroup }}
+            - name: OF_KAFKA_CONSUMER_GROUP
+              value: {{ .Values.kafka.consumerGroup }}
+            {{- end }}
+            {{- include "of-service.databaseUrl" . | nindent 12 }}
+            {{- include "of-service.addressEnv" . | nindent 12 }}
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          {{- /* Sondy z §3.15. /healthz se nesmí dotknout databáze, jinak
+                 výpadek Postgresu restartuje celou platformu místo toho, aby
+                 ji jen odstavil z rotace. */}}
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: {{ .Values.probes.liveness.periodSeconds }}
+            timeoutSeconds: {{ .Values.probes.liveness.timeoutSeconds }}
+            failureThreshold: {{ .Values.probes.liveness.failureThreshold }}
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: http
+            periodSeconds: {{ .Values.probes.readiness.periodSeconds }}
+            timeoutSeconds: {{ .Values.probes.readiness.timeoutSeconds }}
+            failureThreshold: {{ .Values.probes.readiness.failureThreshold }}
+          {{- if .Values.probes.startup.enabled }}
+          startupProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: {{ .Values.probes.startup.periodSeconds }}
+            failureThreshold: {{ .Values.probes.startup.failureThreshold }}
+          {{- end }}
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+            {{- range .Values.secretVolumes }}
+            - name: {{ .name }}
+              mountPath: {{ .mountPath }}
+              readOnly: true
+            {{- end }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+      volumes:
+        - name: tmp
+          emptyDir:
+            sizeLimit: 512Mi
+        {{- range .Values.secretVolumes }}
+        - name: {{ .name }}
+          secret:
+            secretName: {{ .secretName }}
+            defaultMode: 0400
+        {{- end }}
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ include "of-service.fullname" . }}
+  labels:
+    {{- include "of-service.labels" . | nindent 4 }}
+automountServiceAccountToken: false

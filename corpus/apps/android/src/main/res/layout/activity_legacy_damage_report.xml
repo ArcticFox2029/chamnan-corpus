@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    क्षति दर्ज करने की पुरानी स्क्रीन का लेआउट (LegacyDamageReportActivity)।
+
+    तीन चीज़ें और कुछ नहीं: तस्वीर, टिप्पणी, भेजो। टिप्पणी वैकल्पिक है क्योंकि
+    फ़र्श पर लिखने में समय लगता है और अधूरी रिपोर्ट से बेहतर एक तस्वीर वाली
+    रिपोर्ट है — असली आकलन बाद में कंसोल पर होता है, जहाँ तस्वीर document-service
+    से खुलती है।
+
+    पूर्वावलोकन की ऊँचाई स्थिर है ताकि तस्वीर आने पर बटन अपनी जगह से न हिलें;
+    हिलते बटन पर दस्ताने वाला हाथ दो बार दबा देता था और दो रिपोर्टें बन जाती थीं।
+-->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:padding="16dp">
+
+    <ImageView
+        android:id="@+id/legacy_damage_preview"
+        android:layout_width="match_parent"
+        android:layout_height="240dp"
+        android:background="#11000000"
+        android:contentDescription="@string/damage_photo_title"
+        android:scaleType="centerCrop" />
+
+    <Button
+        android:id="@+id/legacy_damage_capture"
+        android:layout_width="match_parent"
+        android:layout_height="56dp"
+        android:layout_marginTop="12dp"
+        android:text="@string/damage_photo_title" />
+
+    <EditText
+        android:id="@+id/legacy_damage_notes"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="16dp"
+        android:gravity="top|start"
+        android:inputType="textMultiLine"
+        android:minLines="3"
+        android:textSize="18sp" />
+
+    <Button
+        android:id="@+id/legacy_damage_submit"
+        android:layout_width="match_parent"
+        android:layout_height="64dp"
+        android:layout_marginTop="24dp"
+        android:text="@string/legacy_damage_report_title" />
+</LinearLayout>

@@ -1,0 +1,125 @@
+# Estensioni in stile federazione. Il gateway compone un solo grafo a partire da quattordici
+# servizi che non parlano GraphQL fra loro: qui si dichiara chi possiede quale tipo, quale chiave
+# lo identifica e quali campi un altro servizio ha il diritto di aggiungere a un tipo altrui.
+#
+# La ragione per cui questo file esiste separato è che è l'unico posto dove un tipo viene esteso da
+# un servizio che non lo possiede — ed è quindi l'unico posto dove si può introdurre per sbaglio un
+# arco che il grafo sincrono di §1.1 non prevede. Tenerlo in un file solo rende quella revisione
+# possibile.
+
+directive @key(fields: String!, resolvable: Boolean = true) repeatable on OBJECT | INTERFACE
+directive @external on FIELD_DEFINITION
+directive @requires(fields: String!) on FIELD_DEFINITION
+directive @provides(fields: String!) on FIELD_DEFINITION
+directive @shareable on OBJECT | FIELD_DEFINITION
+directive @override(from: String!) on FIELD_DEFINITION
+
+# ---- Chiavi di entità ----------------------------------------------------------------------
+# Ogni tipo è risolvibile per id dal servizio che lo possiede. Gli id sono ULID prefissati, quindi
+# la chiave è sempre e solo `id`: non esistono chiavi composte in questo grafo.
+
+extend type Shipment @key(fields: "id") @servedBy(service: "container-registry")
+extend type Container @key(fields: "id") @servedBy(service: "container-registry")
+extend type Facility @key(fields: "id") @servedBy(service: "container-registry")
+extend type ScanEvent @key(fields: "id") @servedBy(service: "container-registry")
+extend type Route @key(fields: "id") @servedBy(service: "routing-service")
+extend type RouteLeg @key(fields: "id") @servedBy(service: "routing-service")
+extend type Geofence @key(fields: "id") @servedBy(service: "geo-service")
+extend type BorderCrossing @key(fields: "id") @servedBy(service: "geo-service")
+extend type Carrier @key(fields: "id") @servedBy(service: "fleet-service")
+extend type Vehicle @key(fields: "id") @servedBy(service: "fleet-service")
+extend type Driver @key(fields: "id") @servedBy(service: "fleet-service")
+extend type VehicleAssignment @key(fields: "id") @servedBy(service: "fleet-service")
+extend type CustomsDeclaration @key(fields: "id") @servedBy(service: "customs-service")
+extend type Invoice @key(fields: "id") @servedBy(service: "billing-service")
+extend type Document @key(fields: "id") @servedBy(service: "document-service")
+extend type TelemetryAlert @key(fields: "id") @servedBy(service: "telemetry-ingest")
+extend type User @key(fields: "id") @servedBy(service: "identity-service")
+
+# ---- Estensioni consentite -----------------------------------------------------------------
+
+"""
+telemetry-ingest aggiunge a Container i campi di stato del sensore. È un arco legittimo: il grafo
+sincrono prevede telemetry-ingest → container-registry, e questa estensione va nella direzione
+opposta soltanto in lettura sul gateway, che non è una chiamata fra servizi.
+"""
+extend type Container @key(fields: "id") {
+  id: ULID! @external
+
+  "Allarmi ancora aperti su questo contenitore, da `telemetry.telemetry_alerts`."
+  activeAlerts: [TelemetryAlert!]! @servedBy(service: "telemetry-ingest")
+
+  "Ultima posizione nota, dall'ultima lettura ricevuta. Approssimata quanto lastReadingAt."
+  lastKnownPosition: GeoPoint @servedBy(service: "telemetry-ingest")
+}
+
+"""
+customs-service aggiunge a Shipment le proprie dichiarazioni. Richiede `regionCode` perché la
+ricerca avviene sulla partizione giusta e perché una dichiarazione non attraversa mai la frontiera
+di residenza del dato.
+"""
+extend type Shipment @key(fields: "id") {
+  id: ULID! @external
+  regionCode: RegionCode! @external
+
+  declarations: [CustomsDeclaration!]!
+    @requires(fields: "regionCode")
+    @servedBy(service: "customs-service")
+
+  """
+  Totale già fatturato per la spedizione, da billing-service. `@requires` su `incoterm` perché su
+  EXW il dazio non entra nel totale: lo paga il compratore, e sommarlo produrrebbe un numero che
+  nessuno deve.
+  """
+  billedTotal: Money
+    @requires(fields: "incoterm")
+    @servedBy(service: "billing-service")
+}
+
+"""
+analytics-pipeline aggiunge le metriche derivate. È l'unico servizio con il ruolo di sola lettura
+`of_analytics_ro` su tutti gli schemi, ed è per questo che può servire un campo che nessun singolo
+proprietario sarebbe in grado di calcolare da solo.
+"""
+extend type Facility @key(fields: "id") {
+  id: ULID! @external
+  unlocode: UnLocode @external
+
+  """
+  Prestazione della corsia in uscita da questa struttura negli ultimi 30 giorni, da
+  `analytics.mv_lane_performance_daily`. Vuoto finché il rinfresco delle 03:15 UTC non è passato.
+  """
+  outboundLanePerformance(days: Int = 30): [LanePerformance!]!
+    @requires(fields: "unlocode")
+    @servedBy(service: "analytics-pipeline")
+}
+
+"""
+audit-ledger si innesta su qualunque cosa abbia un id, ma non estende ogni tipo: espone
+un'interfaccia e i tipi la implementano. Il registro risponde a «cosa è successo a questa cosa»,
+e il suo indice `ledger_subject_idx` è costruito esattamente su (subject_type, subject_id).
+"""
+interface Auditable {
+  "Le ultime voci del registro per questo soggetto, dalla più recente."
+  auditTrail(first: Int = 20): [LedgerEntry!]!
+}
+
+extend type Shipment implements Auditable
+extend type CustomsDeclaration implements Auditable
+extend type Invoice implements Auditable
+extend type Document implements Auditable
+
+"""
+Riferimento a un tipo posseduto da un altro sottografo, usato quando il possessore non è
+raggiungibile — durante una finestra di manutenzione di document-service, per esempio. Il client
+riceve l'id e sa che il resto è indisponibile, invece di ricevere l'intera query in errore.
+"""
+type UnresolvedRef {
+  id: ULID!
+  typename: String!
+
+  "Servizio che avrebbe dovuto risolverlo, con il nome di §1."
+  owningService: String!
+
+  reason: String!
+}

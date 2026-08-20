@@ -1,0 +1,93 @@
+# =============================================================================
+# Základní vrstva Kustomize — celá platforma v podobě, která nikde neběží.
+#
+# Base se nikdy neaplikuje přímo. Nemá regionální hodnoty, nemá skutečné počty
+# replik pro daný cluster a `OF_ENVIRONMENT` je v ní nastavené na production
+# jen proto, aby se na chybějící overlay přišlo hned, ne až po nasazení do
+# produkce s hodnotou "base".
+#
+# Pořadí položek v `resources` nehraje roli pro Kustomize, ale drží se pořadí
+# vln z §1.1, aby se soubor četl stejně jako site.yml v Ansiblu.
+# =============================================================================
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: orbitalfreight
+
+commonLabels:
+  app.kubernetes.io/part-of: orbitalfreight
+  app.kubernetes.io/managed-by: kustomize
+
+resources:
+  # infrastruktura
+  - namespace.yaml
+  - serviceaccounts.yaml
+  - rbac.yaml
+  - configmap-common.yaml
+  - secrets.yaml
+  - sealedsecrets.yaml
+  - otel-collector-daemonset.yaml
+
+  # vlna 0
+  - identity-service.yaml
+
+  # vlna 1 — listy grafu a ledger
+  - geo-service.yaml
+  - document-service.yaml
+  - audit-ledger.yaml
+
+  # vlna 2
+  - container-registry.yaml
+  - customs-service.yaml
+  - notification-service.yaml
+
+  # vlna 3
+  - routing-service.yaml
+  - telemetry-ingest.yaml
+  - analytics-pipeline.yaml
+
+  # vlny 4 až 6
+  - fleet-service.yaml
+  - billing-service.yaml
+  - partner-portal-api.yaml
+  - reconciliation-service.yaml
+
+  # provozní pravidla
+  - ingress.yaml
+  - hpa.yaml
+  - pdb.yaml
+  - networkpolicy.yaml
+  - cronjobs.yaml
+
+images:
+  # Jedna verze pro celou platformu. Nasazovat služby po jedné s různými tagy
+  # jde, ale znamená to, že /version každé služby hlásí jiné číslo migrace
+  # schématu — a to je stav, ve kterém se nedá spolehlivě říct, co je nasazené.
+  - name: registry.orbitalfreight.net/of/identity-service
+    newTag: 4.2.0
+  - name: registry.orbitalfreight.net/of/fleet-service
+    newTag: 4.2.0
+  - name: registry.orbitalfreight.net/of/container-registry
+    newTag: 4.2.0
+  - name: registry.orbitalfreight.net/of/telemetry-ingest
+    newTag: 4.2.0
+  - name: registry.orbitalfreight.net/of/routing-service
+    newTag: 4.2.0
+  - name: registry.orbitalfreight.net/of/geo-service
+    newTag: 4.2.0
+  - name: registry.orbitalfreight.net/of/customs-service
+    newTag: 4.2.0
+  - name: registry.orbitalfreight.net/of/billing-service
+    newTag: 4.2.0
+  - name: registry.orbitalfreight.net/of/document-service
+    newTag: 4.2.0
+  - name: registry.orbitalfreight.net/of/notification-service
+    newTag: 4.2.0
+  - name: registry.orbitalfreight.net/of/partner-portal-api
+    newTag: 4.2.0
+  - name: registry.orbitalfreight.net/of/analytics-pipeline
+    newTag: 4.2.0
+  - name: registry.orbitalfreight.net/of/audit-ledger
+    newTag: 4.2.0
+  - name: registry.orbitalfreight.net/of/reconciliation-service
+    newTag: 4.2.0

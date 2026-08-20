@@ -1,0 +1,32 @@
+<%#
+  Page servie quand une donnée d'une autre région atteint ce pod (§7 règle 7). Elle ne montre
+  rien du contenu bloqué — pas même un identifiant complet — et se contente d'envoyer l'opérateur
+  vers le portail du cluster propriétaire, qui est le seul autorisé à lire la ligne.
+%>
+<% page_title = "Donnée hors région" %>
+
+<article class="blocked">
+  <h1>Cette donnée appartient à une autre région</h1>
+
+  <p>
+    Ce portail tourne en <strong><%= Portal::Residency.label(error.expected_region) %></strong>
+    et la donnée demandée est enregistrée en
+    <strong><%= Portal::Residency.label(error.observed_region) %></strong>.
+  </p>
+
+  <%# Ce n'est pas une question de droits : le jeton de l'opérateur est peut-être parfaitement
+      valable là-bas. C'est la résidence qui interdit la lecture ici, y compris en mémoire et
+      y compris dans les journaux — d'où l'absence de tout détail sur cette page. %>
+  <p class="muted">
+    La règle 7 de la spécification interdit qu'une ligne étiquetée
+    <code><%= error.observed_region %></code> soit lue, mise en cache ou journalisée depuis un
+    pod d'une autre région. Le blocage est appliqué avant l'affichage, pas après.
+  </p>
+
+  <p>
+    <a class="button" href="<%= elsewhere %>">Ouvrir le même écran dans le portail
+      <%= error.observed_region %></a>
+  </p>
+
+  <p class="trace">trace : <code><%= ctx.trace_id %></code></p>
+</article>

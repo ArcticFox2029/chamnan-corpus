@@ -1,0 +1,56 @@
+syntax = "proto3";
+
+package common.v1;
+
+// Tipi numerici della piattaforma. Esistono per rendere impossibile per costruzione l'errore che
+// §7 regola 4 vieta: un importo non lascia mai un servizio come float e non lascia mai un servizio
+// senza la sua valuta. Gli stessi tipi coprono le altre grandezze con unità implicita di §0.2 —
+// metri, chilogrammi, gradi Celsius, punti base.
+
+option go_package = "github.com/orbitalfreight/contracts/gen/go/common/v1;commonv1";
+option java_package = "com.orbitalfreight.contracts.common.v1";
+option java_multiple_files = true;
+option ruby_package = "OrbitalFreight::Contracts::Common::V1";
+
+// Importo in unità minori più valuta, sempre insieme. Corrisponde alla coppia di colonne
+// `*_minor` / `currency CHAR(3)` che compare su billing.invoices, billing.invoice_lines,
+// customs.customs_declarations e freight.shipments.
+message Money {
+  // Unità minori intere: 1250 EUR-cent = 12,50 €. Per le valute senza sottounità (JPY, KRW)
+  // il valore coincide con l'unità principale.
+  int64 amount_minor = 1;
+
+  // ISO 4217 maiuscolo. Non ha un default: un importo senza valuta è un errore di validazione,
+  // non un importo in euro.
+  string currency = 2;
+}
+
+// Aliquota in punti base (§0.2): 1250 = 12,50 %. Usata per customs.tariff_schedules.duty_rate_bp
+// e vat_rate_bp. Intera di proposito — un'aliquota doganale espressa in virgola mobile ha già
+// prodotto due riconciliazioni fallite per un centesimo di scarto.
+message BasisPoints {
+  int32 value_bp = 1;
+}
+
+// Decimale esatto trasportato come stringa, per le colonne NUMERIC che non sono denaro:
+// temperature (NUMERIC(5,2)), umidità, urti in g, quantità di riga doganale (NUMERIC(14,3)).
+// La stringa è la rappresentazione canonica senza zeri superflui, con il punto come separatore.
+message Decimal {
+  string value = 1;
+
+  // Numero di cifre decimali significative attese dallo schema, a beneficio dei client che
+  // devono riformattare. 2 per un `_c`, 3 per uno `shock_g`.
+  uint32 scale = 2;
+}
+
+// Distanza in metri interi, suffisso `_m` nelle colonne. I totali di rotta
+// (routing.routes.total_distance_m) superano il int32 su alcune tratte marittime, da cui int64.
+message Distance {
+  int64 metres = 1;
+}
+
+// Massa in chilogrammi interi, suffisso `_kg`. freight.containers.tare_weight_kg e max_gross_kg,
+// freight.shipment_containers.gross_kg.
+message Weight {
+  int64 kilograms = 1;
+}

@@ -1,0 +1,35 @@
+#!/usr/bin/env bash
+# =============================================================================
+# Spouštěč dávkových úloh analytics-pipeline. Kopíruje se do obrazu jako
+# /opt/orbitalfreight/bin/analytics-job a volají ho CronJoby z
+# deploy/kubernetes/base/cronjobs.yaml.
+#
+# Existuje proto, aby CronJob nemusel znát ani spark-submit, ani jméno hlavní
+# třídy. Když se změní způsob spouštění Sparku, mění se tenhle soubor — ne
+# pět manifestů.
+# =============================================================================
+set -euo pipefail
+
+JOB="${1:?prvním argumentem musí být jméno úlohy, např. refresh-materialised-views}"
+shift
+
+: "${OF_ANALYTICS_SPARK_MASTER:?OF_ANALYTICS_SPARK_MASTER musí být nastavené}"
+: "${OF_DATABASE_URL:?OF_DATABASE_URL musí být nastavené}"
+
+# Obnova materializovaného pohledu jde CONCURRENTLY a drží zámek. Když běh
+# přesáhne okno, je lepší selhat než čekat — v 04:30 na pohledy čeká noční
+# párování a nad neobnovenými daty by otevřelo neexistující nesrovnalosti.
+DEADLINE_SECONDS="${OF_ANALYTICS_JOB_DEADLINE_SECONDS:-3300}"
+
+exec timeout --signal=TERM "${DEADLINE_SECONDS}" \
+  /opt/spark/bin/spark-submit \
+    --master "${OF_ANALYTICS_SPARK_MASTER}" \
+    --deploy-mode client \
+    --name "of-analytics-${JOB}" \
+    --conf spark.kubernetes.namespace=orbitalfreight \
+    --conf spark.kubernetes.authenticate.driver.serviceAccountName=analytics-pipeline \
+    --conf spark.sql.session.timeZone=UTC \
+    --class net.orbitalfreight.analytics.JobRunner \
+    /opt/orbitalfreight/analytics.jar \
+    --job "${JOB}" \
+    "$@"

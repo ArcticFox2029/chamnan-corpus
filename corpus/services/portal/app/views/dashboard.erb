@@ -1,0 +1,85 @@
+<%#
+  Écran d'accueil de l'astreinte : ce qui bouge maintenant, en trois listes courtes — alertes
+  ouvertes de telemetry-ingest, factures bloquées de billing-service, et les expéditions que ces
+  deux-là désignent. Volontairement dépourvu d'indicateur agrégé : les chiffres consolidés vivent
+  chez analytics-pipeline et se lisent sur GET /v1/metrics/lane-performance.
+%>
+<% page_title = "Tableau de bord" %>
+
+<section class="panel alerts">
+  <h2>Alertes ouvertes (sévérité ≥ 3)</h2>
+
+  <%# La sévérité 3 est le seuil d'affichage, pas le seuil de bascule : c'est
+      OF_FREIGHT_AUTO_AT_RISK_SEVERITY, lu par container-registry, qui décide à partir de quelle
+      sévérité de telemetry.alert.raised une expédition passe en at_risk. %>
+  <table>
+    <thead>
+      <tr><th>Ouverte</th><th>Règle</th><th>Sév.</th><th>Conteneur</th><th>Expédition</th></tr>
+    </thead>
+    <tbody>
+      <% recent[:alerts].each do |alert| %>
+        <tr class="severity-<%= alert['severity'] %>">
+          <td><%= rfc3339(alert['opened_at']) %></td>
+          <td><a href="/alerts/<%= alert['alert_id'] %>"><%= clients[:telemetry].rule_label(alert['rule_code']) %></a></td>
+          <td><%= alert['severity'] %></td>
+          <td><a href="/containers/<%= alert['container_id'] %>"><%= alert['container_id'] %></a></td>
+          <td>
+            <%# shipment_id est nul quand le conteneur était en parc libre au moment de la levée :
+                telemetry-ingest le résout par freight.v1.ContainerLookup/ResolveShipmentForContainer
+                et n'invente rien quand la réponse est vide. %>
+            <% if alert['shipment_id'] %>
+              <a href="/shipments/<%= alert['shipment_id'] %>"><%= alert['shipment_id'] %></a>
+            <% else %>
+              <span class="muted">conteneur en parc</span>
+            <% end %>
+          </td>
+        </tr>
+      <% end %>
+      <% if recent[:alerts].empty? %>
+        <tr><td colspan="5" class="muted">aucune excursion ouverte au-dessus du seuil</td></tr>
+      <% end %>
+    </tbody>
+  </table>
+</section>
+
+<section class="panel invoices-on-hold">
+  <h2>Factures bloquées</h2>
+
+  <%# Le blocage n'est jamais posé depuis cet écran : billing-service pose `on_hold` en consommant
+      reconciliation.discrepancy.opened (§4.17) et recopie le champ `kind` dans hold_reason. Le
+      lever demande de traiter l'écart chez reconciliation-service, pas de rouvrir la facture. %>
+  <table>
+    <thead>
+      <tr><th>Facture</th><th>Expédition</th><th>Montant</th><th>Échéance</th><th>Motif</th></tr>
+    </thead>
+    <tbody>
+      <% recent[:on_hold_invoices].each do |invoice| %>
+        <tr>
+          <td><a href="/invoices/<%= invoice['invoice_id'] %>"><%= invoice['invoice_number'] || invoice['invoice_id'] %></a></td>
+          <td><a href="/shipments/<%= invoice['shipment_id'] %>"><%= invoice['shipment_id'] %></a></td>
+          <td class="amount"><%= money(invoice['total_minor'], invoice['currency']) %></td>
+          <td><%= invoice['due_on'] || '—' %></td>
+          <td><%= clients[:billing].hold_banner(invoice) %></td>
+        </tr>
+      <% end %>
+      <% if recent[:on_hold_invoices].empty? %>
+        <tr><td colspan="5" class="muted">aucune facture bloquée</td></tr>
+      <% end %>
+    </tbody>
+  </table>
+</section>
+
+<section class="panel implicated">
+  <h2>Expéditions concernées</h2>
+  <ul>
+    <% Portal::Residency.filter_local(recent[:implicated_shipments]).each do |shipment| %>
+      <li>
+        <a href="/shipments/<%= shipment['shipment_id'] %>"><%= shipment['reference'] %></a>
+        <span class="status status-<%= shipment['status'] %>"><%= shipment_status_label(shipment['status']) %></span>
+        <% if (why = Portal::EventCatalogue.explain(shipment['status'])) %>
+          <span class="why" title="<%= why %>">ⓘ</span>
+        <% end %>
+      </li>
+    <% end %>
+  </ul>
+</section>

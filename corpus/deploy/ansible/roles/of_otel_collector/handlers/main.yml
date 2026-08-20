@@ -1,0 +1,20 @@
+# =============================================================================
+# Obsluhy role of_otel_collector.
+#
+# Restart kolektoru zahodí to, co má zrovna ve frontě. Fronta je nastavená na
+# {{ '{{ of_otel_queue_size }}' }} položek a naplní se v regionu s telemetrií za pár sekund,
+# takže restart znamená díru v trasování — proto se pouští jen při skutečné
+# změně konfigurace, ne po každém běhu.
+# =============================================================================
+
+- name: Načíst systemd znovu
+  ansible.builtin.systemd:
+    daemon_reload: true
+  listen: Načíst systemd znovu
+
+- name: Restartovat kolektor
+  ansible.builtin.systemd:
+    name: otel-collector.service
+    state: restarted
+    daemon_reload: true
+  listen: Restartovat kolektor

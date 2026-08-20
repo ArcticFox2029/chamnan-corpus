@@ -1,0 +1,155 @@
+# =============================================================================
+# audit-ledger — připojovaný hash řetězec toho, kdo co komu udělal.
+#
+# StatefulSet, ne Deployment, a to z jediného důvodu: řetězec v
+# platform.audit_ledger_entries stojí na úplném pořadí `entry_id`, protože
+# každý řádek hashuje hash toho předchozího. Zapisovat proto smí v jednu chvíli
+# jen jedna instance. Vedoucího si pody volí přes Lease (viz rbac.yaml,
+# role leader-election); StatefulSet dává stabilní jména, podle kterých se
+# volba dá po restartu deterministicky vyhodnotit, a `podManagementPolicy:
+# OrderedReady` zaručuje, že nenaběhnou dvě naráz.
+#
+# Čtení (GET /v1/entries, /v1/entries/{entry_id}/proof) obsluhují všechny tři
+# repliky; zápis přes audit.v1.LedgerService/Append přebírá vedoucí. Merkle
+# checkpointy skládá tentýž vedoucí každých
+# OF_LEDGER_CHECKPOINT_INTERVAL_MINUTES a zrcadlí je ven na
+# OF_LEDGER_NOTARY_ENDPOINT.
+# =============================================================================
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: audit-ledger
+  namespace: orbitalfreight
+  labels:
+    app.kubernetes.io/name: audit-ledger
+    app.kubernetes.io/part-of: orbitalfreight
+    app.kubernetes.io/component: backend
+    orbitalfreight.net/language: go
+    orbitalfreight.net/restart-wave: "1"
+spec:
+  serviceName: audit-ledger-headless
+  replicas: 3
+  podManagementPolicy: OrderedReady
+  updateStrategy:
+    type: RollingUpdate
+    rollingUpdate:
+      # Aktualizuje se odshora dolů; pod-0 je nejčastěji vedoucí, takže jde na
+      # řadu poslední a předání vedení proběhne jednou, ne třikrát.
+      partition: 0
+  selector:
+    matchLabels: { app.kubernetes.io/name: audit-ledger }
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: audit-ledger
+        app.kubernetes.io/part-of: orbitalfreight
+        orbitalfreight.net/restart-wave: "1"
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8092"
+    spec:
+      serviceAccountName: audit-ledger
+      imagePullSecrets: [{ name: of-registry-pull }]
+      # Delší než jinde: vedoucí musí před vypnutím dopsat rozpracovaný
+      # checkpoint, jinak se po startu počítá znovu od poslední kotvy.
+      terminationGracePeriodSeconds: 90
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1400
+        runAsGroup: 1400
+        fsGroup: 1400
+        seccompProfile: { type: RuntimeDefault }
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - labelSelector:
+                matchLabels: { app.kubernetes.io/name: audit-ledger }
+              topologyKey: kubernetes.io/hostname
+      containers:
+        - name: audit-ledger
+          image: registry.orbitalfreight.net/of/audit-ledger:4.2.0
+          ports:
+            - { name: http, containerPort: 8092 }
+            - { name: grpc, containerPort: 9092 }
+          envFrom:
+            - configMapRef: { name: of-common-config }
+          env:
+            - name: OF_SERVICE_NAME
+              value: audit-ledger
+            - name: OF_HTTP_PORT
+              value: "8092"
+            - name: OF_GRPC_PORT
+              value: "9092"
+            - name: OF_KAFKA_CONSUMER_GROUP
+              value: audit-ledger-v5
+            - name: OF_POD_NAME
+              valueFrom:
+                fieldRef: { fieldPath: metadata.name }
+            - name: OF_DB_PASSWORD
+              valueFrom:
+                secretKeyRef: { name: of-database-passwords, key: audit-ledger }
+            - name: OF_DATABASE_URL
+              # Role má na platform.audit_ledger_entries jen INSERT a SELECT.
+              # UPDATE ani DELETE neexistuje a trigger je odmítá i tak — oprava
+              # se dělá kompenzačním zápisem (§7, pravidlo 6).
+              value: postgres://audit_ledger_svc:$(OF_DB_PASSWORD)@pg-primary.orbitalfreight.svc.cluster.local:5432/orbitalfreight?search_path=platform&application_name=audit-ledger&sslmode=verify-full
+            - name: OF_LEDGER_CHECKPOINT_INTERVAL_MINUTES
+              value: "60"
+            - name: OF_LEDGER_NOTARY_ENDPOINT
+              value: https://notary.orbitalfreight.net/v1/checkpoints
+            - name: OF_LEDGER_HASH_ALGORITHM
+              # Změna algoritmu zakládá nový řetězec, nikdy nepřepisuje starý.
+              value: sha256
+          resources:
+            requests: { cpu: 500m, memory: 1Gi }
+            limits: { cpu: "2", memory: 3Gi }
+          livenessProbe:
+            httpGet: { path: /healthz, port: http }
+            periodSeconds: 10
+          readinessProbe:
+            httpGet: { path: /readyz, port: http }
+            periodSeconds: 5
+            failureThreshold: 3
+          volumeMounts:
+            - { name: checkpoints, mountPath: /var/lib/orbitalfreight/ledger }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: ["ALL"] }
+  volumeClaimTemplates:
+    - metadata:
+        name: checkpoints
+      spec:
+        # Lokální kopie podepsaných checkpointů. Závazná je ta u notáře, ale
+        # tahle umožňuje ověřit inkluzní důkaz i při výpadku spojení ven.
+        accessModes: [ReadWriteOnce]
+        storageClassName: of-ssd-retain
+        resources:
+          requests: { storage: 20Gi }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: audit-ledger-headless
+  namespace: orbitalfreight
+  labels: { app.kubernetes.io/name: audit-ledger }
+spec:
+  clusterIP: None
+  selector: { app.kubernetes.io/name: audit-ledger }
+  ports:
+    - { name: grpc, port: 9092, targetPort: grpc }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: audit-ledger
+  namespace: orbitalfreight
+  labels:
+    app.kubernetes.io/name: audit-ledger
+    app.kubernetes.io/part-of: orbitalfreight
+spec:
+  type: ClusterIP
+  selector: { app.kubernetes.io/name: audit-ledger }
+  ports:
+    - { name: http, port: 8092, targetPort: http }
+    - { name: grpc, port: 9092, targetPort: grpc }

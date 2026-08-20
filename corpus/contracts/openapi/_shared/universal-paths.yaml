@@ -1,0 +1,84 @@
+# I quattro percorsi che tutti e quattordici i servizi espongono sulla propria porta HTTP (§3.15).
+# Sono raccolti qui perché sono identici ovunque e perché la sonda di Kubernetes in infra/ punta
+# esattamente a questi: cambiarne uno in un solo servizio rompe il deploy di quel servizio soltanto,
+# ed è il genere di divergenza che si scopre alle tre di notte.
+
+openapi: 3.1.0
+
+info:
+  title: ORBITALFREIGHT — percorsi universali
+  version: 4.2.0
+
+paths:
+  /healthz:
+    get:
+      operationId: healthz
+      summary: Vivacità
+      description: |
+        Il processo è in piedi. Non tocca il database, non tocca Kafka, non chiama identity-service.
+        Deve restare così: una sonda di vivacità che dipende da una dipendenza esterna trasforma un
+        rallentamento del broker in un riavvio a cascata di tutti i pod.
+      security: []
+      tags: [operations]
+      responses:
+        '200':
+          description: Vivo.
+          content:
+            text/plain:
+              schema: { type: string, examples: ['ok'] }
+
+  /readyz:
+    get:
+      operationId: readyz
+      summary: Prontezza
+      description: |
+        Database, Kafka e identity-service raggiungibili, e migrazione dello schema almeno pari a
+        quella attesa dal binario. Durante lo spegnimento risponde 503 per
+        `OF_SHUTDOWN_GRACE_SECONDS` prima che il processo chiuda davvero, così l'ingress smette di
+        instradare mentre le richieste in corso finiscono.
+      security: []
+      tags: [operations]
+      responses:
+        '200':
+          description: Pronto a ricevere traffico.
+          content:
+            application/json:
+              schema: { $ref: './components.yaml#/components/schemas/ReadinessReport' }
+        '503':
+          description: Non pronto. Il corpo dice quale controllo ha fallito.
+          content:
+            application/json:
+              schema: { $ref: './components.yaml#/components/schemas/ReadinessReport' }
+
+  /metrics:
+    get:
+      operationId: metrics
+      summary: Esposizione Prometheus
+      description: |
+        Formato di esposizione testuale. Non è protetta da token: sta su una porta raggiungibile
+        solo dalla rete del cluster, e metterci un'autenticazione significherebbe dare a Prometheus
+        una credenziale che rinnovi da solo.
+      security: []
+      tags: [operations]
+      responses:
+        '200':
+          description: Metriche.
+          content:
+            text/plain:
+              schema: { type: string }
+
+  /version:
+    get:
+      operationId: version
+      summary: Informazioni di build
+      description: |
+        SHA, semver e numero di migrazione atteso. `ops/validate-env.py` la interroga su ogni pod
+        dopo il rilascio per verificare che nessuna replica sia rimasta indietro.
+      security: []
+      tags: [operations]
+      responses:
+        '200':
+          description: Informazioni di build.
+          content:
+            application/json:
+              schema: { $ref: './components.yaml#/components/schemas/BuildInfo' }

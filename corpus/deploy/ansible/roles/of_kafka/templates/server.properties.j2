@@ -1,0 +1,60 @@
+# =============================================================================
+# Konfigurace brokeru Kafky pro ORBITALFREIGHT.
+#
+# Šest témat, žádné auto-create. Auto-create je vypnuté proto, že překlep ve
+# jménu tématu v konzumentovi by jinak tiše založil sedmé téma s výchozím
+# počtem oddílů a nikdo by si nevšiml, dokud by chyběly události — a §4 říká,
+# že témat je šest a jsou uzavřený seznam.
+#
+# Generováno rolí of_kafka.
+# =============================================================================
+
+node.id={{ of_kafka_broker_id }}
+process.roles=broker,controller
+controller.quorum.voters={% for host in groups['of_kafka'] %}{{ hostvars[host].of_kafka_broker_id }}@{{ host }}:9093{% if not loop.last %},{% endif %}{% endfor %}
+
+listeners={{ of_kafka_listeners }}
+advertised.listeners=PLAINTEXT://{{ inventory_hostname }}:9092
+controller.listener.names=CONTROLLER
+inter.broker.listener.name=PLAINTEXT
+listener.security.protocol.map=PLAINTEXT:PLAINTEXT,CONTROLLER:PLAINTEXT
+
+log.dirs={{ of_kafka_data_dir }}
+num.partitions={{ of_kafka_num_partitions_default }}
+default.replication.factor={{ of_kafka_default_replication_factor }}
+min.insync.replicas={{ of_kafka_min_insync_replicas }}
+offsets.topic.replication.factor={{ of_kafka_default_replication_factor }}
+transaction.state.log.replication.factor={{ of_kafka_default_replication_factor }}
+transaction.state.log.min.isr={{ of_kafka_min_insync_replicas }}
+
+auto.create.topics.enable={{ of_kafka_auto_create_topics | lower }}
+delete.topic.enable=true
+unclean.leader.election.enable={{ of_kafka_unclean_leader_election | lower }}
+
+num.network.threads={{ of_kafka_num_network_threads }}
+num.io.threads={{ of_kafka_num_io_threads }}
+socket.send.buffer.bytes={{ of_kafka_socket_send_buffer_bytes }}
+socket.receive.buffer.bytes={{ of_kafka_socket_receive_buffer_bytes }}
+socket.request.max.bytes=104857600
+message.max.bytes={{ of_kafka_message_max_bytes }}
+replica.fetch.max.bytes={{ of_kafka_message_max_bytes }}
+
+# Retence per téma je nastavená při zakládání (viz tasks/main.yml). Tahle
+# globální hodnota platí jen pro interní témata a je schválně nízko: kdyby
+# někdo obešel of_kafka_topics, ať to spíš vyprší, než aby to zaplnilo disk.
+log.retention.hours=48
+log.retention.check.interval.ms=300000
+log.segment.bytes=1073741824
+log.cleanup.policy=delete
+
+# Oddíly of.telemetry.v1 (96) tvoří většinu vláken na tomhle brokeru; bez
+# zvednuté fronty se replikace při špičce v depu začne opožďovat.
+num.replica.fetchers=4
+replica.lag.time.max.ms=30000
+queued.max.requests=1000
+
+group.initial.rebalance.delay.ms=3000
+group.max.session.timeout.ms=300000
+
+auto.leader.rebalance.enable=true
+leader.imbalance.check.interval.seconds=300

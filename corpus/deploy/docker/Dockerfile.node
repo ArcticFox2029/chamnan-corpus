@@ -1,0 +1,61 @@
+# =============================================================================
+# Obraz document-service (Node 20, NestJS).
+#
+# Tři vrstvy místo dvou: instalace závislostí, překlad TypeScriptu, běhový
+# obraz s produkčními závislostmi. Rozdělení má jediný účel — do výsledku se
+# nesmí dostat devDependencies, protože jsou v nich nástroje s právem zápisu
+# do souborového systému a služba, která obsluhuje nahrávání souborů, je má
+# mít nejmíň ze všech.
+#
+# Objektové úložiště ani klíč KMS se do obrazu nedávají; přicházejí ze
+# zapečetěného secretu (OF_DOCUMENT_BUCKET, OF_DOCUMENT_KMS_KEY_ID).
+# =============================================================================
+
+FROM node:20-bookworm-slim AS deps
+
+WORKDIR /src
+COPY services/document/package.json services/document/package-lock.json ./
+RUN --mount=type=cache,target=/root/.npm \
+    npm ci
+
+FROM node:20-bookworm-slim AS build
+
+WORKDIR /src
+COPY --from=deps /src/node_modules ./node_modules
+COPY libs/ /src/libs/
+COPY services/document/ ./
+RUN npm run build \
+    && npm prune --omit=dev
+
+FROM node:20-bookworm-slim AS runtime
+
+ARG VERSION=4.2.0
+ARG BUILD_SHA=unknown
+LABEL org.opencontainers.image.title="document-service" \
+      org.opencontainers.image.version="${VERSION}" \
+      org.opencontainers.image.revision="${BUILD_SHA}" \
+      org.opencontainers.image.vendor="ORBITALFREIGHT"
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends tini ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+COPY --from=build --chown=1400:1400 /src/dist ./dist
+COPY --from=build --chown=1400:1400 /src/node_modules ./node_modules
+COPY --from=build --chown=1400:1400 /src/package.json ./
+
+# Odkládací adresář pro multipart nahrávání. Soubor se streamuje sem, ne do
+# haldy — 128MB limit (OF_DOCUMENT_MAX_UPLOAD_BYTES) krát několik souběžných
+# nahrání by jinak přetekl paměťový limit podu.
+RUN mkdir -p /var/tmp/uploads && chown 1400:1400 /var/tmp/uploads
+
+# Node 20 má vlastního uživatele `node` s UID 1000; přepisujeme na 1400, aby
+# seděl se securityContext podů a s právy k připojeným secretům.
+RUN groupmod -g 1400 node && usermod -u 1400 -g 1400 node
+USER 1400:1400
+EXPOSE 8089
+
+# tini jako PID 1: Node sám nesklízí osiřelé procesy po sharp/ImageMagick,
+# které se používají na náhledy fotek poškození.
+ENTRYPOINT ["/usr/bin/tini", "--", "node", "dist/main.js"]

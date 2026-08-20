@@ -1,0 +1,378 @@
+# Superficie REST di routing-service (Python 3.12 su FastAPI, porta 8085). Pianifica e ripianifica
+# rotte multi-tratta, sceglie i valichi e calcola gli ETA. Non ha superficie gRPC: è il solo dei
+# servizi ad alto traffico interno a parlare unicamente HTTP, e la ragione è che il suo lavoro è
+# lento per natura — un piano costa centinaia di millisecondi, non microsecondi.
+#
+# Chiama identity-service, geo-service (matrice delle distanze) e customs-service (per la strategia
+# `customs_optimised`). Non chiama fleet-service: gli assegnamenti si adeguano consumando
+# `route.replanned`.
+
+openapi: 3.1.0
+
+info:
+  title: routing-service
+  version: 4.2.0
+  description: |
+    Possiede lo schema `routing`. Una rotta è versionata per spedizione e una sola versione è
+    corrente alla volta — lo garantisce l'indice unico parziale `routes_one_current_per_shipment`,
+    non il codice applicativo.
+
+    Il modello di ETA in `OF_ROUTING_ETA_MODEL_PATH` è alimentato da
+    `analytics.mv_lane_performance_daily`: è l'unica ragione per cui quella vista conserva
+    `avg_transit_seconds` invece di ricalcolarlo.
+
+servers:
+  - url: http://routing-service.orbitalfreight.svc.cluster.local:8085
+
+tags:
+  - name: routes
+  - name: eta
+  - name: crossings
+  - name: operations
+
+security:
+  - bearerAuth: []
+
+paths:
+
+  /v1/routes/plan:
+    post:
+      operationId: planRoute
+      tags: [routes]
+      summary: Pianifica la versione 1 di una rotta
+      description: |
+        Scrive `routing.routes` e le sue `routing.route_legs` in una sola transazione. Oltre
+        `OF_ROUTING_MAX_LEGS` tratte la pianificazione è rifiutata invece di essere troncata: una
+        rotta parziale sembra valida e non lo è.
+
+        Le distanze vengono da `geo.v1.GeoService/DistanceMatrix`, i valichi candidati da
+        `geo.border_crossings` attraverso lo stesso servizio. Con strategia `customs_optimised`
+        viene interrogato anche `GET /v1/tariffs/lookup` di customs-service, perché un valico più
+        lungo con un'aliquota preferenziale può costare meno di uno vicino.
+      parameters:
+        - $ref: './_shared/components.yaml#/components/parameters/TenantHeader'
+        - $ref: './_shared/components.yaml#/components/parameters/TraceHeader'
+        - $ref: './_shared/components.yaml#/components/parameters/IdempotencyHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [shipment_id, strategy]
+              properties:
+                shipment_id: { $ref: './_shared/components.yaml#/components/schemas/Ulid' }
+                strategy: { $ref: '#/components/schemas/RouteStrategy' }
+                depart_after: { $ref: './_shared/components.yaml#/components/schemas/Timestamp' }
+                exclude_crossing_ids:
+                  type: array
+                  items: { $ref: './_shared/components.yaml#/components/schemas/Ulid' }
+                  description: Valichi da evitare, per esempio dopo una chiusura annunciata.
+                max_legs: { type: integer }
+            examples:
+              amburgo_istanbul:
+                value:
+                  shipment_id: shp_01J8ZK4T9QW3RM7XN2VB6HD5PC
+                  strategy: customs_optimised
+                  depart_after: '2026-03-15T05:00:00Z'
+      responses:
+        '201':
+          description: Rotta pianificata.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Route' }
+              examples:
+                tre_tratte:
+                  value:
+                    route_id: rte_01J8ZN5ROUTE0000000000001
+                    shipment_id: shp_01J8ZK4T9QW3RM7XN2VB6HD5PC
+                    version: 1
+                    is_current: true
+                    planned_by: svc:routing-service
+                    strategy: customs_optimised
+                    total_distance_m: 2841000
+                    total_duration_s: 191400
+                    computed_at: '2026-03-14T09:05:44Z'
+                    legs:
+                      - leg_id: leg_01J8ZN5LEG10000000000001
+                        seq_no: 1
+                        mode: road
+                        from_facility_id: fac_01J7A2HAMBURGCTA00000000A
+                        to_facility_id: fac_01J7A2WIENTERMINAL000000B
+                        crossing_id: null
+                        planned_depart_at: '2026-03-15T05:00:00Z'
+                        planned_arrive_at: '2026-03-16T04:20:00Z'
+                        distance_m: 1042000
+                      - leg_id: leg_01J8ZN5LEG20000000000002
+                        seq_no: 2
+                        mode: rail
+                        from_facility_id: fac_01J7A2WIENTERMINAL000000B
+                        to_facility_id: fac_01J7A2SOFIARAIL00000000C
+                        crossing_id: bxg_01J7A3ATBG0000000000001
+                        planned_depart_at: '2026-03-16T09:00:00Z'
+                        planned_arrive_at: '2026-03-17T11:40:00Z'
+                        distance_m: 1108000
+        '422':
+          description: Oltre `OF_ROUTING_MAX_LEGS`, oppure nessun percorso ammissibile per i modi consentiti.
+          content:
+            application/json:
+              schema: { $ref: './_shared/components.yaml#/components/schemas/Error' }
+
+  /v1/routes/{route_id}/replan:
+    post:
+      operationId: replanRoute
+      tags: [routes]
+      summary: Nuova versione della rotta
+      description: |
+        Incrementa `version`, sposta `is_current` sulla nuova riga e pubblica `route.replanned` con
+        l'elenco delle sole tratte cambiate. Quell'elenco non è cosmetico: fleet-service consuma
+        l'evento e rilascia soltanto gli assegnamenti la cui `leg_id` non compare più, invece di
+        smontare e rimontare l'intera rotta.
+
+        `OF_ROUTING_REPLAN_COOLDOWN_SECONDS` protegge dalle raffiche su una rotta che sfarfalla:
+        una richiesta troppo ravvicinata restituisce 200 con la rotta corrente invariata e
+        `cooldown_active` vero, non un errore — il chiamante è spesso un lavoro automatico che non
+        saprebbe cosa farsene di un 429.
+      parameters:
+        - $ref: './_shared/components.yaml#/components/parameters/TenantHeader'
+        - $ref: './_shared/components.yaml#/components/parameters/TraceHeader'
+        - $ref: './_shared/components.yaml#/components/parameters/IdempotencyHeader'
+        - name: route_id
+          in: path
+          required: true
+          schema: { $ref: './_shared/components.yaml#/components/schemas/Ulid' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [reason_code]
+              properties:
+                reason_code:
+                  type: string
+                  enum: [traffic, crossing_congestion, vehicle_breakdown, customs_hold, operator_request]
+                strategy: { $ref: '#/components/schemas/RouteStrategy' }
+      responses:
+        '200':
+          description: Ripianificata, oppure invariata per raffreddamento.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Route'
+                  - type: object
+                    properties:
+                      cooldown_active: { type: boolean }
+                      legs_changed:
+                        type: array
+                        items: { $ref: './_shared/components.yaml#/components/schemas/Ulid' }
+
+  /v1/routes/{route_id}:
+    get:
+      operationId: getRoute
+      tags: [routes]
+      summary: Legge una rotta con le sue tratte
+      parameters:
+        - $ref: './_shared/components.yaml#/components/parameters/TenantHeader'
+        - name: route_id
+          in: path
+          required: true
+          schema: { $ref: './_shared/components.yaml#/components/schemas/Ulid' }
+      responses:
+        '200':
+          description: Rotta.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Route' }
+        '404': { $ref: './_shared/components.yaml#/components/responses/NotFound' }
+
+  /v1/shipments/{shipment_id}/route:
+    get:
+      operationId: getCurrentRoute
+      tags: [routes]
+      summary: La sola rotta corrente di una spedizione
+      parameters:
+        - $ref: './_shared/components.yaml#/components/parameters/TenantHeader'
+        - name: shipment_id
+          in: path
+          required: true
+          schema: { $ref: './_shared/components.yaml#/components/schemas/Ulid' }
+      responses:
+        '200':
+          description: Rotta corrente.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Route' }
+        '404':
+          description: Nessuna rotta pianificata per questa spedizione.
+          content:
+            application/json:
+              schema: { $ref: './_shared/components.yaml#/components/schemas/Error' }
+
+  /v1/eta/batch:
+    post:
+      operationId: etaBatch
+      tags: [eta]
+      summary: ETA previsto per un lotto di spedizioni
+      description: |
+        Fino a 500 spedizioni per chiamata; oltre è 422, non un troncamento. La previsione usa la
+        serie storica della corsia da `analytics.mv_lane_performance_daily` come stima a priori
+        quando la spedizione non ha ancora dati propri, e lo dichiara con `used_lane_prior`.
+      parameters:
+        - $ref: './_shared/components.yaml#/components/parameters/TenantHeader'
+        - $ref: './_shared/components.yaml#/components/parameters/TraceHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [shipment_ids]
+              properties:
+                shipment_ids:
+                  type: array
+                  maxItems: 500
+                  items: { $ref: './_shared/components.yaml#/components/schemas/Ulid' }
+      responses:
+        '200':
+          description: Previsioni per tratta.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        shipment_id: { $ref: './_shared/components.yaml#/components/schemas/Ulid' }
+                        leg_id: { $ref: './_shared/components.yaml#/components/schemas/Ulid' }
+                        predicted_arrival_at: { $ref: './_shared/components.yaml#/components/schemas/Timestamp' }
+                        confidence_interval_s: { type: integer }
+                        used_lane_prior: { type: boolean }
+              examples:
+                due_spedizioni:
+                  value:
+                    items:
+                      - shipment_id: shp_01J8ZK4T9QW3RM7XN2VB6HD5PC
+                        leg_id: leg_01J8ZN5LEG20000000000002
+                        predicted_arrival_at: '2026-03-17T13:05:00Z'
+                        confidence_interval_s: 5400
+                        used_lane_prior: false
+                      - shipment_id: shp_01J8ZKAAAAAAAAAAAAAAAAAAAA
+                        leg_id: leg_01J8ZNBBBBBBBBBBBBBBBBBBBB
+                        predicted_arrival_at: '2026-03-19T22:30:00Z'
+                        confidence_interval_s: 19800
+                        used_lane_prior: true
+
+  /v1/crossings/recommend:
+    get:
+      operationId: recommendCrossings
+      tags: [crossings]
+      summary: Valichi consigliati per una coppia di paesi
+      description: |
+        Ordina i valichi di `geo.border_crossings` per costo previsto, combinando la deviazione
+        rispetto alla linea diretta con `avg_dwell_minutes`, che analytics-pipeline ricalcola ogni
+        notte. Un valico non aperto 24 ore viene scartato quando l'orario di arrivo previsto cade
+        fuori apertura, e la ragione compare in `rationale`.
+      parameters:
+        - $ref: './_shared/components.yaml#/components/parameters/TenantHeader'
+        - name: from_country
+          in: query
+          required: true
+          schema: { $ref: './_shared/components.yaml#/components/schemas/CountryCode' }
+        - name: to_country
+          in: query
+          required: true
+          schema: { $ref: './_shared/components.yaml#/components/schemas/CountryCode' }
+        - name: mode
+          in: query
+          schema: { type: string, enum: [road, rail, sea, air, barge], default: road }
+        - name: depart_at
+          in: query
+          schema: { $ref: './_shared/components.yaml#/components/schemas/Timestamp' }
+      responses:
+        '200':
+          description: Valichi ordinati.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        crossing_id: { $ref: './_shared/components.yaml#/components/schemas/Ulid' }
+                        unlocode: { $ref: './_shared/components.yaml#/components/schemas/UnLocode' }
+                        customs_office_code: { type: string }
+                        rank: { type: integer }
+                        expected_dwell_minutes: { type: integer }
+                        detour_distance_m: { type: integer, format: int64 }
+                        rationale:
+                          type: string
+                          enum: [shortest_detour, lowest_dwell, mode_not_allowed, closed_at_arrival]
+
+  /healthz:
+    $ref: './_shared/universal-paths.yaml#/paths/~1healthz'
+  /readyz:
+    $ref: './_shared/universal-paths.yaml#/paths/~1readyz'
+  /metrics:
+    $ref: './_shared/universal-paths.yaml#/paths/~1metrics'
+  /version:
+    $ref: './_shared/universal-paths.yaml#/paths/~1version'
+
+components:
+  securitySchemes:
+    bearerAuth:
+      $ref: './_shared/components.yaml#/components/securitySchemes/bearerAuth'
+
+  schemas:
+    RouteStrategy:
+      type: string
+      enum: [cheapest, fastest, lowest_carbon, customs_optimised, manual]
+
+    TransportMode:
+      type: string
+      enum: [road, rail, sea, air, barge]
+
+    Route:
+      type: object
+      properties:
+        route_id: { $ref: './_shared/components.yaml#/components/schemas/Ulid' }
+        shipment_id: { $ref: './_shared/components.yaml#/components/schemas/Ulid' }
+        version:
+          type: integer
+          description: Monotona per spedizione. Un salto significa che un evento `route.replanned` è andato perso.
+        is_current: { type: boolean }
+        planned_by:
+          type: string
+          description: '`usr_…` oppure `svc:routing-service`.'
+        strategy: { $ref: '#/components/schemas/RouteStrategy' }
+        total_distance_m: { type: integer, format: int64 }
+        total_duration_s: { type: integer }
+        computed_at: { $ref: './_shared/components.yaml#/components/schemas/Timestamp' }
+        superseded_at: { $ref: './_shared/components.yaml#/components/schemas/Timestamp' }
+        legs:
+          type: array
+          items: { $ref: '#/components/schemas/RouteLeg' }
+
+    RouteLeg:
+      type: object
+      properties:
+        leg_id: { $ref: './_shared/components.yaml#/components/schemas/Ulid' }
+        seq_no: { type: integer }
+        mode: { $ref: '#/components/schemas/TransportMode' }
+        from_facility_id: { $ref: './_shared/components.yaml#/components/schemas/Ulid' }
+        to_facility_id: { $ref: './_shared/components.yaml#/components/schemas/Ulid' }
+        crossing_id:
+          $ref: './_shared/components.yaml#/components/schemas/Ulid'
+        planned_depart_at: { $ref: './_shared/components.yaml#/components/schemas/Timestamp' }
+        planned_arrive_at: { $ref: './_shared/components.yaml#/components/schemas/Timestamp' }
+        actual_depart_at: { $ref: './_shared/components.yaml#/components/schemas/Timestamp' }
+        actual_arrive_at: { $ref: './_shared/components.yaml#/components/schemas/Timestamp' }
+        distance_m: { type: integer, format: int64 }
+        carrier_id: { $ref: './_shared/components.yaml#/components/schemas/Ulid' }

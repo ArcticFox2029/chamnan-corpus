@@ -1,0 +1,47 @@
+# =============================================================================
+# Výchozí hodnoty role, která nasazuje jednu z čtrnácti služeb z §1 SPEC.md.
+#
+# Role se volá v cyklu nad `of_services` a jediná povinná proměnná je
+# `of_service` — jedna položka toho katalogu. Všechno ostatní má tady rozumný
+# default, aby se katalog nemusel rozšiřovat kvůli výjimce u jedné služby.
+#
+# Kontejner běží pod podmanem jako neprivilegovaný uživatel; Kubernetes je jen
+# v regionech, které už migrovaly (viz deploy/kubernetes/). Obě cesty používají
+# stejný image a stejnou sadu proměnných, jinak by se staging a produkce
+# rozešly na úrovni konfigurace, ne kódu.
+# =============================================================================
+
+of_service_runtime_engine: podman
+of_service_pull_policy: missing
+of_service_network: host
+
+of_service_env_file: "{{ of_common_config_dir }}/{{ of_service.name }}.env"
+of_service_unit_name: "of-{{ of_service.name }}.service"
+of_service_image: "{{ of_image_prefix }}/{{ of_service.name }}:{{ of_image_tag }}"
+
+# Zdravotní sondy z §3.15. /healthz se nesmí dotýkat databáze — proto je to
+# liveness; /readyz kontroluje Postgres, Kafku i dosažitelnost identity-service,
+# takže se hodí jen na readiness a nikdy ne na restart.
+of_service_health_path: /healthz
+of_service_ready_path: /readyz
+of_service_metrics_path: /metrics
+of_service_version_path: /version
+of_service_health_timeout_seconds: 3
+of_service_ready_retries: 30
+of_service_ready_delay_seconds: 4
+
+of_service_memory_limit: 2g
+of_service_cpu_quota: "200%"
+of_service_restart_sec: 5
+
+# Kolik replik služby drží jeden aplikační uzel. Katalog `of_services` uvádí
+# celkový počet napříč regionem, tohle je dělitel na stroj.
+of_service_instances_per_host: 1
+
+# Otevřené deskriptory: telemetry-ingest drží spojení na každou depotní bránu
+# regionu naráz, takže dostává vlastní strop.
+of_service_nofile: 32768
+
+of_service_extra_volumes: []
+of_service_extra_env: {}
+of_service_wait_for_ready: true

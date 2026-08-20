@@ -1,0 +1,142 @@
+# Il tipo Subscription. Ogni sottoscrizione è una proiezione filtrata di uno dei sei topic Kafka
+# di §4: il gateway non genera eventi propri, si limita a instradare quelli che già esistono verso
+# il socket del client giusto.
+#
+# Due conseguenze pratiche che il consumatore deve accettare. La consegna è at-least-once come sul
+# topic sottostante, quindi lo stesso evento può arrivare due volte e va deduplicato su
+# `eventId`. E l'ordine è garantito solo all'interno di una spedizione, perché `partition_key` è
+# `shipment_id` su of.freight.v1: due spedizioni diverse arrivano in ordine qualunque.
+
+type Subscription {
+  """
+  Cambi di stato di una spedizione, dal topic `of.freight.v1` (evento `shipment.status.changed`).
+  Quando `shipmentId` è nullo la sottoscrizione copre tutte le spedizioni visibili al token, che
+  su un tenant grande è parecchio traffico: la console in web/ passa sempre un id.
+  """
+  shipmentStatusChanged(shipmentId: ULID): ShipmentStatusEvent!
+    @requiresScope(scope: "freight:read")
+
+  """
+  Scansioni registrate, da `shipment.scanned`. La app driver-ios la usa per vedere confermata la
+  propria scansione dopo un periodo offline: l'evento arriva quando container-registry l'ha
+  davvero scritta, non quando la richiesta è partita.
+  """
+  shipmentScanned(shipmentId: ULID!): ScanEvent! @requiresScope(scope: "freight:read")
+
+  """
+  Allarmi telemetrici, da `telemetry.alert.raised` sul topic `of.telemetry.v1`. Il filtro per
+  severità minima si applica lato gateway prima dell'invio, così un client mobile non riceve
+  novantasei partizioni di rumore per poi scartarlo.
+  """
+  telemetryAlertRaised(containerId: ULID, severityMin: Int = 3): TelemetryAlert!
+    @requiresScope(scope: "telemetry:read")
+
+  """
+  Ripianificazioni di rotta, da `route.replanned` sul topic `of.platform.v1`. Il consumatore
+  interessante è fleet-service, che non passa da qui ma dal topic; questa sottoscrizione serve al
+  cruscotto dello spedizioniere.
+  """
+  routeReplanned(shipmentId: ULID!): RouteReplannedEvent! @requiresScope(scope: "routing:read")
+
+  """
+  Sdoganamenti, da `customs.declaration.cleared`. Il campo `dutyPaid` della dichiarazione resta
+  falso anche dopo questo evento: si valorizza solo con `billing.invoice.settled`, ed è la
+  distinzione che gli operatori sbagliano più spesso.
+  """
+  declarationCleared(shipmentId: ULID): CustomsDeclaration! @requiresScope(scope: "customs:read")
+
+  """
+  Emissioni e saldi di fattura, da `of.billing.v1`. Un solo canale per i due eventi perché la
+  console li mostra nella stessa colonna; `kind` dice quale dei due è arrivato.
+  """
+  invoiceChanged(invoiceId: ULID, tenantWide: Boolean = false): InvoiceEvent!
+    @requiresScope(scope: "billing:read")
+
+  """
+  Discrepanze aperte dal confronto notturno, da `reconciliation.discrepancy.opened`. Chi ascolta
+  qui non deve reagire mettendo la fattura in attesa: quello lo fa già billing-service consumando
+  lo stesso evento, e farlo due volte produce due `hold_reason` in conflitto.
+  """
+  discrepancyOpened(kind: [DiscrepancyKind!]): ReconciliationDiscrepancy!
+    @requiresScope(scope: "reconciliation:read")
+
+  """
+  Gateway diventati silenziosi, da `gateway.heartbeat.missed`. È il segnale che il pannello di
+  deposito colora di rosso; il gateway mobile su veicolo può tacere legittimamente in galleria, e
+  il filtro `depotOnly` esiste per non allarmare su quello.
+  """
+  gatewayWentSilent(depotId: ULID, depotOnly: Boolean = true): GatewaySilentEvent!
+    @requiresScope(scope: "telemetry:read")
+}
+
+"""
+Involucro comune delle sottoscrizioni: riporta i campi di busta di §0.7 che servono al client per
+deduplicare e per correlare l'evento con la propria richiesta.
+"""
+interface StreamedEvent {
+  "evt_… . Chiave di deduplica: la consegna è at-least-once."
+  eventId: ULID!
+
+  "Nome puntato dell'evento, come in §4."
+  eventName: String!
+
+  occurredAt: DateTime!
+  traceId: String
+}
+
+type ShipmentStatusEvent implements StreamedEvent {
+  eventId: ULID!
+  eventName: String!
+  occurredAt: DateTime!
+  traceId: String
+
+  shipment: Shipment!
+  fromStatus: ShipmentStatus!
+  toStatus: ShipmentStatus!
+  reasonCode: String!
+  changedBy: String!
+}
+
+type RouteReplannedEvent implements StreamedEvent {
+  eventId: ULID!
+  eventName: String!
+  occurredAt: DateTime!
+  traceId: String
+
+  route: Route!
+  previousVersion: Int!
+  reasonCode: String!
+
+  "Solo le tratte cambiate. Ciò che non compare è rimasto identico e non va ridisegnato."
+  legsChanged: [ULID!]!
+}
+
+type InvoiceEvent implements StreamedEvent {
+  eventId: ULID!
+  eventName: String!
+  occurredAt: DateTime!
+  traceId: String
+
+  invoice: Invoice!
+  kind: InvoiceEventKind!
+}
+
+enum InvoiceEventKind {
+  ISSUED
+  SETTLED
+}
+
+type GatewaySilentEvent implements StreamedEvent {
+  eventId: ULID!
+  eventName: String!
+  occurredAt: DateTime!
+  traceId: String
+
+  gatewayId: ULID!
+  serial: String!
+  depotId: ULID
+  regionCode: RegionCode!
+  lastHeartbeatAt: DateTime!
+  silentMinutes: Int!
+  firmwareVersion: String!
+}

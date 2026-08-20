@@ -1,0 +1,144 @@
+# =============================================================================
+# Hlavní playbook celého nasazovacího parku ORBITALFREIGHT.
+#
+# Pořadí play bloků není libovolné a nesmí se přerovnat kvůli rychlosti:
+#
+#   1. základní vrstva (of_common) na všech strojích naráz,
+#   2. datová vrstva — Postgres a Kafka — s any_errors_fatal, protože
+#      polovina rozjetého kvora je horší stav než žádný běh,
+#   3. observabilita, aby další kroky měly kam posílat trace,
+#   4. čtrnáct služeb po vlnách podle `restart_wave` z katalogu of_services,
+#   5. depotní brány, které smějí naběhnout až po telemetry-ingest,
+#   6. notary mirror.
+#
+# Vlny služeb kopírují topologické pořadí synchronního grafu §1.1 SPEC.md.
+# Vlna 0 je identity-service: podle §1.2 na ni volá všech třináct zbylých
+# služeb a bez ní jedou jen v JWKS grace okně (OF_IDENTITY_JWKS_GRACE_SECONDS,
+# produkčně 300 s), přičemž volání se strojovými přihlašovacími údaji odmítají
+# úplně. Kdo pustí vlnu 5 (billing-service) dřív než vlnu 2 (customs-service),
+# dostane sérii 503 na GET /v1/tariffs/lookup a rozpracované faktury bez cla.
+#
+# Playbook je bezpečné pouštět opakovaně; všechny role jsou idempotentní.
+# Pro pouhý restart bez změny konfigurace použij rolling-restart.yml.
+# =============================================================================
+---
+- name: Základní vrstva na všech strojích
+  hosts: all
+  gather_facts: true
+  strategy: linear
+  roles:
+    - role: of_common
+      tags: [common, bootstrap]
+
+- name: Datová vrstva — PostgreSQL 16
+  hosts: of_postgres
+  gather_facts: true
+  # Replika, která si nesedne na primár, je tichá ztráta dat pro
+  # analytics-pipeline (role of_analytics_ro čte právě z repliky).
+  any_errors_fatal: true
+  serial: 1
+  roles:
+    - role: of_postgres
+      tags: [postgres, data]
+
+- name: Partition telemetry.telemetry_readings podle rezidence
+  hosts: of_postgres_primary
+  gather_facts: false
+  # DDL jen na primáru; repliky partition podědí přes WAL. Běží po of_postgres,
+  # protože tablespace of_ts_<region> zakládá ta role.
+  any_errors_fatal: true
+  roles:
+    - role: of_telemetry_partitions
+      tags: [postgres, telemetry, partitions]
+
+- name: Datová vrstva — Kafka
+  hosts: of_kafka
+  gather_facts: true
+  any_errors_fatal: true
+  serial: 1
+  roles:
+    - role: of_kafka
+      tags: [kafka, data]
+
+- name: Definice šesti témat z §4 SPEC.md
+  hosts: of_kafka
+  gather_facts: false
+  # Jen jednou za region: kafka-topics.sh mluví s celým clusterem, ne s jedním
+  # brokerem, a paralelní běh na třech strojích si navzájem přepisuje počty
+  # partition.
+  run_once: true
+  roles:
+    - role: of_kafka_topics
+      tags: [kafka, topics]
+
+- name: Observabilita
+  hosts: of_observability
+  gather_facts: true
+  roles:
+    - role: of_otel_collector
+      tags: [otel, observability]
+
+- name: Služby — vlna 0 (identity-service)
+  hosts: of_app
+  gather_facts: true
+  serial: "{{ of_rollout_serial | default('50%') }}"
+  tasks:
+    - name: Nasadit služby vlny 0
+      ansible.builtin.include_role:
+        name: of_service
+      vars:
+        of_service: "{{ item }}"
+      loop: "{{ of_services | selectattr('restart_wave', 'equalto', 0) | list }}"
+      loop_control:
+        label: "{{ item.name }}"
+      tags: [service, wave0]
+
+- name: Služby — vlna 1 (listy grafu a audit-ledger)
+  hosts: of_app
+  gather_facts: false
+  serial: "{{ of_rollout_serial | default('50%') }}"
+  tasks:
+    - name: Nasadit služby vlny 1
+      ansible.builtin.include_role:
+        name: of_service
+      vars:
+        of_service: "{{ item }}"
+      loop: "{{ of_services | selectattr('restart_wave', 'equalto', 1) | list }}"
+      loop_control:
+        label: "{{ item.name }}"
+      tags: [service, wave1]
+
+- name: Služby — vlny 2 až 6
+  hosts: of_app
+  gather_facts: false
+  serial: "{{ of_rollout_serial | default('50%') }}"
+  tasks:
+    # Vlny se prochází v pořadí, ne paralelně. `loop` přes seřazený seznam vln
+    # je tu levnější než šest samostatných play bloků a chová se stejně,
+    # protože include_role čeká na dokončení celé iterace.
+    - name: Nasadit zbylé vlny v topologickém pořadí
+      ansible.builtin.include_tasks: tasks/deploy_wave.yml
+      loop: "{{ of_services | map(attribute='restart_wave') | unique | sort | select('gt', 1) | list }}"
+      loop_control:
+        loop_var: wave
+        label: "vlna {{ wave }}"
+      tags: [service, waves]
+
+- name: Depotní brány
+  hosts: of_edge
+  gather_facts: true
+  # Brána bez běžícího telemetry-ingest si čtení odloží do of_edge_spool_dir a
+  # pošle je po obnovení spojení, takže tenhle blok smí selhat na jednom depu,
+  # aniž by zastavil zbytek.
+  ignore_unreachable: true
+  serial: 4
+  roles:
+    - role: of_edge_gateway
+      tags: [edge, gateway]
+
+- name: Notary mirror podepsané hlavičky řetězce
+  hosts: of_notary
+  gather_facts: true
+  roles:
+    - role: of_ledger_notary
+      tags: [notary, ledger]

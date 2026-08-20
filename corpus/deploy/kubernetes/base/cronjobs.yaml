@@ -1,0 +1,209 @@
+# =============================================================================
+# Plánované úlohy platformy.
+#
+# Časy jsou v UTC a jejich pořadí není náhodné. Noc vypadá takhle:
+#
+#   02:45  údržba partition telemetrie (mimo Kubernetes, Ansible)
+#   03:15  obnova mv_lane_performance_daily — CONCURRENTLY, drží zámek
+#   03:50  týdenní mv_container_utilisation_weekly (jen v neděli)
+#   04:30  noční trojcestné párování za předchozí obchodní den
+#   05:00  úklid fronty nedoručitelných zpráv
+#
+# Párování musí běžet AŽ po obnově pohledů: čte z nich a nad neobnovenými daty
+# by otevřelo nesrovnalosti, které ve skutečnosti neexistují — a každá z nich
+# by přes `reconciliation.discrepancy.opened` položila fakturu na `on_hold`.
+# =============================================================================
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: analytics-mv-refresh-daily
+  namespace: orbitalfreight
+  labels:
+    app.kubernetes.io/name: analytics-pipeline
+    app.kubernetes.io/part-of: orbitalfreight
+spec:
+  schedule: "15 3 * * *"
+  timeZone: Etc/UTC
+  concurrencyPolicy: Forbid
+  startingDeadlineSeconds: 1800
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 5
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      # REFRESH MATERIALIZED VIEW CONCURRENTLY nad denním oknem trvá při
+      # normálním objemu do dvaceti minut. Hodina je strop, po kterém je něco
+      # špatně a čekat dál znamená jen držet zámek déle.
+      activeDeadlineSeconds: 3600
+      template:
+        spec:
+          serviceAccountName: analytics-pipeline
+          restartPolicy: Never
+          imagePullSecrets: [{ name: of-registry-pull }]
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1400
+            seccompProfile: { type: RuntimeDefault }
+          containers:
+            - name: refresh
+              image: registry.orbitalfreight.net/of/analytics-pipeline:4.2.0
+              command: ["/opt/orbitalfreight/bin/analytics-job"]
+              args: ["refresh-materialised-views", "--view", "mv_lane_performance_daily"]
+              envFrom:
+                - configMapRef: { name: of-common-config }
+                - secretRef: { name: analytics-readonly-database }
+              env:
+                - name: OF_SERVICE_NAME
+                  value: analytics-pipeline
+                - name: OF_DB_PASSWORD
+                  valueFrom:
+                    secretKeyRef: { name: of-database-passwords, key: analytics-pipeline }
+                - name: OF_DATABASE_URL
+                  value: postgres://analytics_svc:$(OF_DB_PASSWORD)@pg-primary.orbitalfreight.svc.cluster.local:5432/orbitalfreight?search_path=analytics&application_name=analytics-mv-refresh&sslmode=verify-full
+              resources:
+                requests: { cpu: "2", memory: 4Gi }
+                limits: { cpu: "6", memory: 12Gi }
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities: { drop: ["ALL"] }
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: analytics-mv-refresh-weekly
+  namespace: orbitalfreight
+  labels:
+    app.kubernetes.io/name: analytics-pipeline
+    app.kubernetes.io/part-of: orbitalfreight
+spec:
+  # mv_container_utilisation_weekly agreguje po týdnech; přepočítávat ho denně
+  # znamená stejný výsledek za pětinásobek času.
+  schedule: "50 3 * * 0"
+  timeZone: Etc/UTC
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 2
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      activeDeadlineSeconds: 7200
+      template:
+        spec:
+          serviceAccountName: analytics-pipeline
+          restartPolicy: Never
+          imagePullSecrets: [{ name: of-registry-pull }]
+          containers:
+            - name: refresh
+              image: registry.orbitalfreight.net/of/analytics-pipeline:4.2.0
+              command: ["/opt/orbitalfreight/bin/analytics-job"]
+              args: ["refresh-materialised-views", "--view", "mv_container_utilisation_weekly"]
+              envFrom:
+                - configMapRef: { name: of-common-config }
+                - secretRef: { name: analytics-readonly-database }
+              env:
+                - name: OF_SERVICE_NAME
+                  value: analytics-pipeline
+                - name: OF_DB_PASSWORD
+                  valueFrom:
+                    secretKeyRef: { name: of-database-passwords, key: analytics-pipeline }
+                - name: OF_DATABASE_URL
+                  value: postgres://analytics_svc:$(OF_DB_PASSWORD)@pg-primary.orbitalfreight.svc.cluster.local:5432/orbitalfreight?search_path=analytics&application_name=analytics-mv-refresh&sslmode=verify-full
+              resources:
+                requests: { cpu: "2", memory: 4Gi }
+                limits: { cpu: "6", memory: 12Gi }
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: reconciliation-nightly
+  namespace: orbitalfreight
+  labels:
+    app.kubernetes.io/name: reconciliation-service
+    app.kubernetes.io/part-of: orbitalfreight
+spec:
+  schedule: "30 4 * * *"
+  timeZone: Etc/UTC
+  # Forbid, ne Replace: přerušit rozběhnuté párování uprostřed znamená run ve
+  # stavu `running`, který nikdo nedokončí, a nesrovnalosti otevřené jen z
+  # části zpracovaných tenantů.
+  concurrencyPolicy: Forbid
+  startingDeadlineSeconds: 3600
+  successfulJobsHistoryLimit: 7
+  failedJobsHistoryLimit: 7
+  jobTemplate:
+    spec:
+      backoffLimit: 1
+      activeDeadlineSeconds: 10800
+      template:
+        spec:
+          serviceAccountName: reconciliation-service
+          restartPolicy: Never
+          imagePullSecrets: [{ name: of-registry-pull }]
+          containers:
+            - name: trigger
+              image: registry.orbitalfreight.net/of/reconciliation-service:4.2.0
+              # Úloha jen spustí běh přes API a počká na výsledek. Samotné
+              # párování dělá služba, protože drží připojení, cache sazebníků
+              # i vedoucí Lease.
+              command: ["/opt/orbitalfreight/bin/recon-cli"]
+              args:
+                - start-run
+                - --business-date=yesterday
+                - --wait
+                - --endpoint=http://reconciliation-service.orbitalfreight.svc.cluster.local:8094
+              envFrom:
+                - configMapRef: { name: of-common-config }
+              env:
+                - name: OF_SERVICE_NAME
+                  value: reconciliation-service
+                - name: OF_RECON_ENGINE_VERSION
+                  value: "4.2.0"
+              resources:
+                requests: { cpu: 200m, memory: 256Mi }
+                limits: { cpu: "1", memory: 512Mi }
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: outbox-dlq-sweep
+  namespace: orbitalfreight
+  labels:
+    app.kubernetes.io/part-of: orbitalfreight
+    app.kubernetes.io/component: platform
+spec:
+  schedule: "0 5 * * *"
+  timeZone: Etc/UTC
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 5
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      template:
+        spec:
+          restartPolicy: Never
+          imagePullSecrets: [{ name: of-registry-pull }]
+          containers:
+            - name: sweep
+              image: registry.orbitalfreight.net/of/platform-tools:4.2.0
+              # Nic nepřehrává sám. Spočítá zprávy v <topic>.dlq a v
+              # platform.outbox_messages s published_at IS NULL starší než
+              # hodina, a když najde cokoli, pošle to přes notification-service
+              # dispečinku. Automatické přehrání by u neidempotentního
+              # konzumenta napáchalo víc škody než ticho.
+              command: ["/opt/orbitalfreight/bin/outbox-tool"]
+              args: ["sweep", "--report-only", "--stale-after=1h"]
+              envFrom:
+                - configMapRef: { name: of-common-config }
+              env:
+                - name: OF_SERVICE_NAME
+                  value: audit-ledger
+                - name: OF_DB_PASSWORD
+                  valueFrom:
+                    secretKeyRef: { name: of-database-passwords, key: audit-ledger }
+                - name: OF_DATABASE_URL
+                  value: postgres://audit_ledger_svc:$(OF_DB_PASSWORD)@pg-primary.orbitalfreight.svc.cluster.local:5432/orbitalfreight?search_path=platform&application_name=outbox-dlq-sweep&sslmode=verify-full
+              resources:
+                requests: { cpu: 200m, memory: 256Mi }
+                limits: { cpu: "1", memory: 1Gi }

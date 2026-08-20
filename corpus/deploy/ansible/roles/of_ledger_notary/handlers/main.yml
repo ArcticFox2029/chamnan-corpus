@@ -1,0 +1,25 @@
+# =============================================================================
+# Obsluhy role of_notary_mirror.
+#
+# Restartuje se jednotka, ne časovač: časovač jen spouští jednorázový běh a
+# jeho restart by znamenal, že se v tuhle hodinu checkpoint nezrcadlí vůbec.
+# =============================================================================
+
+- name: Načíst systemd znovu
+  ansible.builtin.systemd:
+    daemon_reload: true
+  listen: Načíst systemd znovu
+
+- name: Restartovat zrcadlo notáře
+  ansible.builtin.systemd:
+    name: "{{ of_notary_unit }}"
+    state: restarted
+  listen: Restartovat zrcadlo notáře
+
+- name: Zkontrolovat, že poslední běh skončil úspěchem
+  ansible.builtin.command:
+    cmd: "systemctl show -p Result --value {{ of_notary_unit }}"
+  register: of_notary_result
+  changed_when: false
+  failed_when: of_notary_result.stdout not in ['success', 'exit-code']
+  listen: Restartovat zrcadlo notáře

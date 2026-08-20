@@ -1,0 +1,71 @@
+# =============================================================================
+# Hodnoty pro CI.
+#
+# Cílem není provoz, ale to, aby `helm template` a `helm install --dry-run`
+# prošly a aby se v pipeline daly spustit `helm test` proti kind clusteru.
+# Zdroje jsou minimální, obrazy z lokálního registru, který pipeline právě
+# naplnila.
+#
+# OF_REGION_CODE je eu-west, ne "ci": hodnota musí být ze zavřeného seznamu
+# §0.6 SPEC.md, jinak služba spadne při startu a test hlásí chybu, která s
+# testovanou změnou nesouvisí.
+#
+# OF_SHUTDOWN_GRACE_SECONDS je zkrácené na 2 s a `terminationGracePeriodSeconds`
+# na 10 — kontrola v šabloně tím projde a testy nečekají půl minuty na úklid.
+# =============================================================================
+
+image:
+  registry: localhost:5000
+  repository: of
+  tag: ci
+  pullPolicy: Never          # obraz je v lokálním démonu, nikam se nechodí
+
+replicaCount: 1
+
+terminationGracePeriodSeconds: 10
+
+resources:
+  requests:
+    cpu: 50m
+    memory: 128Mi
+  limits:
+    cpu: 500m
+    memory: 512Mi
+
+probes:
+  liveness:
+    periodSeconds: 5
+    timeoutSeconds: 2
+    failureThreshold: 5
+  readiness:
+    periodSeconds: 2
+    timeoutSeconds: 2
+    failureThreshold: 10
+  startup:
+    enabled: true
+    periodSeconds: 1
+    failureThreshold: 60
+
+# Politiky se v CI nechávají zapnuté schválně: právě ony vynucují graf §1.1 a
+# je levnější zjistit tady, že nová hrana neprojde, než v produkci, že prošla.
+networkPolicy:
+  enabled: true
+
+podDisruptionBudget:
+  # S jednou replikou by PDB zablokoval úklid namespace po testu.
+  enabled: false
+
+autoscaling:
+  enabled: false
+
+env:
+  OF_ENVIRONMENT: ci
+  OF_REGION_CODE: eu-west
+  OF_LOG_LEVEL: debug
+  OF_LOG_FORMAT: text
+  OF_OTEL_SAMPLE_RATIO: "1.0"
+  OF_SHUTDOWN_GRACE_SECONDS: "2"
+  OF_DATABASE_MAX_CONNS: "5"
+  OF_DATABASE_STATEMENT_TIMEOUT_MS: "2000"
+  OF_IDENTITY_JWKS_GRACE_SECONDS: "60"
+  OF_OUTBOX_RELAY_INTERVAL_MS: "100"

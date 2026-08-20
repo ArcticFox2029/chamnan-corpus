@@ -1,0 +1,62 @@
+# =============================================================================
+# Definice projektu v Ansible Semaphore pro platformu ORBITALFREIGHT.
+#
+# Semaphore nemá konfiguraci v souborech — všechno drží ve své databázi a mění
+# se to klikáním. Tenhle adresář je proto zdroj pravdy a do Semaphoru se
+# nahrává skriptem `ops/semaphore-sync.py`, který volá jeho API. Kdo změní
+# šablonu v UI a nezapíše ji sem, přijde o ni při nejbližší synchronizaci —
+# to je záměr, ne chyba návrhu.
+#
+# Proč vůbec Semaphore, když máme CI: nasazení pouští služba, která má SSH
+# klíče k produkčním strojům a MFA na vstupu. GitHub runner je nemá a mít
+# nebude. CI staví image a ověřuje kontrakty, Semaphore je nasazuje.
+# =============================================================================
+---
+project:
+  name: ORBITALFREIGHT
+  alert: true
+  alert_chat: "#of-deploys"
+  max_parallel_tasks: 2          # dva paralelní běhy; třetí by kolidoval na zámku inventáře
+
+repositories:
+  - name: platform
+    git_url: git@git.orbitalfreight.net:platform/orbitalfreight.git
+    git_branch: main
+    ssh_key: of-git-deploy-key
+
+  - name: platform-release
+    # Oddělený záznam na stejné repo, ale zamčený na tag. Produkční šablony
+    # čtou výhradně odsud, aby se nasadilo přesně to, co prošlo CI.
+    git_url: git@git.orbitalfreight.net:platform/orbitalfreight.git
+    git_branch: "refs/tags/v4.2.0"
+    ssh_key: of-git-deploy-key
+
+inventories:
+  - name: production
+    type: file
+    inventory_file: deploy/ansible/inventories/production/hosts.yml
+    ssh_key: of-ssh-production
+    become_key: of-become-production
+
+  - name: staging
+    type: file
+    inventory_file: deploy/ansible/inventories/staging/hosts.yml
+    ssh_key: of-ssh-staging
+    become_key: of-become-staging
+
+  - name: ci
+    type: file
+    inventory_file: deploy/ansible/inventories/ci/hosts.yml
+    ssh_key: none
+
+views:
+  # Záložky v UI. Rozdělení kopíruje to, jak se na platformu dívá služba:
+  # co se nasazuje, co se restartuje, co jenom kontroluje.
+  - title: Nasazení
+    position: 1
+  - title: Restarty
+    position: 2
+  - title: Údržba a kontroly
+    position: 3
+  - title: Havarijní postupy
+    position: 4

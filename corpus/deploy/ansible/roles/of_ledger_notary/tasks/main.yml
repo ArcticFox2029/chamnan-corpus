@@ -1,0 +1,107 @@
+# =============================================================================
+# Instalace zrcadla checkpointů audit-ledgeru.
+#
+# Kroky jsou triviální (účet, adresář, jednotka, časovač) až na poslední: hned
+# po instalaci se jednou ručně zavolá GET /v1/checkpoints/latest a ověří se
+# inkluzní důkaz. Bez toho by se první selhání poznalo až za hodinu, kdy
+# časovač poprvé sepne — a u komponenty, jejímž jediným úkolem je dokazovat,
+# že se s řetězcem nemanipulovalo, je hodina ticha zbytečně dlouhá.
+# =============================================================================
+---
+- name: Založit systémový účet zrcadla
+  ansible.builtin.user:
+    name: "{{ of_notary_user }}"
+    group: "{{ of_notary_group }}"
+    system: true
+    home: "{{ of_notary_home }}"
+    shell: /usr/sbin/nologin
+    create_home: false
+  tags: [notary]
+
+- name: Vytvořit adresáře
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: "{{ of_notary_user }}"
+    group: "{{ of_notary_group }}"
+    mode: "0750"
+  loop:
+    - "{{ of_notary_home }}"
+    - "{{ of_notary_archive_dir }}"
+  tags: [notary]
+
+- name: Uložit klientský certifikát pro notáře
+  ansible.builtin.copy:
+    content: "{{ vault_notary_client_cert }}"
+    dest: "{{ of_notary_client_cert_path }}"
+    owner: "{{ of_notary_user }}"
+    group: "{{ of_notary_group }}"
+    mode: "0400"
+  no_log: true
+  notify: Restartovat zrcadlo notáře
+  tags: [notary, secrets]
+
+- name: Nainstalovat skript zrcadla
+  ansible.builtin.template:
+    src: mirror-checkpoint.sh.j2
+    dest: "{{ of_notary_home }}/mirror-checkpoint.sh"
+    owner: root
+    group: "{{ of_notary_group }}"
+    mode: "0750"
+  notify: Restartovat zrcadlo notáře
+  tags: [notary]
+
+- name: Vyrenderovat jednotku a časovač
+  ansible.builtin.template:
+    src: "{{ item.src }}"
+    dest: "/etc/systemd/system/{{ item.dest }}"
+    owner: root
+    group: root
+    mode: "0644"
+  loop:
+    - { src: of-notary-mirror.service.j2, dest: "{{ of_notary_unit }}" }
+    - { src: of-notary-mirror.timer.j2, dest: "{{ of_notary_timer }}" }
+  loop_control:
+    label: "{{ item.dest }}"
+  notify:
+    - Načíst systemd znovu
+    - Restartovat zrcadlo notáře
+  tags: [notary]
+
+- name: Zapnout časovač
+  ansible.builtin.systemd:
+    name: "{{ of_notary_timer }}"
+    enabled: true
+    state: started
+    daemon_reload: true
+  tags: [notary]
+
+- name: Stáhnout aktuální checkpoint hned po instalaci
+  ansible.builtin.uri:
+    url: "{{ of_audit_ledger_base_url }}/v1/checkpoints/latest"
+    return_content: true
+    timeout: "{{ of_notary_request_timeout_seconds }}"
+    headers:
+      X-OF-Actor-Kind: service
+  register: of_notary_latest
+  retries: 3
+  delay: 10
+  until: of_notary_latest is succeeded
+  tags: [notary, verify]
+
+- name: Ověřit inkluzní důkaz posledního zápisu
+  # Důkaz se ověřuje proti checkpointu, který jsme právě stáhli. Selhání tady
+  # znamená buď rozbitý řetězec, nebo — mnohem pravděpodobněji — že zrcadlo
+  # mluví s jinou instancí audit-ledgeru než tou, která checkpoint podepsala.
+  ansible.builtin.uri:
+    url: >-
+      {{ of_audit_ledger_base_url }}/v1/entries/{{
+      of_notary_latest.json.head_entry_id }}/proof
+    return_content: true
+    timeout: "{{ of_notary_request_timeout_seconds }}"
+  register: of_notary_proof
+  failed_when: >-
+    of_notary_proof.status != 200
+    or of_notary_proof.json.checkpoint_id != of_notary_latest.json.checkpoint_id
+  when: of_notary_verify_inclusion_proof | bool
+  tags: [notary, verify]

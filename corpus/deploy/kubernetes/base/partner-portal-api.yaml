@@ -1,0 +1,122 @@
+# =============================================================================
+# partner-portal-api — úzká, omezená plocha pro externí makléře a dopravce.
+#
+# Jediná služba, která mountuje pod /partner/v1 a jediná, která visí na
+# samostatném ingressu s vlastními pravidly WAF (§3). Odtud plyne všechno
+# ostatní: vlastní síťová politika, vlastní rate limit a redigovaný pohled na
+# zásilku bez `declared_value_minor`.
+#
+# Rate limit se počítá na `key_prefix` z identity.api_credentials, ne na IP.
+# Makléřská kancelář sedí za jednou adresou a limitovat ji jako celek by
+# znamenalo, že jeden robot udusí kolegy u sousedního stolu.
+#
+# Konzumuje `identity.credential.revoked` — odvolaný klíč musí zmizet z lokální
+# cache introspekce do pěti sekund (§4.2). To je jediný důvod, proč tahle
+# služba vůbec čte z Kafky.
+# =============================================================================
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: partner-portal-api
+  namespace: orbitalfreight
+  labels:
+    app.kubernetes.io/name: partner-portal-api
+    app.kubernetes.io/part-of: orbitalfreight
+    app.kubernetes.io/component: edge-api
+    orbitalfreight.net/language: php
+    orbitalfreight.net/restart-wave: "6"
+spec:
+  replicas: 4
+  revisionHistoryLimit: 3
+  strategy:
+    type: RollingUpdate
+    rollingUpdate: { maxUnavailable: 1, maxSurge: 2 }
+  selector:
+    matchLabels: { app.kubernetes.io/name: partner-portal-api }
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: partner-portal-api
+        app.kubernetes.io/part-of: orbitalfreight
+        orbitalfreight.net/restart-wave: "6"
+        orbitalfreight.net/exposure: external
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8091"
+    spec:
+      serviceAccountName: partner-portal-api
+      imagePullSecrets: [{ name: of-registry-pull }]
+      terminationGracePeriodSeconds: 45
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1400
+        runAsGroup: 1400
+        seccompProfile: { type: RuntimeDefault }
+      containers:
+        - name: partner-portal-api
+          image: registry.orbitalfreight.net/of/partner-portal-api:4.2.0
+          ports:
+            - { name: http, containerPort: 8091 }
+          envFrom:
+            - configMapRef: { name: of-common-config }
+          env:
+            - name: OF_SERVICE_NAME
+              value: partner-portal-api
+            - name: OF_HTTP_PORT
+              value: "8091"
+            - name: OF_KAFKA_CONSUMER_GROUP
+              value: partner-portal-api-v2
+            # Žádná OF_DATABASE_URL. partner-portal-api nemá vlastní schéma a
+            # data si bere přes API tří služeb — přímý přístup do cizího
+            # schématu zakazuje pravidlo 2 v §7 SPEC.md.
+            - name: OF_BILLING_BASE_URL
+              valueFrom:
+                configMapKeyRef: { name: of-service-addresses, key: OF_BILLING_BASE_URL }
+            - name: OF_CUSTOMS_BASE_URL
+              valueFrom:
+                configMapKeyRef: { name: of-service-addresses, key: OF_CUSTOMS_BASE_URL }
+            - name: OF_CONTAINER_REGISTRY_GRPC_ADDR
+              valueFrom:
+                configMapKeyRef: { name: of-service-addresses, key: OF_CONTAINER_REGISTRY_GRPC_ADDR }
+            - name: OF_PARTNER_RATE_LIMIT_PER_MINUTE
+              value: "600"
+            - name: OF_PARTNER_SESSION_TTL_MINUTES
+              value: "30"
+            - name: OF_PARTNER_ALLOWED_ORIGINS
+              value: https://portal.orbitalfreight.net,https://broker.orbitalfreight.net
+          resources:
+            requests: { cpu: 500m, memory: 768Mi }
+            limits: { cpu: "2", memory: 1536Mi }
+          livenessProbe:
+            httpGet: { path: /healthz, port: http }
+            periodSeconds: 10
+          readinessProbe:
+            httpGet: { path: /readyz, port: http }
+            periodSeconds: 5
+            failureThreshold: 3
+          volumeMounts:
+            - { name: php-run, mountPath: /var/run/php }
+            - { name: tmp, mountPath: /tmp }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: ["ALL"] }
+      volumes:
+        - name: php-run
+          emptyDir: { sizeLimit: 32Mi }
+        - name: tmp
+          emptyDir: { sizeLimit: 256Mi }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: partner-portal-api
+  namespace: orbitalfreight
+  labels:
+    app.kubernetes.io/name: partner-portal-api
+    app.kubernetes.io/part-of: orbitalfreight
+spec:
+  type: ClusterIP
+  selector: { app.kubernetes.io/name: partner-portal-api }
+  ports:
+    - { name: http, port: 8091, targetPort: http }

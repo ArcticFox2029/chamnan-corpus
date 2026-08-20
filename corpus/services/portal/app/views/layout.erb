@@ -1,0 +1,58 @@
+<%#
+  Gabarit unique du portail : en-tête, barre de recherche universelle et pied de page qui affiche
+  la région du pod et le point de contrôle du registre. Tout écran passe par ici, ce qui garantit
+  qu'aucune page ne s'affiche sans rappeler dans quelle région de §0.6 elle a été rendue — une
+  capture d'écran d'exploitation sans cette mention a déjà été mal interprétée en post-mortem.
+%>
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title><%= defined?(page_title) ? page_title : "Portail d'exploitation" %> — ORBITALFREIGHT</title>
+    <link rel="stylesheet" href="/assets/portal.css">
+    <%# Le trace-id est repris dans le DOM pour qu'un opérateur puisse le copier tel quel dans un
+        ticket : c'est la même valeur que le X-OF-Trace-Id de §0.3, celle qui permet de retrouver
+        l'appel chez container-registry ou billing-service. %>
+    <meta name="of-trace-id" content="<%= ctx.trace_id %>">
+    <meta name="of-region" content="<%= Portal.config.region_code %>">
+  </head>
+  <body data-environment="<%= Portal.config.environment %>">
+    <header class="masthead">
+      <a class="brand" href="/">ORBITALFREIGHT · exploitation</a>
+
+      <form class="universal-search" method="get" action="/">
+        <%# Un seul champ pour tout. Le préfixe de §0.1 suffit à choisir le service à interroger :
+            shp_ vers container-registry, inv_ vers billing-service, dcl_ vers customs-service,
+            alr_ vers telemetry-ingest. À défaut de préfixe, seuls le code ISO 6346 et le numéro
+            de scellé sont interrogeables. %>
+        <input type="search" name="q" value="<%= params['q'] %>"
+               placeholder="shp_… · inv_… · dcl_… · MSCU3948571 · n° de scellé"
+               autocomplete="off" spellcheck="false">
+        <button type="submit">Chercher</button>
+      </form>
+
+      <nav class="who">
+        <span class="operator"><%= ctx.user_id %></span>
+        <span class="tenant" title="X-OF-Tenant"><%= ctx.tenant_id %></span>
+        <%# Les rôles viennent de identity.roles.code, aplatis par
+            GET /v1/users/{user_id}/effective-roles côté identity-service et recopiés dans le
+            jeton. Les afficher évite la question « pourquoi ce bouton est-il grisé ». %>
+        <span class="roles"><%= ctx.roles.join(' · ') %></span>
+      </nav>
+    </header>
+
+    <main>
+      <%= yield %>
+    </main>
+
+    <footer class="ground-truth">
+      <span>région : <%= Portal::Residency.label(Portal.config.region_code) %></span>
+      <span>version : <%= Portal.build_info.fetch('version') %> (<%= Portal.build_info.fetch('commit')[0, 7] %>)</span>
+      <%# Rappel permanent : ce portail n'est pas la console opérateur de web/, et encore moins
+          partner-portal-api. Trois surfaces web, trois publics, et on a déjà vu un exploitant
+          chercher ici un écran qui n'existe que côté client. %>
+      <span class="surface">portail interne — VPN d'exploitation uniquement</span>
+    </footer>
+  </body>
+</html>

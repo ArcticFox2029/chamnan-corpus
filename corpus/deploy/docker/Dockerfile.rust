@@ -1,0 +1,75 @@
+# =============================================================================
+# Obraz pro obě rustové komponenty: telemetry-ingest (services/) a agenta
+# depotní brány (edge/). Vybírá se ARG COMPONENT.
+#
+# Sdílí jeden soubor, protože sdílí celý build řetězec i cílový obraz. Liší se
+# jen crate a portem — a hlavně tím, že agent běží na stroji v depu, kde na
+# velikosti obrazu záleží víc než v clusteru (LTE linka, aktualizace přes noc).
+#
+# Statické slinkování proti musl: brána i ingest musí naběhnout na obrazu bez
+# glibc a bez závislosti na verzi distribuce v depu, kterou nikdo neaktualizuje.
+#
+#   docker build -f deploy/docker/Dockerfile.rust --build-arg COMPONENT=telemetry-ingest .
+# =============================================================================
+
+FROM rust:1.77-bookworm AS build
+
+ARG COMPONENT=telemetry-ingest
+ARG VERSION=4.2.0
+
+RUN rustup target add x86_64-unknown-linux-musl \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends musl-tools protobuf-compiler \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /src
+
+# Nejdřív jen manifesty a prázdné main, ať se závislosti (tonic, axum, sqlx)
+# přeloží do cache vrstvy a nepřekládaly se při každé změně zdrojáku.
+COPY Cargo.toml Cargo.lock ./
+COPY services/telemetry-ingest/Cargo.toml ./services/telemetry-ingest/
+COPY edge/Cargo.toml ./edge/
+RUN mkdir -p services/telemetry-ingest/src edge/src \
+    && echo 'fn main() {}' > services/telemetry-ingest/src/main.rs \
+    && echo 'fn main() {}' > edge/src/main.rs
+RUN --mount=type=cache,target=/usr/local/cargo/registry \
+    cargo build --release --target x86_64-unknown-linux-musl --workspace || true
+
+COPY libs/ ./libs/
+COPY services/telemetry-ingest/ ./services/telemetry-ingest/
+COPY edge/ ./edge/
+
+RUN --mount=type=cache,target=/usr/local/cargo/registry \
+    --mount=type=cache,target=/src/target \
+    cargo build --release --target x86_64-unknown-linux-musl --bin ${COMPONENT} \
+    && cp target/x86_64-unknown-linux-musl/release/${COMPONENT} /out-binary
+
+FROM alpine:3.20 AS runtime
+
+ARG COMPONENT=telemetry-ingest
+ARG VERSION=4.2.0
+ARG BUILD_SHA=unknown
+LABEL org.opencontainers.image.title="${COMPONENT}" \
+      org.opencontainers.image.version="${VERSION}" \
+      org.opencontainers.image.revision="${BUILD_SHA}" \
+      org.opencontainers.image.vendor="ORBITALFREIGHT"
+
+# ca-certificates kvůli TLS na Postgres (sslmode=verify-full) a tzdata kvůli
+# tichým hodinám příjemců — obojí je jinak v alpine prázdné a projeví se to
+# chybou, která vypadá jako problém sítě.
+RUN apk add --no-cache ca-certificates tzdata \
+    && addgroup -g 1400 orbitalfreight \
+    && adduser -u 1400 -G orbitalfreight -s /sbin/nologin -D orbitalfreight
+
+COPY --from=build /out-binary /usr/local/bin/service
+
+# Spool rozpracovaných dávek. V clusteru se sem montuje PVC ze StatefulSetu,
+# lokálně to je jen adresář — ale musí existovat a patřit uživateli, jinak
+# služba zahazuje čtení místo odkládání.
+RUN mkdir -p /var/lib/orbitalfreight/telemetry \
+    && chown 1400:1400 /var/lib/orbitalfreight/telemetry
+
+USER 1400:1400
+EXPOSE 8084 9084
+
+ENTRYPOINT ["/usr/local/bin/service"]

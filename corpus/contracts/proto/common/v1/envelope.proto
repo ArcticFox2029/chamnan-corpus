@@ -1,0 +1,80 @@
+// La busta che avvolge ogni messaggio su ognuno dei sei topic Kafka (§0.7). Solo `payload` cambia
+// da evento a evento: tutto il resto — chi ha prodotto, quando, per quale tenant, in quale regione,
+// sotto quale trace — è identico ovunque, ed è ciò che permette a audit-ledger di consumare tutti
+// e sei i topic con un solo deserializzatore.
+
+syntax = "proto3";
+
+package common.v1;
+
+import "common/v1/identifiers.proto";
+import "google/protobuf/struct.proto";
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/orbitalfreight/contracts/gen/go/common/v1;commonv1";
+option java_package = "com.orbitalfreight.contracts.common.v1";
+option java_multiple_files = true;
+
+message EventEnvelope {
+  // evt_<ULID>. Coincide con platform.outbox_messages.message_id: l'id non viene generato al
+  // momento della pubblicazione ma quando la riga di outbox viene scritta, nella stessa
+  // transazione del cambio di stato. È la chiave di idempotenza che ogni consumatore deve
+  // conservare per almeno la retention del topic (§4.19 regola 1).
+  string event_id = 1;
+
+  // Nome puntato minuscolo, esattamente come in §4: `shipment.scanned`, `billing.invoice.settled`.
+  string event_name = 2;
+
+  // Si incrementa solo per rimozioni di campo e cambi di tipo. Aggiungere un campo dentro una
+  // versione è legittimo e i consumatori devono ignorare ciò che non conoscono (§4.19 regola 3).
+  uint32 schema_version = 3;
+
+  // Momento del fatto, non della pubblicazione. Fra i due può passare tempo: il relay di outbox
+  // gira ogni OF_OUTBOX_RELAY_INTERVAL_MS e dopo un fermo recupera l'arretrato tutto insieme.
+  google.protobuf.Timestamp occurred_at = 4;
+
+  string tenant_id = 5;
+
+  common.v1.RegionCode region_code = 6;
+
+  // Nome del servizio produttore come scritto in §1: `container-registry`, `telemetry-ingest`.
+  string producer = 7;
+
+  string trace_id = 8;
+
+  // Determina l'ordinamento. Tutto ciò che è chiavato su uno shp_… è ordinato per spedizione, e
+  // questa è l'unica garanzia di ordinamento che la piattaforma offre.
+  string partition_key = 9;
+
+  // Il corpo specifico dell'evento. Sul canale Kafka viaggia come JSON; i messaggi tipizzati di
+  // identity/v1/events.proto, freight/v1/events.proto e affini descrivono la forma attesa per
+  // ciascun `event_name`.
+  google.protobuf.Struct payload = 10;
+}
+
+// Vista tipizzata di platform.outbox_messages usata dai relay per servizio. Non viaggia su Kafka:
+// è il contratto interno fra il servizio che scrive la riga e il relay che la pubblica, ed è qui
+// perché tutti e sei i relay lo implementano allo stesso modo.
+message OutboxRecord {
+  string message_id = 1;
+  string producer = 2;
+  string aggregate_type = 3;
+  string aggregate_id = 4;
+  string event_name = 5;
+
+  // Uno dei sei di §4: of.identity.v1, of.freight.v1, of.telemetry.v1, of.customs.v1,
+  // of.billing.v1, of.platform.v1.
+  string topic = 6;
+
+  string partition_key = 7;
+  uint32 schema_version = 8;
+  google.protobuf.Struct payload = 9;
+  google.protobuf.Timestamp created_at = 10;
+
+  // Nullo finché il relay non ha ricevuto la conferma dal broker. L'indice parziale
+  // outbox_pending_idx serve esattamente questa condizione.
+  google.protobuf.Timestamp published_at = 11;
+
+  uint32 attempts = 12;
+  string last_error = 13;
+}

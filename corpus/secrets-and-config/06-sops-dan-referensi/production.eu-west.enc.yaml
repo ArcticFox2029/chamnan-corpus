@@ -1,0 +1,93 @@
+# Berkas rahasia produksi region eu-west, terenkripsi dengan SOPS.
+#
+# Hanya nilainya yang terenkripsi; kuncinya tetap terbaca sebagai teks biasa, dan itu memang
+# yang diinginkan — diff di Git tetap bisa dibaca ("kunci apa yang berubah"), sementara isinya
+# tidak pernah terlihat. Aturan pembuatan ada di ../../infra, dan penerima yang berhak membuka
+# berkas ini tercatat di blok `sops:` di bawah: satu kunci KMS per region ditambah satu kunci age
+# untuk pemulihan darurat.
+#
+# Menyunting: `sops production.eu-west.enc.yaml` — jangan pernah menyunting nilai ENC[...] dengan
+# tangan, karena MAC di akhir berkas akan berhenti cocok dan seluruh berkas dianggap rusak.
+# Rotasi penerima: `sops updatekeys production.eu-west.enc.yaml` setelah mengubah creation_rules.
+
+region_code: eu-west
+environment: production
+
+identity-service:
+    OF_DATABASE_URL: ENC[AES256_GCM,data:JM71+vtj5SV35a69RJ0FGuLFX+EodYH4e9T9uR5jXIjJ4hyC+Lmx6sbvx/nH20Qj5lWYMhAqhfW6W24WZMcCt0SYwEqeoCW1tgKVYX4JdKyt3nJS2Eti3v4c/pSatTlf,iv:wASujomoZosZV9BKbs/jO1HjYRfccZU0UAS5zscGLQo=,tag:HR28dCs/w+IpkD3bUt1MzA==,type:str]
+    OF_IDENTITY_SIGNING_KEY_PATH: /run/orbitalfreight/identity-service/identity-signing.pem
+    OF_IDENTITY_ACCESS_TOKEN_TTL_SECONDS: 900
+    OF_IDENTITY_REFRESH_TOKEN_TTL_DAYS: 30
+    OF_IDENTITY_ARGON2_MEMORY_KIB: 65536
+    OF_IDENTITY_MFA_ISSUER: ORBITALFREIGHT
+    OF_IDENTITY_MAX_ORG_DEPTH: 12
+    signing_key_pem: ENC[AES256_GCM,data:7vJl7yJBOmUF7b8knftcnMjBw5CaW04jMl4aUzUmBwbIneaIqtI1jMonmB15/3EYoltbIbpTtn5Hvb35TLY/UpOaJ3u50GIp9cQx25p/XgXH+FpZedQVC95y2uym6hrsMFsiNG3PKSHjCQfLRgyJXdoi0jD9em1LVKPzfPkNdgD/LWM8aazeNcBf49NuJ4flSkIeQVgATKiztWXof02N3gnjt8tFZvxPZoFq29aGLZmIKBfacACwr56ZIj2Wk+QMiq33dBCQxrGEnl/0apZ4/zXYvyO3gITuJI2RIA==,iv:9EFmSkE7ve5HUmFcoXtpWhiu4j8hSNAv2RKZhRBvyMU=,tag:FwjNa8BKhphKk6MI63g9vQ==,type:str]
+
+billing-service:
+    OF_DATABASE_URL: ENC[AES256_GCM,data:ivuDZ6oGZIu1nYIR1nSd479dwd4wVf0vfBdwXMX9pRzOkLvYoUSEcZl7CyEMEniiw0JQeHLZpxcts+q+GTjSySOTyU6aGDZEBtJDuvG7juh2YV7hx7Gqu5zTO4E=,iv:vUIJ1uc3X0GPmfxj0r1wn5ESVhmgs0d4dFgjrdT9l8Q=,tag:7Zp+rpoOJQ1bVbmzPZj/HA==,type:str]
+    OF_BILLING_INVOICE_NUMBER_FORMAT: OF-{tenant_short}-{year}-{seq:06d}
+    OF_BILLING_DEFAULT_PAYMENT_TERMS_DAYS: 30
+    OF_BILLING_FX_RATE_SOURCE: openexchange
+    OF_BILLING_HOLD_ON_DISCREPANCY_KINDS: amount_mismatch,missing_declaration
+    stripe_secret_key: ENC[AES256_GCM,data:fh2L/PAYu6/8BRXcf/a69IFr1rBoW+awP+Mzt6yVO31u9EdfkL2bKg==,iv:yEcYd0+bBYky3ma8MVzt36uxRWb3aI7LzxCbu6qZOUU=,tag:zsaNfcjgBKfRTKsuFgjMAQ==,type:str]
+    stripe_webhook_secret: ENC[AES256_GCM,data:dX582V2kp5hBNsjsTItY0JV3C8QjxHbuIXK7lIvZGKppsA==,iv:fBN6iaTRbBz9KKTt6/Y99dmmPViUk++7HekdNimhS+Y=,tag:wZwq3X9tzRHH/G3Mg8XF9w==,type:str]
+    fx_rate_app_id: ENC[AES256_GCM,data:J//aHlusmIo90UihdWquMU3auR1aDiZpw4N2ATW6,iv:DEThTiqUn4BCgvYVCNOnt1We4QcxrMlDP7kfTdJdgGI=,tag:wPgU/yqFIqwXFgGUdb/cog==,type:str]
+
+notification-service:
+    OF_NOTIFY_SMTP_URL: ENC[AES256_GCM,data:QI6azJVQ7CocRTFG0scjCvpsIAPLNS9jCfR7+jr+a4kWJQAmvSgD2WkdAvixc84CmTGbgN3RvUj+wYbiTj9wTfEdN07+7Kd7,iv:zP5poCC56FD5jonB/uMIulVJ4Ry6XBzeWeuEN1PnE2M=,tag:ge4jXljaAaL85V2GDETgNw==,type:str]
+    OF_NOTIFY_SMS_PROVIDER_TOKEN: ENC[AES256_GCM,data:P59IfmWnbmdAVMpbB0w/C1EKWqy1ZFtbWoBwjj8HQ1Q=,iv:XlhZZL6PRbM3SexMNr/oev5398yAqpkwnCE/QPORIi8=,tag:4mO0rAKser0j+6pq7/XcZw==,type:str]
+    OF_NOTIFY_PUSH_APNS_KEY_PATH: /run/orbitalfreight/notification-service/apns.p8
+    OF_NOTIFY_PUSH_FCM_KEY_PATH: /run/orbitalfreight/notification-service/fcm.json
+    OF_NOTIFY_WEBHOOK_TIMEOUT_MS: 4000
+    OF_NOTIFY_MAX_ATTEMPTS: 8
+    OF_NOTIFY_TEMPLATE_DIR: /etc/orbitalfreight/templates
+    apns_key_p8: ENC[AES256_GCM,data:FeRwBnKMErQrfNzZhTCEXUmAmXETdJpmaFbry/ozMNhvivs31VJdu1Mh/0TE2oRtoSE29JjoDvCAdswOoe7PM5Gzm+qiaKd1o3vS6KneVRdllJE0hbfVid/AxovDQfS69bZTvUJ8/lx96tKg2VXRzq3ibe1Jwk/NChUPH67G0PSwyQLs0SoNtYM/KSEYPIxDovFRRxQgzwA+8xby735Bucrgy20Fg2C3DZq9YBpbDWvSsvAc,iv:X8ImN/0bNjS1bnb7p4a568DijHQO544RPsfG8Qv6a/k=,tag:J2zHQfPlD1n1l/OoXmMy6g==,type:str]
+    fcm_service_account_json: ENC[AES256_GCM,data:XI6kD0kN6O7AFmASS2DsuCPyaGLpPrR7NcveNh7SEAJPCttdLWRZt2gXOEk6QcsEhfvycPBxgHpPsUmnyy64TBPGymLQtRiScbn4HbDSBQVv0QSX/nRH03L54ddRg7Pk2f2tpzhQLYYS9AebGZ/v0d61mnzDU6kKfTRCobdTOUVr01aodmtKxJe+mFHzjjnoObLqer7tkexfmHejhZQ4c6oUA3IOvB4Dq4io4W7O9qajGfOpIBYe0+2YRl1BplzhKoSlxfm721mYMIRXfRmeHgxQeZJfctPijt2+LLY3Ft2j7hs3xfxoy2WlhOxvcH7V1DMzqHCJqnYVsos2yrCF1SHM+VM=,iv:4TDRMq36NNANAkeRexorY5vRTuUBzBFi9hchH5LLGcc=,tag:/g0fqDbzJ96EU21l3pgy4g==,type:str]
+
+customs-service:
+    OF_CUSTOMS_AUTHORITY_ENDPOINT: https://filing.douane.gouv.example/edifact/v2
+    OF_CUSTOMS_AUTHORITY_CERT_PATH: /run/orbitalfreight/customs-service/authority-client.pem
+    OF_CUSTOMS_TARIFF_CACHE_TTL_SECONDS: 86400
+    OF_CUSTOMS_RETENTION_YEARS: 10
+    authority_client_pem: ENC[AES256_GCM,data:VlrTolfOZnRxmv5VAuvmWGgiH+dOBpLQzHkNXuB5V6CP20vcYkHhDbwuJR08hQayjIqJgrkwx49gY6Oz2lWHSG339Rm1+NId6Dauhfa4jSKdzgVIX9dDavOnx6WLcLvguzi3vOnMxeq2l0Zby3ILet8EAjXxLD4Oew+/yZ2qWsMJ7arweDY4Fno5yN8FwkpLfmDhENqUa6FoR2TKC/HHA6zrFfqXpSRWhzNWS4j0RofB7z4pyisfjWvngBiOPIOnCkHVKQ/q1nY0VfkpO4w6AdcPbBu29r/pSE9VxzdF6TScD3S8UOJpIR7Ndj/TMCj0,iv:eh3YDFP5Gw5MAM6uoPAgEFiwUKgNk5aw+KdJv5XK6J4=,tag:z43gIt8QgPb6oBfz2N8OIQ==,type:str]
+    taric_direct_api_key: ENC[AES256_GCM,data:p6gAGZZqNNVDHhQH6duWh6dSYMjd3Qo6g0+iGw76Y402Q5xl,iv:dNkvBrNZ0uh9JpB92tL9mL0Iduch7rZhXKB3lX3SX+g=,tag:jtFzmliIMdKgUVDIsVzXNA==,type:str]
+
+audit-ledger:
+    OF_LEDGER_CHECKPOINT_INTERVAL_MINUTES: 60
+    OF_LEDGER_NOTARY_ENDPOINT: https://notary.eu-west.orbitalfreight.io/v1/checkpoints
+    OF_LEDGER_HASH_ALGORITHM: sha256
+    notary_bearer_token: ENC[AES256_GCM,data:dR0Vrar5MgMWbWSshNhvz80R8O+ws9LMHkWrW9imC8fDl76GeQZmTFzG8/A=,iv:7Jtr53c7O60moX+tLYP80Hsehf9C68exLQ542edRkXc=,tag:uf+IiFPbc+qF36A/2cpFSg==,type:str]
+
+sops:
+    kms:
+        - arn: arn:aws:kms:eu-west-1:481920377154:key/6a1f0c48-2d7b-4f83-9c15-b0e4d2a97f31
+          created_at: "2026-01-14T08:12:03Z"
+          enc: AQICAHhqf5N2wcQ0Xk8mR1t7YbLpD3vJ9sZaTgW4nCfKe6uMzQF3rXbY8pKdN1cVh0aTuMgQAAAAfjB8Bgkqhki
+          aws_profile: ""
+    gcp_kms: []
+    azure_kv: []
+    hc_vault: []
+    age:
+        - recipient: age1rypm5dx6fkzhldvgdvj7w4q5zk5cg74vm9r8rhq4azq8e5qfmxumvausah
+          enc: |
+            -----BEGIN AGE ENCRYPTED FILE-----
+            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBQcTdrUjJtWjl4VHZCNWRM
+            cFljSDh3SmdFNGFVZFRyM25RN2sKUjJtWjl4VHZCNWRMcFljSDh3SmdFNGFVZFRy
+            M25RN2tSMm1aOXhUdkI1ZExwWWNIOHdKZ0U0YVVkVHIzblE3awotLS0gVDdrUTJt
+            WnI5eFR2QjVkTHBZY0g4d0pnRTRhVWRUcjNuUTdrUjJtWjl4VHYK
+            -----END AGE ENCRYPTED FILE-----
+    lastmodified: "2026-08-02T04:31:57Z"
+    mac: ENC[AES256_GCM,data:S+telIVeT+lMv2zC9VwNjzyGz3ireedKLNa3+hLyKrR/WIeBLfbce2VRCMA/kxFBtJ30u4HMt25Y6tO9Hj95dA==,iv:PVNik6ddju1Gqn3fVriG74w7uaAisDkmu6VsMGVqJZE=,tag:mmYPqWSReJUtHTJXjX0WMg==,type:str]
+    pgp:
+        - created_at: "2026-01-14T08:12:03Z"
+          enc: |
+            -----BEGIN PGP MESSAGE-----
+            hQIMA3kL8vQ2mZr9AQ//YcH8wJgE4aUdTr3nQ7kR2mZ9xTvB5dLpYcH8wJgE4aUd
+            Tr3nQ7kR2mZ9xTvB5dLpYcH8wJgE4aUdTr3nQ7kR2mZ9xTvB5dLpYcH8wJgE4aUd
+            Tr3nQ7kR2mZ9xTvB5dLpYcH8wJgE4aUdTr3nQ7kR2mZ9xTvB5dLpYcH8wJgE4aUd
+            =7fQx
+            -----END PGP MESSAGE-----
+          fp: 4C7A91B0D2E53F68AA149D076B258E3CF01472DB
+    unencrypted_suffix: _unencrypted
+    encrypted_regex: ^(OF_DATABASE_URL|OF_NOTIFY_SMTP_URL|OF_NOTIFY_SMS_PROVIDER_TOKEN|.*_key|.*_secret|.*_token|.*_pem|.*_p8|.*_json|.*_id)$
+    version: 3.8.1

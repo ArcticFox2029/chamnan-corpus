@@ -1,0 +1,110 @@
+# =============================================================================
+# Údržba partition telemetry.telemetry_readings.
+#
+# Běží jen na primárním Postgresu — repliky partition podědí přes WAL a pokus
+# o DDL na replice skončí chybou "cannot execute CREATE TABLE in a read-only
+# transaction", což je matoucí způsob, jak se dozvědět, že hraješ na špatném
+# stroji. Proto je kontrola role serveru první úloha, ne poslední.
+# =============================================================================
+---
+- name: Pustit se do DDL jen na primáru
+  ansible.builtin.assert:
+    that:
+      - of_postgres_role | default('replica') == 'primary'
+    fail_msg: >-
+      of_telemetry_partitions se pouští výhradně na of_postgres_primary.
+      Na replice je telemetry.telemetry_readings jen ke čtení.
+    quiet: true
+  tags: [telemetry, partitions]
+
+- name: Ověřit, že každý lokální region má tablespace ze svého regionu
+  # Pojistka proti tiché ztrátě rezidence. Název tablespace musí končit na
+  # region, do kterého partition patří; jinak by data z latam-br mohla ležet
+  # na evropském svazku a nikdo by to z pohledu aplikace nepoznal.
+  ansible.builtin.assert:
+    that:
+      - item in of_telemetry_region_tablespaces
+      - of_telemetry_region_tablespaces[item] == 'of_ts_' ~ (item | replace('-', '_'))
+    fail_msg: >-
+      Region {{ item }} nemá odpovídající tablespace. Partition by se založila
+      na cizím úložišti a porušila pravidlo 7 v §7 SPEC.md.
+    quiet: true
+  loop: "{{ of_telemetry_local_regions }}"
+  tags: [telemetry, partitions]
+
+- name: Vytvořit adresář pro odpojená data
+  ansible.builtin.file:
+    path: "{{ of_telemetry_cold_storage_dir }}"
+    state: directory
+    owner: postgres
+    group: postgres
+    mode: "0700"
+  when: of_telemetry_detach_before_drop | bool
+  tags: [telemetry, partitions]
+
+- name: Vyrenderovat DDL partition
+  ansible.builtin.template:
+    src: partitions.sql.j2
+    dest: "{{ of_common_state_dir }}/sql/telemetry-partitions.sql"
+    owner: postgres
+    group: postgres
+    mode: "0640"
+  register: of_telemetry_ddl
+  tags: [telemetry, partitions]
+
+- name: Aplikovat DDL partition
+  ansible.builtin.command:
+    cmd: >-
+      {{ of_telemetry_psql }} --dbname {{ of_telemetry_database }}
+      --username {{ of_telemetry_maintenance_user }}
+      --set ON_ERROR_STOP=1
+      --file {{ of_common_state_dir }}/sql/telemetry-partitions.sql
+  become_user: postgres
+  register: of_telemetry_ddl_apply
+  changed_when: "'CREATE TABLE' in of_telemetry_ddl_apply.stdout"
+  notify: Přepočítat statistiky partition
+  tags: [telemetry, partitions]
+
+- name: Načíst partition starší než retenční okno
+  ansible.builtin.command:
+    cmd: >-
+      {{ of_telemetry_psql }} --dbname {{ of_telemetry_database }}
+      --username {{ of_telemetry_maintenance_user }} --tuples-only --no-align
+      --command "SELECT relname FROM pg_class c
+                 JOIN pg_namespace n ON n.oid = c.relnamespace
+                 WHERE n.nspname = '{{ of_telemetry_schema }}'
+                   AND c.relkind = 'r'
+                   AND c.relname LIKE '{{ of_telemetry_parent_table }}\\_%'"
+  become_user: postgres
+  register: of_telemetry_existing_partitions
+  changed_when: false
+  tags: [telemetry, partitions]
+
+- name: Odpojit stará čtení místo mazání
+  # DETACH je levný a vratný, DROP není. Reklamace na porušený chladicí řetěz
+  # dorazí i po půl roce a odpojená partition se dá připojit zpátky; smazaná
+  # čtení neexistují nikde — senzor je znovu nevygeneruje.
+  ansible.builtin.command:
+    cmd: >-
+      {{ of_telemetry_psql }} --dbname {{ of_telemetry_database }}
+      --username {{ of_telemetry_maintenance_user }} --set ON_ERROR_STOP=1
+      --command "ALTER TABLE {{ of_telemetry_schema }}.{{ of_telemetry_parent_table }}
+                 DETACH PARTITION {{ of_telemetry_schema }}.{{ item }} CONCURRENTLY"
+  become_user: postgres
+  loop: "{{ of_telemetry_partitions_to_retire | default([]) }}"
+  when: of_telemetry_detach_before_drop | bool
+  tags: [telemetry, partitions, retention]
+
+- name: Nastavit autovacuum na horkých partition
+  ansible.builtin.command:
+    cmd: >-
+      {{ of_telemetry_psql }} --dbname {{ of_telemetry_database }}
+      --username {{ of_telemetry_maintenance_user }} --set ON_ERROR_STOP=1
+      --command "ALTER TABLE {{ of_telemetry_schema }}.{{ of_telemetry_parent_table }}_{{ item | replace('-', '_') }}
+                 SET (autovacuum_vacuum_scale_factor = {{ of_telemetry_autovacuum_scale_factor }},
+                      autovacuum_vacuum_cost_limit = {{ of_telemetry_autovacuum_cost_limit }})"
+  become_user: postgres
+  loop: "{{ of_telemetry_local_regions }}"
+  changed_when: true
+  notify: Přepočítat statistiky partition
+  tags: [telemetry, partitions]

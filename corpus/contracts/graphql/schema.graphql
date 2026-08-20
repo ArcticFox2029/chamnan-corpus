@@ -1,0 +1,161 @@
+# Radice dello schema pubblico del gateway GraphQL: definizione dell'operazione, scalari
+# personalizzati e direttive trasversali. È il file che si legge per primo — i tipi, gli input,
+# le query, le mutazioni e le sottoscrizioni stanno negli altri file di questa directory e
+# vengono uniti a tempo di build.
+#
+# Il gateway non possiede dati. Ogni campo risolve verso uno dei quattordici servizi di §1
+# rispettando il grafo sincrono di §1.1: se una query attraversasse un arco che quel grafo non
+# prevede, il problema è la query, non il grafo.
+
+schema {
+  query: Query
+  mutation: Mutation
+  subscription: Subscription
+}
+
+"""
+ULID prefissato, 26 caratteri base32 dopo il prefisso. Il prefisso fa parte del valore e non viene
+mai tolto in transito: `shp_01J8ZK4T9QW3RM7XN2VB6HD5PC` è l'identificatore, non `01J8ZK…`.
+"""
+scalar ULID
+
+"""
+Istante RFC 3339 in UTC, sempre con la Z finale. Corrisponde alle colonne che finiscono in `_at`.
+"""
+scalar DateTime
+
+"""
+Data senza ora, `YYYY-MM-DD`. Corrisponde alle colonne che finiscono in `_on`: `due_on`,
+`licence_expires_on`, `insurance_expires_on`.
+"""
+scalar Date
+
+"""
+Intero a 64 bit trasportato come stringa. Serve agli importi in unità minori e alle distanze in
+metri: il numero JSON perde precisione oltre i 2^53 e una distanza cumulata di rotta marittima ci
+arriva davvero.
+"""
+scalar Long
+
+"""
+Codice valuta ISO 4217 maiuscolo. Non ha un valore predefinito da nessuna parte dello schema.
+"""
+scalar CurrencyCode
+
+"""
+Codice paese ISO 3166-1 alpha-2 maiuscolo.
+"""
+scalar CountryCode
+
+"""
+UN/LOCODE di cinque caratteri, per porti e strutture interne.
+"""
+scalar UnLocode
+
+"""
+Oggetto JSON arbitrario. Usato solo per i corpi di evento e per
+`platform.audit_ledger_entries.payload`, dove la forma dipende dall'azione registrata.
+"""
+scalar JSON
+
+"""
+Marca il campo come servito da uno specifico servizio di §1. Non cambia l'esecuzione: è
+documentazione eseguibile, e il generatore di grafi delle dipendenze in ops/ la legge per
+verificare che lo schema non abbia introdotto un arco che §1.1 non prevede.
+"""
+directive @servedBy(service: String!) on FIELD_DEFINITION | OBJECT
+
+"""
+Dichiara che il campo richiede uno scope presente nella risposta di
+`identity.v1.TokenIntrospection/Introspect`. Il gateway lo verifica prima di chiamare il servizio
+a valle, così un rifiuto per mancanza di permessi non costa una chiamata di rete.
+"""
+directive @requiresScope(scope: String!) on FIELD_DEFINITION
+
+"""
+Il campo non è servito dal portale partner. partner-portal-api monta uno schema ridotto costruito
+dallo stesso sorgente, e i campi marcati così vengono rimossi a tempo di build invece di essere
+oscurati a runtime — un campo che non esiste non si può dimenticare di oscurare.
+"""
+directive @internalOnly on FIELD_DEFINITION | OBJECT
+
+"""
+Campo in via di rimozione. `since` è la versione dello schema in cui è comparso l'avviso,
+`use` indica il sostituto.
+"""
+directive @deprecatedField(since: String!, use: String) on FIELD_DEFINITION
+
+"""
+Elenco chiuso di §0.6. Governa residenza del dato, partizionamento della telemetria e affinità di
+partizione su Kafka.
+"""
+enum RegionCode {
+  EU_WEST
+  EU_CENTRAL
+  NA_EAST
+  NA_WEST
+  APAC_SG
+  APAC_JP
+  LATAM_BR
+  MEA_AE
+}
+
+"""
+Valore di `X-OF-Actor-Kind`. `SYSTEM` non arriva mai da un client: compare solo nelle voci di
+`platform.audit_ledger_entries` scritte dal ledger stesso.
+"""
+enum ActorKind {
+  USER
+  SERVICE
+  DEVICE
+  PARTNER
+  SYSTEM
+}
+
+"""
+La busta d'errore di §0.4, esposta come tipo per le mutazioni che restituiscono un risultato
+unione invece di sollevare. `code` è snake_case e stabile: i client mappano su quello, mai sul
+messaggio.
+"""
+type Error {
+  code: String!
+  httpStatus: Int!
+  message: String!
+  traceId: String!
+  retryable: Boolean!
+  fields: [FieldViolation!]!
+}
+
+type FieldViolation {
+  path: String!
+  reason: String!
+  expectation: String
+}
+
+"""
+Informazioni di pagina secondo la paginazione a cursore di §0.5. `hasNextPage` è vero se e solo se
+`endCursor` non è nullo: una pagina più corta del `first` richiesto non significa fine lista.
+"""
+type PageInfo {
+  hasNextPage: Boolean!
+  endCursor: String
+}
+
+"""
+Importo in unità minori con la sua valuta, sempre insieme (§7 regola 4). `formatted` è di sola
+cortesia per la console e non va usato per calcoli.
+"""
+type Money {
+  amountMinor: Long!
+  currency: CurrencyCode!
+  formatted: String!
+}
+
+"""
+Punto WGS84, come `geography(Point, 4326)` nel database.
+"""
+type GeoPoint {
+  lat: Float!
+  lon: Float!
+  accuracyM: Int
+}

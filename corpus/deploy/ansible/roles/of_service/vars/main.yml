@@ -1,0 +1,85 @@
+# =============================================================================
+# Odchozí synchronní volání každé služby — přepis tabulky z §1.1 SPEC.md.
+#
+# Slouží k jedinému účelu: šablona of-service.env.j2 podle něj rozhoduje, které
+# adresní proměnné se do prostředí služby vůbec dostanou. §5 SPEC.md říká, že
+# `OF_*_BASE_URL` a `OF_*_GRPC_ADDR` se píší pořád stejně, ale nastavují se jen
+# na těch službách, které v §1.1 figurují jako volající. Nastavit
+# OF_BILLING_BASE_URL na customs-service by nebyla nevinná nadbytečnost —
+# byl by to první krok k uzavření cyklu, který §1.2 výslovně rozbíjí přes
+# událost `billing.invoice.settled`.
+#
+# Proměnná OF_IDENTITY_GRPC_ADDR a OF_IDENTITY_JWKS_URL tady schválně nejsou:
+# ty dostává každá služba bez výjimky (§1.2, univerzální závislost), a šablona
+# je proto emituje mimo tenhle graf.
+# =============================================================================
+
+of_service_outbound:
+  identity-service: []                     # kořen grafu, nikoho synchronně nevolá
+  fleet-service:
+    - container-registry
+    - routing-service
+    - geo-service
+    - document-service
+  container-registry:
+    - geo-service
+    - document-service
+  telemetry-ingest:
+    - container-registry
+    - geo-service
+  routing-service:
+    - geo-service
+    - customs-service
+  geo-service: []                          # list grafu
+  customs-service:
+    - document-service
+    - audit-ledger
+  billing-service:
+    - customs-service
+    - fleet-service
+    - document-service
+  document-service: []                     # list grafu
+  notification-service:
+    - document-service
+  partner-portal-api:
+    - billing-service
+    - customs-service
+    - container-registry
+  analytics-pipeline:
+    - container-registry
+    - geo-service
+  audit-ledger: []
+  reconciliation-service:
+    - billing-service
+    - audit-ledger
+    - analytics-pipeline
+
+# Jméno adresní proměnné pro každý cíl. gRPC adresa se používá, kde služba
+# nabízí gRPC surface a volající je na horké cestě; jinak base URL.
+of_service_address_var:
+  container-registry: { var: OF_CONTAINER_REGISTRY_GRPC_ADDR, value_key: of_container_registry_grpc_addr }
+  geo-service:        { var: OF_GEO_GRPC_ADDR,                value_key: of_geo_grpc_addr }
+  audit-ledger:       { var: OF_AUDIT_LEDGER_GRPC_ADDR,       value_key: of_audit_ledger_grpc_addr }
+  routing-service:    { var: OF_ROUTING_BASE_URL,             value_key: of_routing_base_url }
+  customs-service:    { var: OF_CUSTOMS_BASE_URL,             value_key: of_customs_base_url }
+  billing-service:    { var: OF_BILLING_BASE_URL,             value_key: of_billing_base_url }
+  document-service:   { var: OF_DOCUMENT_BASE_URL,            value_key: of_document_base_url }
+  fleet-service:      { var: OF_FLEET_BASE_URL,               value_key: of_fleet_base_url }
+  analytics-pipeline: { var: OF_ANALYTICS_BASE_URL,           value_key: of_analytics_base_url }
+
+# Které služby konzumují Kafku. identity-service, geo-service a routing-service
+# publikují nebo nekonzumují vůbec, takže nemají OF_KAFKA_CONSUMER_GROUP —
+# prázdná skupina by relay z platform.outbox_messages nechala běžet naprázdno.
+of_service_kafka_consumers:
+  - container-registry
+  - telemetry-ingest
+  - customs-service
+  - billing-service
+  - document-service
+  - notification-service
+  - partner-portal-api
+  - analytics-pipeline
+  - audit-ledger
+  - reconciliation-service
+  - fleet-service
+  - routing-service

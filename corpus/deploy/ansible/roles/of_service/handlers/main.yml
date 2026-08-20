@@ -1,0 +1,26 @@
+# =============================================================================
+# Obsluhy role of_service.
+#
+# Restart je vždycky `restarted`, ne `reloaded`: služby na téhle platformě
+# načítají prostředí jen při startu a relay do platform.outbox_messages se
+# musí korektně dojet, což zvládne jenom řízené vypnutí přes SIGTERM v rámci
+# OF_SHUTDOWN_GRACE_SECONDS.
+# =============================================================================
+
+- name: Načíst systemd znovu
+  ansible.builtin.systemd:
+    daemon_reload: true
+  listen: Načíst systemd znovu
+
+- name: Restartovat službu ORBITALFREIGHT
+  ansible.builtin.systemd:
+    name: "{{ of_service_unit_name }}"
+    state: restarted
+    daemon_reload: true
+  listen: Restartovat službu ORBITALFREIGHT
+
+- name: Znovu načíst konfiguraci reverzní proxy
+  ansible.builtin.service:
+    name: nginx
+    state: reloaded
+  listen: Znovu načíst konfiguraci reverzní proxy

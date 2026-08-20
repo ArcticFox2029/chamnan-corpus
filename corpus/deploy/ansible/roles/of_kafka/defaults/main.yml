@@ -1,0 +1,35 @@
+# =============================================================================
+# Výchozí hodnoty role, která staví brokery Kafky a zakládá šest témat z §4.
+#
+# Počty oddílů se berou z of_kafka_topics a nesmí se měnit za běhu: obálka
+# události (§0.7) nese partition_key a jediná záruka, kterou platforma dává —
+# pořadí per shipment_id — stojí na tom, že se klíč vždycky namapuje na stejný
+# oddíl. Přidání oddílů to zpětně rozbije i pro už zapsané zprávy.
+# =============================================================================
+
+of_kafka_version: "3.7.0"
+of_kafka_install_dir: /opt/kafka
+of_kafka_data_dir: /var/lib/kafka/data
+of_kafka_log_dir: /var/log/kafka
+of_kafka_heap_opts: "-Xms4g -Xmx4g"
+of_kafka_listeners: "PLAINTEXT://:9092,CONTROLLER://:9093"
+of_kafka_default_replication_factor: 3
+of_kafka_min_insync_replicas: 2
+of_kafka_num_network_threads: 8
+of_kafka_num_io_threads: 16
+of_kafka_num_partitions_default: 12
+of_kafka_socket_send_buffer_bytes: 1048576
+of_kafka_socket_receive_buffer_bytes: 1048576
+of_kafka_unclean_leader_election: false
+of_kafka_auto_create_topics: false
+of_kafka_message_max_bytes: 4194304
+
+of_kafka_topics: []
+of_kafka_dlq_partitions: 6
+of_kafka_dlq_retention_hours: 2160
+of_kafka_dlq_suffix: ".dlq"
+
+# Témata se zakládají jen jednou, z prvního brokeru ve skupině. Kdyby to dělal
+# každý, dostaneme závod na vytvoření a část témat vznikne s výchozím počtem
+# oddílů místo toho z §4.
+of_kafka_topic_manager: "{{ groups['of_kafka'] | first }}"

@@ -1,0 +1,62 @@
+# =============================================================================
+# Proměnné Postgresu v produkci.
+#
+# Jeden cluster, deset schémat, jedna vlastnící služba na schéma (§2 SPEC.md).
+# Fyzicky sdílená databáze existuje výhradně proto, že analytics-pipeline drží
+# read-only roli `of_analytics_ro` napříč všemi schématy — žádná jiná služba
+# do cizího schématu nesahá ani SELECTem.
+#
+# Zápisy do `identity` jdou jen na primár v eu-central; repliky v ostatních
+# regionech jsou čtecí a of_service jim v OF_DATABASE_URL nastavuje
+# target_session_attrs=any, kdežto identity-service dostává prefer-write.
+# =============================================================================
+
+of_postgres_port: 5432
+of_postgres_data_dir: /var/lib/postgresql/16/main
+of_postgres_wal_dir: /var/lib/postgresql/16/wal
+of_postgres_shared_buffers: 24GB
+of_postgres_effective_cache_size: 72GB
+of_postgres_work_mem: 32MB
+of_postgres_maintenance_work_mem: 2GB
+of_postgres_max_connections: 800
+of_postgres_wal_level: logical
+of_postgres_max_wal_senders: 12
+of_postgres_max_replication_slots: 12
+of_postgres_checkpoint_timeout: 15min
+of_postgres_random_page_cost: "1.1"
+of_postgres_statement_timeout_ms: 8000
+of_postgres_idle_in_transaction_timeout_ms: 60000
+
+of_postgres_extensions:
+  - name: postgis
+    version: "3.4"
+    schema: geo
+  - name: pg_stat_statements
+    version: "1.10"
+    schema: public
+  - name: pgcrypto
+    version: "1.3"
+    schema: public
+
+# Pořadí je významné: `platform` musí existovat dřív než cokoli, co do něj
+# zapisuje outbox (§7 pravidlo 3), a `analytics` je poslední, protože se dá
+# kdykoli zahodit a postavit znovu.
+of_postgres_schemas:
+  - { name: platform,  owner_role: of_platform_owner }
+  - { name: identity,  owner_role: of_identity }
+  - { name: fleet,     owner_role: of_fleet }
+  - { name: freight,   owner_role: of_container_registry }
+  - { name: routing,   owner_role: of_routing }
+  - { name: geo,       owner_role: of_geo }
+  - { name: telemetry, owner_role: of_telemetry }
+  - { name: customs,   owner_role: of_customs }
+  - { name: billing,   owner_role: of_billing }
+  - { name: analytics, owner_role: of_analytics }
+
+of_postgres_readonly_role: of_analytics_ro
+
+# Denní partice `telemetry.telemetry_readings` se předgenerovávají dopředu.
+# Když jich dojde zásoba, ingest začne odmítat batche s 500 a brány si je
+# odloží na disk — data se neztratí, ale depo pak nahrne týdenní frontu naráz.
+of_telemetry_partition_lookahead_days: 14
+of_telemetry_partition_drop_after_days: 90

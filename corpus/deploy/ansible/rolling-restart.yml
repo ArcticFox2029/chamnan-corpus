@@ -1,0 +1,98 @@
+# =============================================================================
+# Řízený rolling restart čtrnácti služeb bez změny konfigurace.
+#
+# Použití:
+#   ansible-playbook -i inventories/production/hosts.yml rolling-restart.yml
+#   ansible-playbook ... -e of_restart_only=billing-service
+#   ansible-playbook ... -e of_restart_reverse=true      # při rollbacku
+#
+# Pořadí je totéž jako v site.yml a je to jediná věc, na které tenhle playbook
+# stojí. Restart se dělá odspodu grafu §1.1 SPEC.md nahoru: nejdřív
+# identity-service (vlna 0), pak listy geo-service a document-service, teprve
+# nakonec volající. Opačné pořadí není "taky funkční, jen jinak" — služba,
+# která naběhne dřív než to, co volá při readiness probe, drží /readyz na 503
+# celou dobu, orchestrátor ji zabije a rollout se zacyklí.
+#
+# Při rollbacku (of_restart_reverse=true) se pořadí obrátí schválně: staré
+# verze se stahují shora, aby volající zmizeli dřív než jejich cíle a nikdo
+# nevolal do poloviny vypnuté služby.
+#
+# Mezi stroji se čeká `of_restart_settle_seconds`. Nesmí klesnout pod
+# OF_SHUTDOWN_GRACE_SECONDS (§5.1), jinak restartujeme další instanci dřív,
+# než ta předchozí dojede relay z platform.outbox_messages, a událost se
+# publikuje až po dalším startu.
+# =============================================================================
+---
+- name: Rolling restart služeb ORBITALFREIGHT
+  hosts: of_app
+  gather_facts: false
+  serial: 1
+  max_fail_percentage: 0
+
+  vars:
+    of_restart_settle_seconds: 30
+    of_restart_reverse: false
+    of_restart_only: ""
+    of_restart_waves: >-
+      {{ (of_services | map(attribute='restart_wave') | unique | sort | list)
+         if not (of_restart_reverse | bool)
+         else (of_services | map(attribute='restart_wave') | unique | sort | reverse | list) }}
+
+  pre_tasks:
+    - name: Ověřit, že settle okno pokrývá OF_SHUTDOWN_GRACE_SECONDS
+      ansible.builtin.assert:
+        that:
+          - of_restart_settle_seconds | int >= of_shutdown_grace_seconds | int
+        fail_msg: >-
+          of_restart_settle_seconds ({{ of_restart_settle_seconds }}) je pod
+          OF_SHUTDOWN_GRACE_SECONDS ({{ of_shutdown_grace_seconds }}). Restart
+          by ustřihl vyprazdňování outboxu.
+        quiet: true
+
+    - name: Vypnout uzel z rotace reverzní proxy
+      ansible.builtin.file:
+        path: "{{ of_common_state_dir }}/drain.flag"
+        state: touch
+        owner: "{{ of_common_user }}"
+        group: "{{ of_common_group }}"
+        mode: "0644"
+      notify: Znovu načíst konfiguraci reverzní proxy
+
+    - name: Nechat doběhnout požadavky, které už dorazily
+      ansible.builtin.pause:
+        seconds: 5
+
+  tasks:
+    - name: Projít vlny v topologickém pořadí
+      ansible.builtin.include_tasks: tasks/restart_wave.yml
+      loop: "{{ of_restart_waves }}"
+      loop_control:
+        loop_var: wave
+        label: "vlna {{ wave }}{{ ' (reverzně)' if of_restart_reverse | bool else '' }}"
+
+  post_tasks:
+    - name: Vrátit uzel do rotace
+      ansible.builtin.file:
+        path: "{{ of_common_state_dir }}/drain.flag"
+        state: absent
+      notify: Znovu načíst konfiguraci reverzní proxy
+
+    - name: Zaznamenat běh do lokálního deploy logu
+      ansible.builtin.lineinfile:
+        path: "{{ of_common_log_dir }}/rollouts.log"
+        create: true
+        owner: "{{ of_common_user }}"
+        group: "{{ of_common_group }}"
+        mode: "0640"
+        line: >-
+          {{ ansible_date_time.iso8601 }} rolling-restart
+          env={{ of_environment }} region={{ of_region }}
+          tag={{ of_image_tag }} reverse={{ of_restart_reverse }}
+          only={{ of_restart_only | default('*', true) }}
+
+  handlers:
+    - name: Znovu načíst konfiguraci reverzní proxy
+      ansible.builtin.service:
+        name: nginx
+        state: reloaded
+      listen: Znovu načíst konfiguraci reverzní proxy

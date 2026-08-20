@@ -1,0 +1,48 @@
+# =============================================================================
+# Obraz container-registry (Kotlin 1.9, Ktor).
+#
+# Staví se Gradlem s daemonem vypnutým — v kontejneru nemá co recyklovat a
+# jen drží paměť, kterou runner potřebuje jinde. Cache Gradlu se přenáší přes
+# mount, ne přes vrstvu, aby se do obrazu nedostaly build artefakty.
+#
+# Služba vlastní přechody stavů zásilky a je na horké cestě celého provozu,
+# takže se sem vědomě nedávají žádné ladicí nástroje: JRE, aplikace, nic víc.
+# =============================================================================
+
+FROM gradle:8.7-jdk21 AS build
+
+WORKDIR /src
+COPY services/container-registry/gradle ./gradle
+COPY services/container-registry/gradlew services/container-registry/settings.gradle.kts services/container-registry/build.gradle.kts ./
+RUN --mount=type=cache,target=/home/gradle/.gradle \
+    ./gradlew --no-daemon dependencies --quiet
+
+COPY libs/ /src/libs/
+COPY services/container-registry/src ./src
+RUN --mount=type=cache,target=/home/gradle/.gradle \
+    ./gradlew --no-daemon installDist --quiet
+
+FROM eclipse-temurin:21-jre-jammy AS runtime
+
+ARG VERSION=4.2.0
+ARG BUILD_SHA=unknown
+LABEL org.opencontainers.image.title="container-registry" \
+      org.opencontainers.image.version="${VERSION}" \
+      org.opencontainers.image.revision="${BUILD_SHA}" \
+      org.opencontainers.image.vendor="ORBITALFREIGHT"
+
+RUN groupadd -g 1400 orbitalfreight \
+    && useradd -u 1400 -g 1400 -s /usr/sbin/nologin -M orbitalfreight
+
+WORKDIR /app
+COPY --from=build --chown=1400:1400 /src/build/install/container-registry/ ./
+
+USER 1400:1400
+EXPOSE 8083 9083
+
+# ZGC místo G1: služba drží velké množství krátkodobých objektů (stopa skenů),
+# a pauzy G1 se u ní projevovaly jako výkyvy latence na
+# PATCH /v1/shipments/{shipment_id}/status.
+ENV JAVA_TOOL_OPTIONS="-XX:MaxRAMPercentage=70 -XX:+UseZGC -XX:+ExitOnOutOfMemoryError"
+
+ENTRYPOINT ["/app/bin/container-registry"]

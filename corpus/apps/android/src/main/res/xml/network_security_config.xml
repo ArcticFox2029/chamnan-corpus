@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    यह फ़ाइल तय करती है कि उपकरण ORBITALFREIGHT के किन होस्टों से बात कर सकता है और
+    किस प्रमाणपत्र पर भरोसा करेगा। गोदाम के Wi-Fi पर एक से ज़्यादा बार बीच-में-बैठे
+    प्रॉक्सी मिल चुके हैं, इसलिए:
+      • साफ़ HTTP कहीं भी नहीं, debug बिल्ड में भी नहीं;
+      • चारों सेवाओं के लिए दो-दो पिन — चालू और अगली — ताकि प्रमाणपत्र बदलने पर
+        उपकरण एक साथ बाहर न हो जाएँ;
+      • उपयोगकर्ता द्वारा जोड़े गए CA पर भरोसा नहीं, क्योंकि MDM उन्हें डाल सकता है।
+    पिन की समाप्ति तिथि जान-बूझकर लिखी है: उसके बाद पिनिंग निष्क्रिय हो जाती है और
+    ऐप ईंट नहीं बनता, भले ही कोई पुराना उपकरण अपडेट न हुआ हो।
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="false">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+
+    <domain-config cleartextTrafficPermitted="false">
+        <domain includeSubdomains="true">identity.eu-west.orbitalfreight.example</domain>
+        <domain includeSubdomains="true">freight.eu-west.orbitalfreight.example</domain>
+        <domain includeSubdomains="true">documents.eu-west.orbitalfreight.example</domain>
+        <domain includeSubdomains="true">telemetry.eu-west.orbitalfreight.example</domain>
+        <pin-set expiration="2027-03-31">
+            <pin digest="SHA-256">7HIpactkIAq2Y49orFOOQKurWxmmSFZhBCoQYcRhJ3Y=</pin>
+            <pin digest="SHA-256">Vjs8r4z+80wjNcr1YKepWQboSIRi63WsWXhIMN+eWys=</pin>
+        </pin-set>
+    </domain-config>
+
+    <!-- केवल डेवलपर मशीन। यहाँ भी TLS अनिवार्य है; पिन नहीं क्योंकि प्रमाणपत्र
+         स्थानीय रूप से बनता है। -->
+    <domain-config cleartextTrafficPermitted="false">
+        <domain includeSubdomains="true">local.orbitalfreight.example</domain>
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </domain-config>
+</network-security-config>

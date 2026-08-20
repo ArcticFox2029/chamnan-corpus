@@ -1,0 +1,40 @@
+# =============================================================================
+# Chart, kterým se nasazuje jedna z čtrnácti služeb z §1 SPEC.md.
+#
+# Záměrně je to JEDEN chart parametrizovaný jménem služby, ne čtrnáct chartů.
+# Služby se liší portem, schématem, odchozími hranami a pár proměnnými z §5 —
+# všechno ostatní (sondy z §3.15, bezpečnostní kontext, cesta k prostředí,
+# vypínací okno) je stejné a čtrnáct kopií téhož by znamenalo čtrnáct míst,
+# kde se dá zapomenout na opravu.
+#
+# Kdo hledá manifesty pro celý cluster naráz, chce deploy/kubernetes/ a
+# Kustomize. Tenhle chart slouží tam, kde se nasazuje po jedné službě —
+# typicky při hotfixu jedné komponenty mimo běžný rollout.
+# =============================================================================
+apiVersion: v2
+name: of-service
+description: Jedna backendová služba platformy ORBITALFREIGHT
+type: application
+
+# Verze chartu se točí nezávisle na verzi platformy. appVersion drží výchozí
+# tag obrazu a musí odpovídat vydané verzi ze SPEC.md.
+version: 2.4.1
+appVersion: "4.2.0"
+
+kubeVersion: ">=1.28.0-0"
+
+keywords:
+  - orbitalfreight
+  - logistics
+  - backend
+
+maintainers:
+  - name: platform-infra
+    email: platform-infra@orbitalfreight.net
+
+annotations:
+  orbitalfreight.net/spec-version: "4.2.0"
+  # Chart nesmí přežít změnu specifikace bez revize: §5 určuje, které
+  # proměnné vůbec smí existovat, a služba, která najde neznámou OF_*,
+  # podle §5 selže při startu.
+  orbitalfreight.net/spec-section: "§1, §3.15, §5"

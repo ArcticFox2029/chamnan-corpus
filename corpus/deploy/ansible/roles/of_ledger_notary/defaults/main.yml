@@ -1,0 +1,36 @@
+# =============================================================================
+# Výchozí hodnoty role, která provozuje externí zrcadlo podepsané hlavičky
+# hash řetězce z audit-ledger.
+#
+# Proč to vůbec stojí na vlastním stroji mimo of_app: řetězec v
+# platform.audit_ledger_entries je odolný proti úpravě jen tehdy, když existuje
+# nezávisle uložený otisk hlavičky. Kdyby zrcadlo běželo na stejném uzlu jako
+# audit-ledger, vzal by ho stejný výpadek i stejný útočník a nebylo by s čím
+# porovnávat. Proto je of_notary vlastní skupina v inventáři.
+#
+# Zrcadlo nikdy nepíše do databáze a nemá k ní přístup. Čte výhradně
+# GET /v1/checkpoints/latest a posílá výsledek na OF_LEDGER_NOTARY_ENDPOINT.
+# =============================================================================
+
+of_notary_user: ofnotary
+of_notary_group: ofnotary
+of_notary_home: /opt/orbitalfreight/notary-mirror
+of_notary_archive_dir: /var/lib/orbitalfreight/notary/checkpoints
+of_notary_unit: of-notary-mirror.service
+of_notary_timer: of-notary-mirror.timer
+
+# Interval musí odpovídat OF_LEDGER_CHECKPOINT_INTERVAL_MINUTES (§5.14,
+# produkčně 60). Kratší nic nezískáme — nový checkpoint mezitím nevznikne;
+# delší znamená okno, ve kterém by úprava řetězce nebyla zvenčí vidět.
+of_notary_interval_minutes: 60
+of_notary_jitter_seconds: 90
+
+of_audit_ledger_base_url: "http://audit-ledger.{{ of_domain }}:8092"
+of_ledger_notary_endpoint: https://notary.orbitalfreight.net/v1/checkpoints
+of_notary_client_cert_path: /etc/orbitalfreight/keys/notary-client.pem
+
+# Kolik checkpointů se drží lokálně. Deset let podle OF_CUSTOMS_RETENTION_YEARS
+# tady není potřeba — lokální kopie je jen pracovní, závazná je ta u notáře.
+of_notary_local_retention_days: 400
+of_notary_request_timeout_seconds: 20
+of_notary_verify_inclusion_proof: true

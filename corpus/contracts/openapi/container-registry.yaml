@@ -1,0 +1,618 @@
+# Superficie REST di container-registry (Kotlin 1.9 su Ktor, porta 8083). È il sistema di
+# riferimento per contenitori, spedizioni e percorso scansioni, e l'unico posto al mondo in cui
+# `freight.shipments.status` cambia valore.
+#
+# Chiama in sincrono soltanto identity-service, geo-service e document-service. Non chiama mai
+# telemetry-ingest: la spedizione passa in `at_risk` perché questo servizio consuma
+# `telemetry.alert.raised`, non perché qualcuno gliela cambi da fuori.
+
+openapi: 3.1.0
+
+info:
+  title: container-registry
+  version: 4.2.0
+  description: |
+    Possiede lo schema `freight`. Ogni scrittura che produce un evento scrive anche la propria riga
+    di `platform.outbox_messages` nella stessa transazione: non esiste in questo servizio un
+    percorso di codice che pubblichi su Kafka da un gestore di richiesta.
+  contact:
+    name: Team Freight
+    url: https://wiki.orbitalfreight.internal/teams/freight
+
+servers:
+  - url: http://container-registry.orbitalfreight.svc.cluster.local:8083
+
+tags:
+  - name: shipments
+  - name: containers
+  - name: scans
+  - name: operations
+
+security:
+  - bearerAuth: []
+
+paths:
+
+  /v1/shipments:
+    post:
+      operationId: createShipment
+      tags: [shipments]
+      summary: Crea una spedizione
+      description: |
+        Nasce in stato `draft` e pubblica `shipment.created`. Le due strutture di origine e
+        destinazione devono essere diverse — il vincolo `shipments_endpoints_differ` lo impone
+        comunque, ma qui l'errore è leggibile.
+
+        I consumatori dell'evento sono routing-service (che pianifica la versione 1 della rotta),
+        billing-service (che apre una bozza di fattura senza emetterla), analytics-pipeline e
+        audit-ledger.
+      parameters:
+        - $ref: './_shared/components.yaml#/components/parameters/TenantHeader'
+        - $ref: './_shared/components.yaml#/components/parameters/TraceHeader'
+        - $ref: './_shared/components.yaml#/components/parameters/IdempotencyHeader'
+        - $ref: './_shared/components.yaml#/components/parameters/ActorKindHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateShipmentRequest' }
+            examples:
+              amburgo_singapore:
+                summary: Marittima Amburgo → Singapore, reefer
+                value:
+                  reference: PO-2026-88134
+                  origin_facility_id: fac_01J7A2HAMBURGCTA00000000A
+                  destination_facility_id: fac_01J7A2SINGAPOREPSA0000000
+                  incoterm: CIF
+                  sla_deadline_at: '2026-04-28T12:00:00Z'
+                  declared_value_minor: 4820000
+                  currency: EUR
+                  region_code: eu-west
+      responses:
+        '201':
+          description: Creata.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Shipment' }
+        '409':
+          description: Il `reference` è già usato da un'altra spedizione dello stesso tenant.
+          content:
+            application/json:
+              schema: { $ref: './_shared/components.yaml#/components/schemas/Error' }
+        '422': { $ref: './_shared/components.yaml#/components/responses/UnprocessableEntity' }
+
+    get:
+      operationId: listShipments
+      tags: [shipments]
+      summary: Elenca le spedizioni del tenant
+      parameters:
+        - $ref: './_shared/components.yaml#/components/parameters/TenantHeader'
+        - $ref: './_shared/components.yaml#/components/parameters/LimitParam'
+        - $ref: './_shared/components.yaml#/components/parameters/CursorParam'
+        - name: status
+          in: query
+          description: |
+            Ripetibile. Omesso, la ricerca usa `shipments_open_idx`, che copre soltanto le
+            spedizioni non consegnate e non annullate: chiedere esplicitamente `delivered` è molto
+            più caro e va fatto con una finestra temporale stretta.
+          schema:
+            type: array
+            items: { $ref: '#/components/schemas/ShipmentStatus' }
+        - name: reference
+          in: query
+          schema: { type: string }
+          description: Confronto esatto, non testuale. L'indice è su (tenant_id, reference).
+        - name: created_after
+          in: query
+          schema: { $ref: './_shared/components.yaml#/components/schemas/Timestamp' }
+      responses:
+        '200':
+          description: Pagina di spedizioni.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items, next_cursor]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: '#/components/schemas/Shipment' }
+                  next_cursor:
+                    type: [string, 'null']
+                    description: Nullo quando non c'è altro. Una pagina più corta di `limit` non significa fine lista.
+
+  /v1/shipments/{shipment_id}:
+    get:
+      operationId: getShipment
+      tags: [shipments]
+      summary: Legge una spedizione con i contenitori già inclusi
+      parameters:
+        - $ref: './_shared/components.yaml#/components/parameters/TenantHeader'
+        - name: shipment_id
+          in: path
+          required: true
+          schema: { $ref: './_shared/components.yaml#/components/schemas/Ulid' }
+      responses:
+        '200':
+          description: Spedizione.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Shipment' }
+              examples:
+                in_transito:
+                  value:
+                    shipment_id: shp_01J8ZK4T9QW3RM7XN2VB6HD5PC
+                    tenant_id: tnt_01J7A0000000000000000000AA
+                    reference: PO-2026-88134
+                    origin_facility_id: fac_01J7A2HAMBURGCTA00000000A
+                    destination_facility_id: fac_01J7A2SINGAPOREPSA0000000
+                    incoterm: CIF
+                    status: in_transit
+                    sla_deadline_at: '2026-04-28T12:00:00Z'
+                    declared_value_minor: 4820000
+                    currency: EUR
+                    region_code: eu-west
+                    created_at: '2026-03-14T09:02:11Z'
+                    delivered_at: null
+                    containers:
+                      - container_id: cnt_01J7C9MSCU3948571000000AB
+                        seal_number: SGL-4471982
+                        gross_kg: 21840
+                        loaded_at: '2026-03-14T14:31:08Z'
+                        unloaded_at: null
+        '404': { $ref: './_shared/components.yaml#/components/responses/NotFound' }
+
+  /v1/shipments/{shipment_id}/status:
+    patch:
+      operationId: changeShipmentStatus
+      tags: [shipments]
+      summary: L'unica strada legale per cambiare stato
+      description: |
+        Pubblica `shipment.status.changed`, che ha sei consumatori. Le transizioni ammesse sono
+        quelle del grafo: `draft`→`booked`→`sealed`→`in_transit`→`delivered`, con `at_risk` e
+        `held_at_customs` raggiungibili da `in_transit` e reversibili verso di esso, e `cancelled`
+        raggiungibile da qualsiasi stato che non sia `delivered`.
+
+        Non esiste UPDATE su questa colonna da nessun'altra parte del codice, nemmeno nei consumatori
+        di eventi: anche il passaggio automatico a `at_risk` innescato da `telemetry.alert.raised`
+        passa internamente da qui, con `changed_by` = `svc:container-registry`.
+      parameters:
+        - $ref: './_shared/components.yaml#/components/parameters/TenantHeader'
+        - $ref: './_shared/components.yaml#/components/parameters/TraceHeader'
+        - $ref: './_shared/components.yaml#/components/parameters/IdempotencyHeader'
+        - name: shipment_id
+          in: path
+          required: true
+          schema: { $ref: './_shared/components.yaml#/components/schemas/Ulid' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [to_status, reason_code]
+              properties:
+                to_status: { $ref: '#/components/schemas/ShipmentStatus' }
+                reason_code:
+                  type: string
+                  examples: ['operator_action', 'telemetry_alert', 'customs_hold', 'pod_recorded']
+                note: { type: string }
+      responses:
+        '200':
+          description: Stato cambiato.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Shipment' }
+        '409':
+          description: Transizione non ammessa dallo stato corrente.
+          content:
+            application/json:
+              schema: { $ref: './_shared/components.yaml#/components/schemas/Error' }
+              examples:
+                consegnata:
+                  value:
+                    error:
+                      code: invalid_status_transition
+                      http_status: 409
+                      message: 'shipment shp_01J8ZK4T9 is delivered; only cancelled is unreachable from here'
+                      trace_id: 4bf92f3577b34da6a3ce929d0e0e4736
+                      retryable: false
+                      fields:
+                        - path: to_status
+                          reason: not_reachable
+
+  /v1/shipments/{shipment_id}/containers:
+    post:
+      operationId: attachContainer
+      tags: [shipments]
+      summary: Attacca un contenitore con il suo sigillo
+      description: |
+        Il sigillo appartiene all'accoppiamento, non al contenitore: lo stesso box ne porta uno
+        diverso a ogni viaggio. Viene validato contro `OF_FREIGHT_SEAL_FORMAT_REGEX` e, una volta
+        che la spedizione è `sealed`, non è più modificabile — correggerlo significa annullare
+        l'accoppiamento e rifarlo, che è una scansione `seal_check` in più nel percorso.
+      parameters:
+        - $ref: './_shared/components.yaml#/components/parameters/TenantHeader'
+        - $ref: './_shared/components.yaml#/components/parameters/IdempotencyHeader'
+        - name: shipment_id
+          in: path
+          required: true
+          schema: { $ref: './_shared/components.yaml#/components/schemas/Ulid' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [container_id, seal_number, gross_kg]
+              properties:
+                container_id: { $ref: './_shared/components.yaml#/components/schemas/Ulid' }
+                seal_number: { type: string, examples: ['SGL-4471982'] }
+                gross_kg:
+                  type: integer
+                  description: Peso lordo della coppia. Deve stare entro `max_gross_kg` del contenitore.
+                loaded_at: { $ref: './_shared/components.yaml#/components/schemas/Timestamp' }
+      responses:
+        '201':
+          description: Attaccato.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Shipment' }
+        '409':
+          description: La spedizione è già sigillata.
+          content:
+            application/json:
+              schema: { $ref: './_shared/components.yaml#/components/schemas/Error' }
+              examples:
+                sigillata:
+                  value:
+                    error:
+                      code: shipment_already_sealed
+                      http_status: 409
+                      message: 'shipment shp_01J8ZK4T9 is sealed and cannot accept containers'
+                      trace_id: 4bf92f3577b34da6a3ce929d0e0e4736
+                      retryable: false
+                      fields:
+                        - path: 'containers[0].seal_number'
+                          reason: immutable
+        '422':
+          description: Peso lordo oltre `max_gross_kg`, oppure sigillo fuori formato.
+          content:
+            application/json:
+              schema: { $ref: './_shared/components.yaml#/components/schemas/Error' }
+
+  /v1/shipments/{shipment_id}/containers/{container_id}:
+    delete:
+      operationId: detachContainer
+      tags: [shipments]
+      summary: Stacca un contenitore prima della sigillatura
+      parameters:
+        - $ref: './_shared/components.yaml#/components/parameters/TenantHeader'
+        - $ref: './_shared/components.yaml#/components/parameters/IdempotencyHeader'
+        - name: shipment_id
+          in: path
+          required: true
+          schema: { $ref: './_shared/components.yaml#/components/schemas/Ulid' }
+        - name: container_id
+          in: path
+          required: true
+          schema: { $ref: './_shared/components.yaml#/components/schemas/Ulid' }
+      responses:
+        '204':
+          description: Staccato.
+        '409':
+          description: La spedizione è sigillata.
+          content:
+            application/json:
+              schema: { $ref: './_shared/components.yaml#/components/schemas/Error' }
+
+  /v1/shipments/{shipment_id}/scans:
+    get:
+      operationId: listShipmentScans
+      tags: [scans]
+      summary: Il percorso scansioni, dal più recente
+      description: |
+        Ordinato per `occurred_at` decrescente, che è l'ordine dell'indice
+        `scan_events_shipment_idx` e non quello di ricezione: una scansione registrata offline
+        compare al proprio posto nel tempo, non in coda.
+      parameters:
+        - $ref: './_shared/components.yaml#/components/parameters/TenantHeader'
+        - $ref: './_shared/components.yaml#/components/parameters/LimitParam'
+        - $ref: './_shared/components.yaml#/components/parameters/CursorParam'
+        - name: shipment_id
+          in: path
+          required: true
+          schema: { $ref: './_shared/components.yaml#/components/schemas/Ulid' }
+        - name: scan_type
+          in: query
+          schema: { $ref: '#/components/schemas/ScanType' }
+      responses:
+        '200':
+          description: Pagina di scansioni.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: '#/components/schemas/ScanEvent' }
+                  next_cursor: { type: [string, 'null'] }
+
+  /v1/containers:
+    post:
+      operationId: registerContainer
+      tags: [containers]
+      summary: Registra un contenitore per codice BIC
+      parameters:
+        - $ref: './_shared/components.yaml#/components/parameters/TenantHeader'
+        - $ref: './_shared/components.yaml#/components/parameters/IdempotencyHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [iso_code, iso_size_type, tare_weight_kg, max_gross_kg]
+              properties:
+                iso_code:
+                  type: string
+                  minLength: 11
+                  maxLength: 11
+                  description: BIC, con cifra di controllo verificata prima dell'inserimento.
+                  examples: ['MSCU3948571']
+                iso_size_type: { type: string, minLength: 4, maxLength: 4, examples: ['45R1'] }
+                owner_carrier_id: { $ref: './_shared/components.yaml#/components/schemas/Ulid' }
+                tare_weight_kg: { type: integer }
+                max_gross_kg: { type: integer }
+                is_reefer: { type: boolean, default: false }
+                setpoint_c:
+                  type: [number, 'null']
+                  description: Ammesso solo quando `is_reefer` è vero; il vincolo `containers_setpoint_only_for_reefer` lo impone.
+                hazard_class_codes:
+                  type: array
+                  items: { type: string, examples: ['3', '6.1', '8'] }
+      responses:
+        '201':
+          description: Registrato.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Container' }
+        '409':
+          description: Il codice BIC è già registrato.
+          content:
+            application/json:
+              schema: { $ref: './_shared/components.yaml#/components/schemas/Error' }
+
+    get:
+      operationId: listContainers
+      tags: [containers]
+      summary: Cerca contenitori
+      parameters:
+        - $ref: './_shared/components.yaml#/components/parameters/TenantHeader'
+        - $ref: './_shared/components.yaml#/components/parameters/LimitParam'
+        - $ref: './_shared/components.yaml#/components/parameters/CursorParam'
+        - name: iso_code
+          in: query
+          schema: { type: string }
+        - name: seal
+          in: query
+          schema: { type: string }
+          description: Cerca fra i sigilli attivi in `freight.shipment_containers`.
+        - name: shipment_id
+          in: query
+          schema: { $ref: './_shared/components.yaml#/components/schemas/Ulid' }
+      responses:
+        '200':
+          description: Pagina di contenitori.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: '#/components/schemas/Container' }
+                  next_cursor: { type: [string, 'null'] }
+
+  /v1/containers/{container_id}:
+    get:
+      operationId: getContainer
+      tags: [containers]
+      summary: Legge un contenitore, `last_reading_at` compreso
+      description: |
+        `last_reading_id` e `last_reading_at` sono tenuti caldi consumando
+        `telemetry.reading.recorded`, che è campionato una lettura ogni
+        `OF_TELEMETRY_PUBLISH_SAMPLE_RATE`: sono quindi approssimati per costruzione. Chi ha
+        bisogno della serie completa la chiede a telemetry-ingest, non qui.
+      parameters:
+        - $ref: './_shared/components.yaml#/components/parameters/TenantHeader'
+        - name: container_id
+          in: path
+          required: true
+          schema: { $ref: './_shared/components.yaml#/components/schemas/Ulid' }
+      responses:
+        '200':
+          description: Contenitore.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Container' }
+        '404': { $ref: './_shared/components.yaml#/components/responses/NotFound' }
+
+  /v1/containers/{container_id}/scans:
+    post:
+      operationId: recordScan
+      tags: [scans]
+      summary: Registra una scansione
+      description: |
+        Pubblica `shipment.scanned`. billing-service filtra su `scan_type = proof_of_delivery` e
+        ignora tutto il resto: è quella singola scansione a sbloccare la fatturazione.
+
+        La posizione viene verificata contro la recinzione della struttura dichiarata chiamando
+        `geo.v1.GeoService/PointInFence`; se non combacia la scansione viene registrata comunque e
+        segnalata, perché un magazzino interrato non ha copertura satellitare e rifiutare
+        significherebbe perdere il dato.
+      parameters:
+        - $ref: './_shared/components.yaml#/components/parameters/TenantHeader'
+        - $ref: './_shared/components.yaml#/components/parameters/TraceHeader'
+        - $ref: './_shared/components.yaml#/components/parameters/IdempotencyHeader'
+        - name: container_id
+          in: path
+          required: true
+          schema: { $ref: './_shared/components.yaml#/components/schemas/Ulid' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [shipment_id, scan_type, occurred_at]
+              properties:
+                shipment_id: { $ref: './_shared/components.yaml#/components/schemas/Ulid' }
+                scan_type: { $ref: '#/components/schemas/ScanType' }
+                facility_id: { $ref: './_shared/components.yaml#/components/schemas/Ulid' }
+                occurred_at:
+                  $ref: './_shared/components.yaml#/components/schemas/Timestamp'
+                position: { $ref: './_shared/components.yaml#/components/schemas/GeoPoint' }
+                device_serial: { type: string }
+                notes: { type: string }
+          multipart/form-data:
+            schema:
+              type: object
+              description: |
+                Variante usata dalla app inspector-android per una `damage_report`: la foto viene
+                inoltrata a document-service con `owner_type = scan`, e l'identificatore restituito
+                compare nella risposta.
+              properties:
+                scan: { type: string, contentMediaType: application/json }
+                photo: { type: string, format: binary }
+      responses:
+        '201':
+          description: Registrata.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ScanEvent' }
+              examples:
+                consegna:
+                  value:
+                    scan_id: scn_01J9AA7POD00000000000000XY
+                    shipment_id: shp_01J8ZK4T9QW3RM7XN2VB6HD5PC
+                    container_id: cnt_01J7C9MSCU3948571000000AB
+                    scan_type: proof_of_delivery
+                    scanned_by_user_id: usr_01J7B3K9WQ2ERTYUIOPASDFGHJ
+                    facility_id: fac_01J7A2SINGAPOREPSA0000000
+                    occurred_at: '2026-04-26T03:11:52Z'
+                    recorded_at: '2026-04-26T05:40:07Z'
+                    position: { lat: 1.26476, lon: 103.82012, accuracy_m: 12 }
+                    device_serial: SCN-SG-0042
+                    notes: 'consegnato al magazzino 7, firma acquisita'
+        '422':
+          description: |
+            `occurred_at` più lontano di `OF_FREIGHT_SCAN_CLOCK_SKEW_TOLERANCE_S` **nel futuro**.
+            Uno scarto verso il passato è normale — è il lavoro offline — e non produce errore.
+          content:
+            application/json:
+              schema: { $ref: './_shared/components.yaml#/components/schemas/Error' }
+
+  /healthz:
+    $ref: './_shared/universal-paths.yaml#/paths/~1healthz'
+  /readyz:
+    $ref: './_shared/universal-paths.yaml#/paths/~1readyz'
+  /metrics:
+    $ref: './_shared/universal-paths.yaml#/paths/~1metrics'
+  /version:
+    $ref: './_shared/universal-paths.yaml#/paths/~1version'
+
+components:
+  securitySchemes:
+    bearerAuth:
+      $ref: './_shared/components.yaml#/components/securitySchemes/bearerAuth'
+
+  schemas:
+    ShipmentStatus:
+      type: string
+      enum: [draft, booked, sealed, in_transit, at_risk, held_at_customs, delivered, cancelled]
+
+    ScanType:
+      type: string
+      enum: [gate_in, gate_out, load, unload, seal_check, customs_inspection, damage_report, proof_of_delivery]
+
+    CreateShipmentRequest:
+      type: object
+      required: [reference, origin_facility_id, destination_facility_id, incoterm, currency, region_code]
+      properties:
+        reference: { type: string, description: Riferimento del cliente, unico per tenant. }
+        origin_facility_id: { $ref: './_shared/components.yaml#/components/schemas/Ulid' }
+        destination_facility_id: { $ref: './_shared/components.yaml#/components/schemas/Ulid' }
+        incoterm: { type: string, minLength: 3, maxLength: 3, examples: ['DAP', 'CIF', 'EXW'] }
+        sla_deadline_at: { $ref: './_shared/components.yaml#/components/schemas/Timestamp' }
+        declared_value_minor: { $ref: './_shared/components.yaml#/components/schemas/MinorAmount' }
+        currency: { $ref: './_shared/components.yaml#/components/schemas/CurrencyCode' }
+        region_code: { $ref: './_shared/components.yaml#/components/schemas/RegionCode' }
+
+    Shipment:
+      type: object
+      properties:
+        shipment_id: { $ref: './_shared/components.yaml#/components/schemas/Ulid' }
+        tenant_id: { $ref: './_shared/components.yaml#/components/schemas/TenantId' }
+        reference: { type: string }
+        origin_facility_id: { $ref: './_shared/components.yaml#/components/schemas/Ulid' }
+        destination_facility_id: { $ref: './_shared/components.yaml#/components/schemas/Ulid' }
+        incoterm: { type: string }
+        status: { $ref: '#/components/schemas/ShipmentStatus' }
+        sla_deadline_at: { $ref: './_shared/components.yaml#/components/schemas/Timestamp' }
+        declared_value_minor: { $ref: './_shared/components.yaml#/components/schemas/MinorAmount' }
+        currency: { $ref: './_shared/components.yaml#/components/schemas/CurrencyCode' }
+        region_code: { $ref: './_shared/components.yaml#/components/schemas/RegionCode' }
+        created_at: { $ref: './_shared/components.yaml#/components/schemas/Timestamp' }
+        delivered_at: { $ref: './_shared/components.yaml#/components/schemas/Timestamp' }
+        containers:
+          type: array
+          items:
+            type: object
+            properties:
+              container_id: { $ref: './_shared/components.yaml#/components/schemas/Ulid' }
+              seal_number: { type: string }
+              gross_kg: { type: integer }
+              loaded_at: { $ref: './_shared/components.yaml#/components/schemas/Timestamp' }
+              unloaded_at: { $ref: './_shared/components.yaml#/components/schemas/Timestamp' }
+
+    Container:
+      type: object
+      properties:
+        container_id: { $ref: './_shared/components.yaml#/components/schemas/Ulid' }
+        iso_code: { type: string }
+        iso_size_type: { type: string }
+        owner_carrier_id: { $ref: './_shared/components.yaml#/components/schemas/Ulid' }
+        tare_weight_kg: { type: integer }
+        max_gross_kg: { type: integer }
+        is_reefer: { type: boolean }
+        setpoint_c: { type: [number, 'null'] }
+        last_reading_id: { $ref: './_shared/components.yaml#/components/schemas/Ulid' }
+        last_reading_at: { $ref: './_shared/components.yaml#/components/schemas/Timestamp' }
+        hazard_classes:
+          type: array
+          items:
+            type: object
+            properties:
+              hazard_class_code: { type: string }
+              un_division: { type: string }
+              placard_label: { type: string }
+              segregation_group: { type: string }
+              is_primary: { type: boolean }
+        retired_at: { $ref: './_shared/components.yaml#/components/schemas/Timestamp' }
+
+    ScanEvent:
+      type: object
+      properties:
+        scan_id: { $ref: './_shared/components.yaml#/components/schemas/Ulid' }
+        shipment_id: { $ref: './_shared/components.yaml#/components/schemas/Ulid' }
+        container_id: { $ref: './_shared/components.yaml#/components/schemas/Ulid' }
+        scan_type: { $ref: '#/components/schemas/ScanType' }
+        scanned_by_user_id: { $ref: './_shared/components.yaml#/components/schemas/Ulid' }
+        facility_id: { $ref: './_shared/components.yaml#/components/schemas/Ulid' }
+        occurred_at: { $ref: './_shared/components.yaml#/components/schemas/Timestamp' }
+        recorded_at: { $ref: './_shared/components.yaml#/components/schemas/Timestamp' }
+        position: { $ref: './_shared/components.yaml#/components/schemas/GeoPoint' }
+        device_serial: { type: string }
+        notes: { type: string }

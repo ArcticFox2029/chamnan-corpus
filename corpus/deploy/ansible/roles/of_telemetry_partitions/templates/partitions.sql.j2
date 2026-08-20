@@ -1,0 +1,59 @@
+-- =============================================================================
+-- Partition tabulky telemetry.telemetry_readings pro tenhle cluster.
+-- Generuje role of_telemetry_partitions; ručně needitovat.
+--
+-- Skript je idempotentní: zakládá jen to, co chybí. Jména partition kopírují
+-- §2.5 SPEC.md (telemetry_readings_eu_west, ..._latam_br) — jiné pojmenování
+-- by rozbilo dotazy v pipelines/, které partition adresují přímo.
+--
+-- Indexy se zakládají na rodiči, ne na partition: readings_dedupe_idx je to,
+-- co dělá z retransmise celé dávky po výpadku spojení no-op místo duplicit.
+-- =============================================================================
+\set ON_ERROR_STOP on
+
+BEGIN;
+
+{% for region in of_telemetry_local_regions %}
+{% set suffix = region | replace('-', '_') %}
+-- {{ region }} — úložiště {{ of_telemetry_region_tablespaces[region] }}
+CREATE TABLE IF NOT EXISTS {{ of_telemetry_schema }}.{{ of_telemetry_parent_table }}_{{ suffix }}
+    PARTITION OF {{ of_telemetry_schema }}.{{ of_telemetry_parent_table }}
+    FOR VALUES IN ('{{ region }}')
+    TABLESPACE {{ of_telemetry_region_tablespaces[region] }};
+
+{% endfor %}
+-- Dedup podle §2.5: (region_code, ingest_batch_id, container_id, recorded_at).
+-- Brána po obnovení spojení posílá celou dávku znovu; bez tohohle indexu by
+-- se každé čtení uložilo dvakrát a mv_container_utilisation_weekly by počítal
+-- s dvojnásobným počtem vzorků.
+CREATE UNIQUE INDEX IF NOT EXISTS readings_dedupe_idx
+    ON {{ of_telemetry_schema }}.{{ of_telemetry_parent_table }}
+       (region_code, ingest_batch_id, container_id, recorded_at);
+
+CREATE INDEX IF NOT EXISTS readings_container_time_idx
+    ON {{ of_telemetry_schema }}.{{ of_telemetry_parent_table }}
+       (container_id, recorded_at DESC);
+
+-- Kontrola rezidence. Pokud by někdo partition přesunul do cizího tablespace,
+-- tenhle dotaz běh zastaví dřív, než se do ní stihne cokoli zapsat.
+DO $$
+DECLARE
+    wrong_place text;
+BEGIN
+    SELECT string_agg(c.relname || ' -> ' || coalesce(t.spcname, 'pg_default'), ', ')
+      INTO wrong_place
+      FROM pg_class c
+      JOIN pg_namespace n ON n.oid = c.relnamespace
+      LEFT JOIN pg_tablespace t ON t.oid = c.reltablespace
+     WHERE n.nspname = '{{ of_telemetry_schema }}'
+       AND c.relname LIKE '{{ of_telemetry_parent_table }}\_%'
+       AND coalesce(t.spcname, 'pg_default') <> 'of_ts_' || replace(
+             substring(c.relname from char_length('{{ of_telemetry_parent_table }}_') + 1), '-', '_');
+
+    IF wrong_place IS NOT NULL THEN
+        RAISE EXCEPTION 'partition leží mimo svůj region: %', wrong_place;
+    END IF;
+END
+$$;
+
+COMMIT;

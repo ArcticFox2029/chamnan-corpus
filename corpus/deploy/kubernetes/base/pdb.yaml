@@ -1,0 +1,120 @@
+# =============================================================================
+# Rozpočty výpadků (PodDisruptionBudget).
+#
+# Chrání jen před dobrovolným narušením — vyprázdněním uzlu, aktualizací
+# clusteru. Před pádem uzlu nechrání nic z toho.
+#
+# Hodnoty vycházejí z grafu §1.1, ne z počtu replik: čím víc služeb na někom
+# závisí, tím přísnější rozpočet. identity-service a geo-service jsou proto
+# nejpřísnější v celé platformě, i když jedna je kořen a druhá list.
+#
+# Pozor na past: PDB s minAvailable rovným počtu replik zablokuje vyprázdnění
+# uzlu úplně a operátor se to dozví až po půl hodině čekání. Proto je všude
+# alespoň jedna replika k dispozici k odebrání.
+# =============================================================================
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: identity-service
+  namespace: orbitalfreight
+spec:
+  # Ze šesti replik smí odejít nejvýš dvě. Když identity-service nestíhá,
+  # zbytek platformy jede na zapamatovaném JWKS a odmítá strojová volání —
+  # tedy telemetry-ingest přestane přijímat dávky z bran.
+  minAvailable: 4
+  selector:
+    matchLabels: { app.kubernetes.io/name: identity-service }
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: geo-service
+  namespace: orbitalfreight
+spec:
+  minAvailable: 6
+  selector:
+    matchLabels: { app.kubernetes.io/name: geo-service }
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: container-registry
+  namespace: orbitalfreight
+spec:
+  minAvailable: 60%
+  selector:
+    matchLabels: { app.kubernetes.io/name: container-registry }
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: document-service
+  namespace: orbitalfreight
+spec:
+  minAvailable: 2
+  selector:
+    matchLabels: { app.kubernetes.io/name: document-service }
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: telemetry-ingest
+  namespace: orbitalfreight
+spec:
+  # Vyjádřeno maxUnavailable, protože počet replik mění HPA a pevné číslo by
+  # při dvaatřiceti replikách bylo zbytečně přísné.
+  maxUnavailable: 2
+  selector:
+    matchLabels: { app.kubernetes.io/name: telemetry-ingest }
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: audit-ledger
+  namespace: orbitalfreight
+spec:
+  # Ze tří replik smí odejít jedna. Vedoucí se přesune, ale volba trvá pár
+  # sekund a po tu dobu se audit.v1.LedgerService/Append odmítá — proto ne víc.
+  maxUnavailable: 1
+  selector:
+    matchLabels: { app.kubernetes.io/name: audit-ledger }
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: customs-service
+  namespace: orbitalfreight
+spec:
+  minAvailable: 2
+  selector:
+    matchLabels: { app.kubernetes.io/name: customs-service }
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: billing-service
+  namespace: orbitalfreight
+spec:
+  minAvailable: 2
+  selector:
+    matchLabels: { app.kubernetes.io/name: billing-service }
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: fleet-service
+  namespace: orbitalfreight
+spec:
+  minAvailable: 3
+  selector:
+    matchLabels: { app.kubernetes.io/name: fleet-service }
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: partner-portal-api
+  namespace: orbitalfreight
+spec:
+  minAvailable: 2
+  selector:
+    matchLabels: { app.kubernetes.io/name: partner-portal-api }

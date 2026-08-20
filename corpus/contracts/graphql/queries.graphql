@@ -1,0 +1,326 @@
+# Il tipo Query del gateway. Ogni campo dichiara con @servedBy il servizio che lo risolve e con
+# @requiresScope il permesso che il token deve portare; il gateway verifica lo scope contro la
+# risposta di identity.v1.TokenIntrospection/Introspect prima di uscire in rete, così che un
+# rifiuto per permessi non costi una chiamata a valle.
+#
+# Non esiste alcun campo che accetti offset e limit: la paginazione è a cursore ovunque (§0.5),
+# e i campi si chiamano `first` e `after` per convenzione GraphQL sopra `?limit=` e `?cursor=`.
+
+type Query {
+  # ---- container-registry -------------------------------------------------------------------
+
+  "Una spedizione con i contenitori già inclusi, come GET /v1/shipments/{shipment_id}."
+  shipment(id: ULID!): Shipment
+    @servedBy(service: "container-registry")
+    @requiresScope(scope: "freight:read")
+
+  "Spedizioni del tenant nel token. Non esiste modo di interrogare un tenant diverso da quello di X-OF-Tenant."
+  shipments(filter: ShipmentFilter, first: Int = 50, after: String): ShipmentConnection!
+    @servedBy(service: "container-registry")
+    @requiresScope(scope: "freight:read")
+
+  container(id: ULID!): Container
+    @servedBy(service: "container-registry")
+    @requiresScope(scope: "freight:read")
+
+  "Ricerca per codice BIC. Restituisce al massimo un contenitore: `iso_code` è unico."
+  containerByIsoCode(isoCode: String!): Container
+    @servedBy(service: "container-registry")
+    @requiresScope(scope: "freight:read")
+
+  facility(id: ULID!): Facility @servedBy(service: "container-registry")
+
+  # ---- routing-service ----------------------------------------------------------------------
+
+  route(id: ULID!): Route
+    @servedBy(service: "routing-service")
+    @requiresScope(scope: "routing:read")
+
+  """
+  ETA previsto per un lotto di spedizioni. Il servizio ne accetta fino a 500 per chiamata; oltre,
+  il gateway rifiuta con `batch_too_large` invece di spezzare la richiesta, perché una risposta
+  parziale sarebbe indistinguibile da una completa.
+  """
+  etaBatch(shipmentIds: [ULID!]!): [ShipmentEta!]!
+    @servedBy(service: "routing-service")
+    @requiresScope(scope: "routing:read")
+
+  "Valichi consigliati per una coppia origine/destinazione, ordinati per costo previsto."
+  recommendedCrossings(
+    fromCountry: CountryCode!
+    toCountry: CountryCode!
+    mode: TransportMode! = ROAD
+    departAt: DateTime
+  ): [CrossingRecommendation!]! @servedBy(service: "routing-service")
+
+  # ---- geo-service --------------------------------------------------------------------------
+
+  geofence(id: ULID!): Geofence @servedBy(service: "geo-service")
+
+  """
+  Verifica in blocco quali recinzioni contengono ciascun punto. Sul percorso caldo la chiama
+  telemetry-ingest in gRPC; qui esiste per la mappa della console in web/.
+  """
+  pointInFence(points: [GeoPointInput!]!, geofenceIds: [ULID!]): [PointVerdict!]!
+    @servedBy(service: "geo-service")
+
+  # ---- telemetry-ingest ---------------------------------------------------------------------
+
+  alerts(filter: AlertFilter, first: Int = 50, after: String): [TelemetryAlert!]!
+    @servedBy(service: "telemetry-ingest")
+    @requiresScope(scope: "telemetry:read")
+
+  """
+  Letture di un contenitore in una finestra temporale, servite dalla partizione della regione del
+  contenitore. Una finestra che attraversa più di trenta giorni viene rifiutata: la retention del
+  topic è di sette giorni e la tabella è calda, e una scansione così ampia blocca l'ingest.
+  """
+  containerReadings(
+    containerId: ULID!
+    from: DateTime!
+    to: DateTime!
+    first: Int = 200
+    after: String
+  ): TelemetryReadingConnection!
+    @servedBy(service: "telemetry-ingest")
+    @requiresScope(scope: "telemetry:read")
+
+  # ---- customs-service ----------------------------------------------------------------------
+
+  declaration(id: ULID!): CustomsDeclaration
+    @servedBy(service: "customs-service")
+    @requiresScope(scope: "customs:read")
+
+  """
+  Risolve una sola riga di `customs.tariff_schedules`, quella valida alla data indicata. Non
+  restituisce mai la riga corrente per una data passata: un accertamento fatto ieri deve poter
+  essere rifatto identico oggi.
+  """
+  tariffLookup(input: TariffLookupInput!): TariffScheduleRow
+    @servedBy(service: "customs-service")
+    @requiresScope(scope: "customs:read")
+
+  # ---- billing-service ----------------------------------------------------------------------
+
+  invoice(id: ULID!): Invoice
+    @servedBy(service: "billing-service")
+    @requiresScope(scope: "billing:read")
+
+  invoices(status: [InvoiceStatus!], dueBefore: Date, first: Int = 50, after: String): InvoiceConnection!
+    @servedBy(service: "billing-service")
+    @requiresScope(scope: "billing:read")
+
+  # ---- document-service ---------------------------------------------------------------------
+
+  document(id: ULID!): Document @servedBy(service: "document-service")
+
+  documents(ownerType: DocumentOwnerType!, ownerId: ULID!, kind: DocumentKind): [Document!]!
+    @servedBy(service: "document-service")
+
+  """
+  URL di scaricamento valido OF_DOCUMENT_SIGNED_URL_TTL_SECONDS (900). Il gateway non fa mai da
+  proxy ai byte: restituisce l'URL e il client scarica direttamente dall'object store.
+  """
+  documentSignedUrl(id: ULID!): SignedUrl!
+    @servedBy(service: "document-service")
+    @requiresScope(scope: "documents:read")
+
+  # ---- fleet-service ------------------------------------------------------------------------
+
+  vehicle(id: ULID!): Vehicle @servedBy(service: "fleet-service")
+  carrier(id: ULID!): Carrier @servedBy(service: "fleet-service")
+
+  assignments(shipmentId: ULID, vehicleId: ULID, driverId: ULID, active: Boolean = true): [VehicleAssignment!]!
+    @servedBy(service: "fleet-service")
+    @requiresScope(scope: "fleet:read")
+
+  "Idoneità di un conducente su un veicolo senza riservare nulla."
+  driverAvailability(driverId: ULID!): DriverAvailability!
+    @servedBy(service: "fleet-service")
+    @requiresScope(scope: "fleet:read")
+
+  # ---- analytics-pipeline -------------------------------------------------------------------
+
+  """
+  Serve `analytics.mv_lane_performance_daily`. La vista è rinfrescata alle 03:15 UTC: chiedere la
+  giornata odierna restituisce lista vuota, e questo non è un errore.
+  """
+  lanePerformance(
+    from: Date!
+    to: Date!
+    originUnlocode: UnLocode
+    destinationUnlocode: UnLocode
+  ): [LanePerformance!]!
+    @servedBy(service: "analytics-pipeline")
+    @requiresScope(scope: "analytics:read")
+
+  "Serve `analytics.mv_container_utilisation_weekly`."
+  containerUtilisation(weekStart: Date!, isoSizeType: String): [ContainerUtilisation!]!
+    @servedBy(service: "analytics-pipeline")
+    @requiresScope(scope: "analytics:read")
+
+  # ---- reconciliation-service ---------------------------------------------------------------
+
+  discrepancies(filter: DiscrepancyFilter, first: Int = 50, after: String): [ReconciliationDiscrepancy!]!
+    @servedBy(service: "reconciliation-service")
+    @requiresScope(scope: "reconciliation:read")
+
+  # ---- audit-ledger -------------------------------------------------------------------------
+
+  """
+  Voci del registro per un soggetto, dalla più recente. Non è filtrabile per attore: il registro
+  serve a rispondere «cosa è successo a questa cosa», e l'indice ledger_subject_idx supporta solo
+  quella domanda.
+  """
+  ledgerEntries(subjectType: String!, subjectId: ULID!, since: DateTime, first: Int = 50, after: String): [LedgerEntry!]!
+    @servedBy(service: "audit-ledger")
+    @requiresScope(scope: "audit:read")
+
+  "Prova di inclusione di una voce nel checkpoint pubblicato."
+  ledgerProof(entryId: Long!): InclusionProof
+    @servedBy(service: "audit-ledger")
+    @requiresScope(scope: "audit:read")
+
+  # ---- identity-service ---------------------------------------------------------------------
+
+  "L'utente corrispondente al token presentato. Non serve passargli un id."
+  me: User! @servedBy(service: "identity-service")
+
+  user(id: ULID!): User
+    @servedBy(service: "identity-service")
+    @requiresScope(scope: "identity:read")
+
+  "Concessioni appiattite lungo tutta la gerarchia di `identity.org_units`, antenati compresi."
+  effectiveRoles(userId: ULID!): [EffectiveRole!]!
+    @servedBy(service: "identity-service")
+    @requiresScope(scope: "identity:read")
+}
+
+type ShipmentEta @servedBy(service: "routing-service") {
+  shipmentId: ULID!
+  legId: ULID!
+  predictedArrivalAt: DateTime!
+
+  "Ampiezza dell'intervallo di confidenza in secondi. Cresce con la distanza dal valico e con avgDwellMinutes."
+  confidenceIntervalS: Int!
+
+  "Vero quando la previsione ha usato la stima a priori di `analytics.mv_lane_performance_daily` invece della serie propria della corsia."
+  usedLanePrior: Boolean!
+}
+
+type CrossingRecommendation @servedBy(service: "routing-service") {
+  crossing: BorderCrossing!
+  rank: Int!
+  expectedDwellMinutes: Int!
+  detourDistanceM: Long!
+
+  "Perché è stato scelto o scartato: 'shortest_detour', 'lowest_dwell', 'mode_not_allowed', 'closed_at_arrival'."
+  rationale: String!
+}
+
+type PointVerdict @servedBy(service: "geo-service") {
+  pointIndex: Int!
+
+  "Dalla recinzione più piccola alla più grande. Chi vuole «dove sono» prende la prima."
+  insideGeofenceIds: [ULID!]!
+
+  "Negativa se dentro, positiva se fuori."
+  signedDistanceToEdgeM: Int!
+}
+
+type SignedUrl {
+  url: String!
+  expiresAt: DateTime!
+}
+
+type DriverAvailability @servedBy(service: "fleet-service") {
+  driverId: ULID!
+  remainingDriveSeconds: Int!
+  restRemainingSeconds: Int!
+
+  "Quale legge è stata applicata: rispecchia OF_FLEET_HOS_RULESET."
+  ruleset: HoursOfServiceRuleset!
+
+  licenceExpiresOn: Date!
+  adrExpiresOn: Date
+}
+
+enum HoursOfServiceRuleset {
+  EU_561
+  US_FMCSA
+  NONE
+}
+
+type User @servedBy(service: "identity-service") {
+  id: ULID!
+  tenantId: ULID!
+  email: String!
+  displayName: String!
+  locale: String!
+  status: UserStatus!
+  mfaEnrolledAt: DateTime
+  lastLoginAt: DateTime
+  effectiveRoles: [EffectiveRole!]!
+}
+
+enum UserStatus {
+  INVITED
+  ACTIVE
+  LOCKED
+  DISABLED
+}
+
+type EffectiveRole {
+  roleId: ULID!
+
+  "Codice stabile: 'dispatcher', 'customs_broker', 'auditor'."
+  code: String!
+
+  scopeLevel: ScopeLevel!
+  orgUnitId: ULID!
+
+  "'/org_root/org_emea/org_de'. Permette al client di decidere l'appartenenza con un confronto di prefisso."
+  materialisedPath: String!
+
+  expiresAt: DateTime
+  isSystem: Boolean!
+}
+
+enum ScopeLevel {
+  TENANT
+  ORG_UNIT
+  SHIPMENT
+}
+
+type LedgerEntry @servedBy(service: "audit-ledger") {
+  "Sequenza BIGINT monotona: l'unico identificatore della piattaforma che non è un ULID prefissato."
+  entryId: Long!
+
+  actorKind: ActorKind!
+  actorId: String!
+  action: String!
+  subjectType: String!
+  subjectId: ULID!
+  payload: JSON!
+  traceId: String
+  recordedAt: DateTime!
+
+  "sha256 esadecimale della voce, che incatena quella precedente."
+  entryHash: String!
+}
+
+type InclusionProof {
+  entryId: Long!
+  entryHash: String!
+  path: [ProofNode!]!
+  checkpointId: Long!
+  checkpointRoot: String!
+
+  "Firma della testa, rispecchiata ogni ora su un notaio esterno. Senza, la catena dimostra solo la coerenza con sé stessa."
+  checkpointSignature: String!
+}
+
+type ProofNode {
+  hash: String!
+  isRightSibling: Boolean!
+}

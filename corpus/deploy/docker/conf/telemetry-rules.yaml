@@ -1,0 +1,53 @@
+# =============================================================================
+# Prahy poplachů pro lokální telemetry-ingest (OF_TELEMETRY_RULES_PATH).
+#
+# Stejná struktura jako produkční ConfigMapa, ale s prahy nastavenými tak, aby
+# fixtury v tools/fixtures/telemetry poplach skutečně vyvolaly. Kdyby zůstaly
+# produkční, lokální běh by nikdy neukázal cestu
+# telemetry.alert.raised -> container-registry -> zásilka at_risk.
+#
+# rule_code musí odpovídat výčtu na telemetry.telemetry_alerts (§2.5) —
+# hodnota mimo něj skončí porušením CHECK omezení při zápisu, ne validační
+# chybou při načtení souboru.
+# =============================================================================
+rules:
+  - rule_code: temp_excursion_high
+    comparator: above_setpoint
+    threshold_value: 0.50
+    sustained_minutes: 1
+    severity: 4
+  - rule_code: temp_excursion_low
+    comparator: below_setpoint
+    threshold_value: 0.50
+    sustained_minutes: 1
+    severity: 4
+  - rule_code: humidity_high
+    comparator: absolute_above
+    threshold_value: 70.00
+    sustained_minutes: 1
+    severity: 2
+  - rule_code: shock_impact
+    comparator: absolute_above
+    threshold_value: 2.000
+    sustained_minutes: 0
+    severity: 5
+  - rule_code: door_open_in_transit
+    comparator: boolean_true
+    threshold_value: 1
+    sustained_minutes: 1
+    severity: 5
+  - rule_code: battery_critical
+    comparator: absolute_below
+    threshold_value: 30
+    sustained_minutes: 0
+    severity: 3
+  - rule_code: gateway_silent
+    comparator: heartbeat_age_minutes
+    threshold_value: 5
+    sustained_minutes: 0
+    severity: 3
+  - rule_code: geofence_breach
+    comparator: outside_fence
+    threshold_value: 0
+    sustained_minutes: 1
+    severity: 4

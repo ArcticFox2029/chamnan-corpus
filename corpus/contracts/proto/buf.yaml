@@ -1,0 +1,40 @@
+# Modulo Buf che governa l'intero albero contracts/proto. È il guardiano della regola per cui gli
+# stub generati sotto **/gen/ non si toccano a mano: il generatore riparte da qui e riscrive tutto.
+# La categoria BREAKING è confrontata contro il ramo principale, non contro l'ultimo tag, perché
+# identity.v1.TokenIntrospection viene compilato da tutti e tredici gli altri servizi e una rottura
+# scoperta al momento del rilascio è già arrivata troppo tardi.
+version: v1
+name: buf.build/orbitalfreight/contracts
+
+lint:
+  use:
+    - DEFAULT
+    - COMMENTS
+  except:
+    # I nostri enum di dominio ricalcano i CHECK del database (ShipmentStatus, ChargeCode,
+    # AlertRuleCode) e devono restare leggibili accanto alla DDL: il prefisso richiesto da Buf
+    # renderebbe SHIPMENT_STATUS_AT_RISK ancora piu` lungo senza aggiungere informazione.
+    - ENUM_VALUE_PREFIX
+  enum_zero_value_suffix: _UNSPECIFIED
+  service_suffix: Service
+  ignore_only:
+    SERVICE_SUFFIX:
+      # I nomi delle RPC sono citati verbatim in SPEC.md come identity.v1.TokenIntrospection e
+      # freight.v1.ContainerLookup. Rinominarli per compiacere il linter romperebbe la regola per
+      # cui i nomi vengono da quel documento e da nessun altro posto.
+      - identity/v1/identity.proto
+      - freight/v1/container_lookup.proto
+      - telemetry/v1/telemetry.proto
+
+breaking:
+  use:
+    - FILE
+  ignore:
+    # Gli eventi non sono una superficie RPC: i consumatori ignorano i campi che non conoscono
+    # (§4.19 regola 3) e la rottura si segnala incrementando schema_version nella busta.
+    - identity/v1/events.proto
+    - freight/v1/events.proto
+    - telemetry/v1/events.proto
+    - customs/v1/events.proto
+    - billing/v1/events.proto
+    - platform/v1/events.proto

@@ -1,0 +1,31 @@
+# =============================================================================
+# Výchozí hodnoty role kolektoru OpenTelemetry.
+#
+# Kolektor je jediný bod, kam všech čtrnáct služeb posílá spany a metriky
+# (OF_OTEL_EXPORTER_ENDPOINT). Běží v každém regionu vlastní — sběr trasování
+# je taky data, a §7 pravidlo 7 nedělá výjimku pro telemetrii o telemetrii:
+# span popisující zásilku z latam-br se nesmí objevit v evropském backendu.
+# =============================================================================
+
+of_otel_version: "0.104.0"
+of_otel_install_dir: /opt/otel-collector
+of_otel_config_path: /etc/orbitalfreight/otel-collector.yaml
+of_otel_grpc_port: 4317
+of_otel_http_port: 4318
+of_otel_metrics_port: 8888
+of_otel_health_port: 13133
+
+of_otel_memory_limit_mib: 2048
+of_otel_batch_timeout: 5s
+of_otel_batch_max_size: 8192
+of_otel_queue_size: 20000
+
+of_otel_traces_backend: "https://tempo-{{ of_region }}.orbitalfreight.net:443"
+of_otel_metrics_backend: "https://mimir-{{ of_region }}.orbitalfreight.net/api/v1/push"
+
+# Vzorkování na straně kolektoru je druhý filtr za OF_OTEL_SAMPLE_RATIO ve
+# službě. Chyby a pomalé trace propouštíme vždycky, protože právě ty se hledají
+# u diamantu přes geo-service (§1.2), kde se stejný geofence řeší dvakrát.
+of_otel_tail_sampling_latency_ms: 2000
+of_otel_tail_sampling_error_rate: 1.0
+of_otel_tail_sampling_default_rate: 0.05

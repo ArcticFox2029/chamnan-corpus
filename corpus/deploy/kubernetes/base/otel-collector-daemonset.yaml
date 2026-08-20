@@ -1,0 +1,173 @@
+# =============================================================================
+# Sběrač OpenTelemetry na každém uzlu.
+#
+# DaemonSet, protože OF_OTEL_EXPORTER_ENDPOINT ukazuje na službu, ale trace se
+# posílají z podů na tomtéž uzlu — přeskok mezi uzly na horké cestě přidával
+# měřitelnou latenci u geo-service, která exportuje span na každé
+# geo.v1.GeoService/PointInFence.
+#
+# Vzorkování: OF_OTEL_SAMPLE_RATIO je 0.05 v produkci a 1.0 na stagingu. Tohle
+# je ale hlavový vzorkovač na straně služby; kolektor navíc drží pravidlo, že
+# každý trace s chybou projde celý bez ohledu na poměr. Bez toho by se
+# nejzajímavějších pět procent provozu ztratilo právě proto, že jsou vzácná.
+#
+# Rezidence platí i pro telemetrii: span z regionu latam-br se nesmí odeslat
+# do evropského backendu (§7, pravidlo 7). Cíl exportu je proto regionální a
+# nastavuje ho overlay.
+# =============================================================================
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: otel-collector
+  namespace: orbitalfreight
+  labels: { app.kubernetes.io/name: otel-collector }
+---
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: otel-collector
+  namespace: orbitalfreight
+  labels:
+    app.kubernetes.io/name: otel-collector
+    app.kubernetes.io/part-of: orbitalfreight
+    app.kubernetes.io/component: observability
+spec:
+  selector:
+    matchLabels: { app.kubernetes.io/name: otel-collector }
+  updateStrategy:
+    type: RollingUpdate
+    rollingUpdate: { maxUnavailable: 2 }
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: otel-collector
+        app.kubernetes.io/part-of: orbitalfreight
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8888"
+    spec:
+      serviceAccountName: otel-collector
+      # Kolektor musí přežít vypnutí aplikačních podů, aby stihl odeslat
+      # jejich poslední spany — proto tolerance a priorita systémové součásti.
+      priorityClassName: system-node-critical
+      tolerations:
+        - operator: Exists
+      hostNetwork: false
+      terminationGracePeriodSeconds: 30
+      containers:
+        - name: otel-collector
+          image: registry.orbitalfreight.net/of/otel-collector:0.104.0
+          args: ["--config=/etc/otel/config.yaml"]
+          ports:
+            - { name: otlp-grpc, containerPort: 4317 }
+            - { name: otlp-http, containerPort: 4318 }
+            - { name: metrics, containerPort: 8888 }
+          env:
+            - name: OF_REGION_CODE
+              valueFrom:
+                configMapKeyRef: { name: of-common-config, key: OF_REGION_CODE }
+            - name: OF_NODE_NAME
+              valueFrom:
+                fieldRef: { fieldPath: spec.nodeName }
+          resources:
+            requests: { cpu: 200m, memory: 512Mi }
+            limits: { cpu: "2", memory: 2Gi }
+          livenessProbe:
+            httpGet: { path: /, port: 13133 }
+            periodSeconds: 15
+          volumeMounts:
+            - { name: config, mountPath: /etc/otel, readOnly: true }
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 10001
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: ["ALL"] }
+      volumes:
+        - name: config
+          configMap: { name: otel-collector-config }
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: otel-collector-config
+  namespace: orbitalfreight
+  labels: { app.kubernetes.io/name: otel-collector }
+data:
+  config.yaml: |
+    receivers:
+      otlp:
+        protocols:
+          grpc: { endpoint: 0.0.0.0:4317 }
+          http: { endpoint: 0.0.0.0:4318 }
+
+    processors:
+      # Dávkování drží počet odchozích spojení nízko; timeout je krátký, aby
+      # se trace nezdržel při ladění incidentu.
+      batch:
+        timeout: 5s
+        send_batch_size: 512
+      memory_limiter:
+        check_interval: 2s
+        limit_percentage: 80
+        spike_limit_percentage: 20
+      resource:
+        attributes:
+          - { key: orbitalfreight.region, value: "${OF_REGION_CODE}", action: upsert }
+          - { key: k8s.node.name, value: "${OF_NODE_NAME}", action: upsert }
+      # Chybové trace projdou vždy celé. Pět procent z §5.1 je hlavový
+      # vzorkovač ve službě; tohle je pojistka, aby se vzácné selhání
+      # neztratilo právě proto, že je vzácné.
+      tail_sampling:
+        decision_wait: 10s
+        policies:
+          - name: chyby-vzdy
+            type: status_code
+            status_code: { status_codes: [ERROR] }
+          - name: pomale-nad-dve-sekundy
+            type: latency
+            latency: { threshold_ms: 2000 }
+          - name: zbytek-podle-pomeru
+            type: probabilistic
+            probabilistic: { sampling_percentage: 5 }
+
+    exporters:
+      otlp/regional:
+        endpoint: otel-backend.observability.svc.cluster.local:4317
+        tls: { insecure: false }
+        retry_on_failure: { enabled: true, max_elapsed_time: 300s }
+      prometheus:
+        endpoint: 0.0.0.0:8888
+
+    extensions:
+      health_check: { endpoint: 0.0.0.0:13133 }
+
+    service:
+      extensions: [health_check]
+      pipelines:
+        traces:
+          receivers: [otlp]
+          processors: [memory_limiter, tail_sampling, resource, batch]
+          exporters: [otlp/regional]
+        metrics:
+          receivers: [otlp]
+          processors: [memory_limiter, resource, batch]
+          exporters: [prometheus, otlp/regional]
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: otel-collector
+  namespace: orbitalfreight
+  labels:
+    app.kubernetes.io/name: otel-collector
+    app.kubernetes.io/part-of: orbitalfreight
+spec:
+  type: ClusterIP
+  # internalTrafficPolicy: Local drží provoz na uzlu, kde pod běží — to je
+  # celý důvod, proč je kolektor DaemonSet a ne Deployment.
+  internalTrafficPolicy: Local
+  selector: { app.kubernetes.io/name: otel-collector }
+  ports:
+    - { name: otlp-grpc, port: 4317, targetPort: otlp-grpc }
+    - { name: otlp-http, port: 4318, targetPort: otlp-http }

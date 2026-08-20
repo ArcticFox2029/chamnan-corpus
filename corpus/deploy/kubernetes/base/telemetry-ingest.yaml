@@ -1,0 +1,236 @@
+# =============================================================================
+# telemetry-ingest — příjem senzorových dávek z depotních bran.
+#
+# StatefulSet kvůli dvěma věcem, které Deployment neumí:
+#
+#   1. Brány s pevnou linkou drží klientský stream
+#      telemetry.v1.TelemetryIngest/StreamReadings. Stabilní jméno podu
+#      znamená, že se po restartu připojí zpátky na tutéž instanci a nemusí
+#      přehrávat celý spool.
+#   2. Dedup se opírá o `ingest_batch_id` v paměti ještě před zápisem do
+#      telemetry.telemetry_readings; PVC pod tím drží rozpracované dávky přes
+#      restart, takže retransmise po výpadku spojení je no-op, ne duplicita.
+#
+# Zápisový objem je podle §2 o tři řády vyšší než u čehokoli jiného v
+# platformě — dvanáct replik a vlastní strop otevřených deskriptorů.
+#
+# Rezidence: OF_TELEMETRY_ALLOWED_REGIONS je uzavřený výčet. Dávka pro jiný
+# region se odmítne 403 a *nepřesměruje se*. Není to nedodělek — přeposlání do
+# jiného regionu porušuje pravidlo 7 v §7 SPEC.md.
+# =============================================================================
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: telemetry-ingest
+  namespace: orbitalfreight
+  labels:
+    app.kubernetes.io/name: telemetry-ingest
+    app.kubernetes.io/part-of: orbitalfreight
+    app.kubernetes.io/component: ingest
+    orbitalfreight.net/language: rust
+    orbitalfreight.net/restart-wave: "3"
+spec:
+  serviceName: telemetry-ingest-headless
+  replicas: 12
+  podManagementPolicy: Parallel
+  updateStrategy:
+    type: RollingUpdate
+  selector:
+    matchLabels: { app.kubernetes.io/name: telemetry-ingest }
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: telemetry-ingest
+        app.kubernetes.io/part-of: orbitalfreight
+        orbitalfreight.net/restart-wave: "3"
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8084"
+    spec:
+      serviceAccountName: telemetry-ingest
+      imagePullSecrets: [{ name: of-registry-pull }]
+      terminationGracePeriodSeconds: 60
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1400
+        runAsGroup: 1400
+        fsGroup: 1400
+        seccompProfile: { type: RuntimeDefault }
+      topologySpreadConstraints:
+        - maxSkew: 2
+          topologyKey: topology.kubernetes.io/zone
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels: { app.kubernetes.io/name: telemetry-ingest }
+      containers:
+        - name: telemetry-ingest
+          image: registry.orbitalfreight.net/of/telemetry-ingest:4.2.0
+          ports:
+            - { name: http, containerPort: 8084 }
+            - { name: grpc, containerPort: 9084 }
+          envFrom:
+            - configMapRef: { name: of-common-config }
+          env:
+            - name: OF_SERVICE_NAME
+              value: telemetry-ingest
+            - name: OF_HTTP_PORT
+              value: "8084"
+            - name: OF_GRPC_PORT
+              value: "9084"
+            - name: OF_KAFKA_CONSUMER_GROUP
+              value: telemetry-ingest-v9
+            - name: OF_DB_PASSWORD
+              valueFrom:
+                secretKeyRef: { name: of-database-passwords, key: telemetry-ingest }
+            - name: OF_DATABASE_URL
+              value: postgres://telemetry_svc:$(OF_DB_PASSWORD)@pg-primary.orbitalfreight.svc.cluster.local:5432/orbitalfreight?search_path=telemetry&application_name=telemetry-ingest&sslmode=verify-full
+            - name: OF_DATABASE_MAX_CONNS
+              # Přebíjí společnou hodnotu: dvanáct replik krát čtyřicet spojení
+              # by samo o sobě vyčerpalo max_connections celého clusteru.
+              value: "20"
+            - name: OF_CONTAINER_REGISTRY_GRPC_ADDR
+              valueFrom:
+                configMapKeyRef: { name: of-service-addresses, key: OF_CONTAINER_REGISTRY_GRPC_ADDR }
+            - name: OF_GEO_GRPC_ADDR
+              valueFrom:
+                configMapKeyRef: { name: of-service-addresses, key: OF_GEO_GRPC_ADDR }
+            - name: OF_TELEMETRY_BATCH_MAX_READINGS
+              value: "5000"
+            - name: OF_TELEMETRY_SIGNATURE_REQUIRED
+              # Mimo prostředí `local` vždy true. Podpis Ed25519 se ověřuje
+              # proti telemetry.device_gateways.public_key.
+              value: "true"
+            - name: OF_TELEMETRY_PUBLISH_SAMPLE_RATE
+              # Do of.telemetry.v1 jde každé dvacáté čtení plus každé, které
+              # překročilo práh (§4.8). Snížit na 1 znamená stonásobek provozu
+              # na tématu s 96 partition.
+              value: "20"
+            - name: OF_TELEMETRY_HEARTBEAT_TIMEOUT_MINUTES
+              value: "15"
+            - name: OF_TELEMETRY_ALLOWED_REGIONS
+              value: eu-west,eu-central,na-east,apac-sg
+            - name: OF_TELEMETRY_RULES_PATH
+              value: /etc/orbitalfreight/telemetry/rules.yaml
+          resources:
+            requests: { cpu: "2", memory: 2Gi }
+            limits: { cpu: "6", memory: 6Gi }
+          livenessProbe:
+            httpGet: { path: /healthz, port: http }
+            periodSeconds: 10
+            failureThreshold: 3
+          readinessProbe:
+            httpGet: { path: /readyz, port: http }
+            periodSeconds: 5
+            failureThreshold: 3
+          volumeMounts:
+            - { name: batch-spool, mountPath: /var/lib/orbitalfreight/telemetry }
+            - { name: rules, mountPath: /etc/orbitalfreight/telemetry, readOnly: true }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: ["ALL"] }
+      volumes:
+        - name: rules
+          configMap:
+            name: telemetry-ingest-rules
+  volumeClaimTemplates:
+    - metadata:
+        name: batch-spool
+      spec:
+        accessModes: [ReadWriteOnce]
+        storageClassName: of-nvme
+        resources:
+          requests: { storage: 40Gi }
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: telemetry-ingest-rules
+  namespace: orbitalfreight
+  labels: { app.kubernetes.io/name: telemetry-ingest }
+data:
+  # Prahy pro rule_code z telemetry.telemetry_alerts. Hodnoty jsou v
+  # jednotkách z §0.2: teplota ve stupních Celsia, náraz v g, baterie v
+  # procentech. Severita 1-5 řídí, jestli container-registry překlopí zásilku
+  # do at_risk (OF_FREIGHT_AUTO_AT_RISK_SEVERITY).
+  rules.yaml: |
+    rules:
+      - rule_code: temp_excursion_high
+        # Odchylka nad setpoint_c kontejneru, ne absolutní hodnota — reefer s
+        # čokoládou a reefer s mraženými rybami mají jiný setpoint.
+        comparator: above_setpoint
+        threshold_value: 2.50
+        sustained_minutes: 20
+        severity: 4
+      - rule_code: temp_excursion_low
+        comparator: below_setpoint
+        threshold_value: 2.50
+        sustained_minutes: 20
+        severity: 4
+      - rule_code: humidity_high
+        comparator: absolute_above
+        threshold_value: 85.00
+        sustained_minutes: 60
+        severity: 2
+      - rule_code: shock_impact
+        comparator: absolute_above
+        threshold_value: 6.000
+        sustained_minutes: 0
+        severity: 5
+      - rule_code: door_open_in_transit
+        # Jen když je zásilka ve stavu in_transit; ve skladu jsou otevřené
+        # dveře normální stav a poplach by nikdo nečetl.
+        comparator: boolean_true
+        threshold_value: 1
+        sustained_minutes: 5
+        severity: 5
+      - rule_code: battery_critical
+        comparator: absolute_below
+        threshold_value: 10
+        sustained_minutes: 0
+        severity: 3
+      - rule_code: gateway_silent
+        comparator: heartbeat_age_minutes
+        threshold_value: 15
+        sustained_minutes: 0
+        severity: 3
+      - rule_code: geofence_breach
+        # Vyhodnocuje geo-service přes geo.v1.GeoService/PointInFence s
+        # aplikovaným buffer_m; ingest jen zapíše výsledek.
+        comparator: outside_fence
+        threshold_value: 0
+        sustained_minutes: 10
+        severity: 4
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: telemetry-ingest-headless
+  namespace: orbitalfreight
+  labels: { app.kubernetes.io/name: telemetry-ingest }
+spec:
+  clusterIP: None
+  selector: { app.kubernetes.io/name: telemetry-ingest }
+  ports:
+    - { name: grpc, port: 9084, targetPort: grpc }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: telemetry-ingest
+  namespace: orbitalfreight
+  labels:
+    app.kubernetes.io/name: telemetry-ingest
+    app.kubernetes.io/part-of: orbitalfreight
+spec:
+  type: ClusterIP
+  # Dávky z jedné brány mají chodit na tutéž instanci, dokud se nezmění
+  # topologie — dedup na (ingest_batch_id, container_id, recorded_at) je pak
+  # jenom pojistka, ne každodenní horká cesta.
+  sessionAffinity: ClientIP
+  sessionAffinityConfig:
+    clientIP: { timeoutSeconds: 1800 }
+  selector: { app.kubernetes.io/name: telemetry-ingest }
+  ports:
+    - { name: http, port: 8084, targetPort: http }
+    - { name: grpc, port: 9084, targetPort: grpc }

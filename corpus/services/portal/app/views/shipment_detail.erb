@@ -1,0 +1,133 @@
+<%#
+  Fiche d'expédition : l'écran que l'astreinte ouvre quand un client appelle. Il compose
+  container-registry (état, conteneurs, piste de scans), customs-service (déclarations) et
+  telemetry-ingest (excursions), et n'expose qu'un seul geste d'écriture — la transition d'état,
+  qui est le seul chemin légal vers PATCH /v1/shipments/{shipment_id}/status.
+%>
+<% page_title = "Expédition #{shipment['reference']}" %>
+<% Portal::Residency.assert_local!(shipment, 'shipment_id') %>
+
+<article class="shipment">
+  <header>
+    <h1><%= shipment['reference'] %></h1>
+    <span class="status status-<%= shipment['status'] %>"><%= shipment_status_label(shipment['status']) %></span>
+    <span class="incoterm" title="Incoterm 2020"><%= shipment['incoterm'] %></span>
+    <span class="region"><%= Portal::Residency.label(shipment['region_code']) %></span>
+  </header>
+
+  <% if risk_is_automatic %>
+    <%# Personne n'a cliqué : container-registry a basculé l'expédition en consommant
+        telemetry.alert.raised (§4.9), au-dessus de OF_FREIGHT_AUTO_AT_RISK_SEVERITY. Sans cette
+        phrase, l'exploitation cherche l'opérateur qui aurait fait la manipulation. %>
+    <p class="banner risk"><%= Portal::EventCatalogue.explain('at_risk') %></p>
+  <% end %>
+
+  <dl class="facts">
+    <dt>Origine</dt><dd><%= shipment.dig('origin_facility', 'name') %> (<%= shipment.dig('origin_facility', 'unlocode') %>)</dd>
+    <dt>Destination</dt><dd><%= shipment.dig('destination_facility', 'name') %> (<%= shipment.dig('destination_facility', 'unlocode') %>)</dd>
+    <dt>Échéance SLA</dt><dd><%= rfc3339(shipment['sla_deadline_at']) %></dd>
+    <dt>Valeur déclarée</dt>
+    <dd>
+      <%# Même redaction que GET /partner/v1/shipments/{shipment_id} chez partner-portal-api : la
+          valeur déclarée n'est pas une donnée d'exploitation. Le rôle finance la voit, le
+          dispatcher non. %>
+      <% if redact_declared_value? %>
+        <span class="redacted" title="réservé au rôle finance">masquée</span>
+      <% else %>
+        <%= money(shipment['declared_value_minor'], shipment['currency']) %>
+      <% end %>
+    </dd>
+  </dl>
+</article>
+
+<section class="panel transitions">
+  <h2>Changer l'état</h2>
+
+  <%# Les transitions proposées sont celles que container-registry accepte : le CHECK sur
+      freight.shipments.status liste les huit valeurs possibles, mais le graphe des passages
+      autorisés vit dans le service, pas dans la base. On affiche ce qu'il a répondu. %>
+  <% if transitions.empty? %>
+    <p class="muted">aucune transition disponible depuis <%= shipment_status_label(shipment['status']) %></p>
+  <% else %>
+    <form method="post" action="/shipments/<%= shipment['shipment_id'] %>/status">
+      <select name="status">
+        <% transitions.each do |target| %>
+          <option value="<%= target %>"><%= shipment_status_label(target) %></option>
+        <% end %>
+      </select>
+
+      <%# reason_code part tel quel dans shipment.status.changed (§4.5) et sert à
+          notification-service pour choisir son gabarit : une valeur libre casse l'e-mail
+          silencieusement, d'où la liste fermée. %>
+      <select name="reason_code">
+        <% reasons.fetch(transitions.first, []).each do |code| %>
+          <option value="<%= code %>"><%= code %></option>
+        <% end %>
+      </select>
+
+      <button type="submit">Appliquer</button>
+    </form>
+  <% end %>
+</section>
+
+<section class="panel scans" data-refresh="/shipments/<%= shipment['shipment_id'] %>/scans.json">
+  <h2>Piste de scans</h2>
+
+  <%# occurred_at est l'horloge du terrain, recorded_at celle de container-registry. L'écart
+      dépasse OF_FREIGHT_SCAN_CLOCK_SKEW_TOLERANCE_S quand le scan a été pris hors ligne par
+      inspector-android puis synchronisé plus tard — c'est fréquent en zone portuaire et ce
+      n'est pas une anomalie. %>
+  <table>
+    <thead><tr><th>Survenu</th><th>Enregistré</th><th>Type</th><th>Conteneur</th><th>Site</th><th>Par</th></tr></thead>
+    <tbody>
+      <% scans.each do |scan| %>
+        <tr>
+          <td><%= rfc3339(scan['occurred_at']) %></td>
+          <td><%= rfc3339(scan['recorded_at']) %></td>
+          <td><%= scan['scan_type'] %></td>
+          <td><%= scan['container_id'] %></td>
+          <td><%= scan['facility_id'] %></td>
+          <td><%= scan['scanned_by_user_id'] %></td>
+        </tr>
+      <% end %>
+    </tbody>
+  </table>
+
+  <% if delivered_scan %>
+    <%# Le scan proof_of_delivery est celui qui débloque la facturation : billing-service ne
+        réagit qu'à ce scan_type dans shipment.scanned (§4.4). Le montrer à part évite la
+        question « pourquoi la facture est-elle encore en brouillon ». %>
+    <p class="banner delivered">
+      Livraison prouvée le <%= rfc3339(delivered_scan['occurred_at']) %> —
+      la facturation est débloquée côté billing-service.
+    </p>
+  <% end %>
+</section>
+
+<section class="panel customs">
+  <h2>Douane</h2>
+  <% if declarations.nil? %>
+    <%# customs-service injoignable : la douane est une colonne latérale de cet écran, pas la
+        raison pour laquelle il a été ouvert. On le dit et on continue. %>
+    <p class="muted">customs-service indisponible — le reste de la fiche reste à jour</p>
+  <% elsif declarations.empty? %>
+    <p class="muted">aucune déclaration (expédition domestique)</p>
+  <% else %>
+    <ul>
+      <% declarations.each do |declaration| %>
+        <li>
+          <a href="/declarations/<%= declaration['declaration_id'] %>"><%= declaration['mrn'] || declaration['declaration_id'] %></a>
+          <span class="status"><%= declaration['status'] %></span>
+          <%# duty_paid n'est jamais posé par customs-service lui-même : il consomme
+              billing.invoice.settled (§4.15), et c'est le seul chemin qui existe. %>
+          <span class="duty"><%= clients[:customs].payment_state_label(declaration) %></span>
+        </li>
+      <% end %>
+    </ul>
+  <% end %>
+</section>
+
+<nav class="deep-links">
+  <a href="/shipments/<%= shipment['shipment_id'] %>/fleet">Attelage</a>
+  <a href="/audit/shipment/<%= shipment['shipment_id'] %>">Registre d'audit</a>
+</nav>

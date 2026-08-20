@@ -1,0 +1,73 @@
+# =============================================================================
+# Společná konfigurace, kterou podle §5.1 SPEC.md čte každá z čtrnácti služeb.
+#
+# Co sem patří: proměnná, jejíž hodnota je v celém regionu stejná pro všechny
+# služby. Co sem nepatří: cokoli specifického pro jednu službu (to má vlastní
+# ConfigMapu v manifestu té služby) a cokoli tajného (to je Secret nebo
+# SealedSecret).
+#
+# OF_SERVICE_NAME tu schválně není, i když ji čte každá služba — je to jediná
+# proměnná z §5.1, která se liší pod po podu, a nastavuje se v manifestu
+# služby. Kdyby stála tady, byla by u všech stejná a služby by se v obálce
+# událostí (§0.7, pole `producer`) hlásily pod cizím jménem.
+# =============================================================================
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: of-common-config
+  namespace: orbitalfreight
+  labels:
+    app.kubernetes.io/part-of: orbitalfreight
+    app.kubernetes.io/component: config
+data:
+  OF_ENVIRONMENT: production
+  # Region se přepisuje v overlay. Hodnota musí být ze zavřeného seznamu §0.6 —
+  # razítkuje se do každé obálky události a řídí rezidenci dat (§7, pravidlo 7).
+  OF_REGION_CODE: eu-west
+  OF_LOG_LEVEL: info
+  OF_LOG_FORMAT: json
+
+  OF_KAFKA_BROKERS: "kafka-0.kafka.orbitalfreight.svc.cluster.local:9092,kafka-1.kafka.orbitalfreight.svc.cluster.local:9092,kafka-2.kafka.orbitalfreight.svc.cluster.local:9092"
+
+  OF_OTEL_EXPORTER_ENDPOINT: "http://otel-collector.orbitalfreight.svc.cluster.local:4317"
+  OF_OTEL_SAMPLE_RATIO: "0.05"
+
+  # Univerzální závislost z §1.2: tohle čte všech třináct zbylých služeb.
+  OF_IDENTITY_GRPC_ADDR: "identity-service.orbitalfreight.svc.cluster.local:9081"
+  OF_IDENTITY_JWKS_URL: "http://identity-service.orbitalfreight.svc.cluster.local:8081/.well-known/jwks.json"
+  # Jak dlouho smí služba jet na zapamatované JWKS, když identity-service
+  # nejede. Po vypršení odmítá i uživatelské tokeny; strojová volání odmítá
+  # okamžitě bez ohledu na tuhle hodnotu.
+  OF_IDENTITY_JWKS_GRACE_SECONDS: "300"
+
+  OF_OUTBOX_RELAY_INTERVAL_MS: "250"
+  # Musí zůstat pod terminationGracePeriodSeconds podů (45), jinak kubelet
+  # ustřihne proces uprostřed vyprazdňování platform.outbox_messages.
+  OF_SHUTDOWN_GRACE_SECONDS: "25"
+
+  OF_DATABASE_MAX_CONNS: "40"
+  OF_DATABASE_STATEMENT_TIMEOUT_MS: "8000"
+---
+# Adresy podle synchronního grafu §1.1. Připojují se selektivně: služba dostane
+# jen ty proměnné, které odpovídají jejím odchozím hranám. Držet je pohromadě
+# je pohodlné, ale envFrom na celou ConfigMapu by nastavil všechno všem — a
+# OF_BILLING_BASE_URL na customs-service je první krok k uzavření cyklu, který
+# §1.2 rozbíjí přes událost `billing.invoice.settled`.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: of-service-addresses
+  namespace: orbitalfreight
+  labels:
+    app.kubernetes.io/part-of: orbitalfreight
+    app.kubernetes.io/component: config
+data:
+  OF_CONTAINER_REGISTRY_GRPC_ADDR: "container-registry.orbitalfreight.svc.cluster.local:9083"
+  OF_GEO_GRPC_ADDR: "geo-service.orbitalfreight.svc.cluster.local:9086"
+  OF_AUDIT_LEDGER_GRPC_ADDR: "audit-ledger.orbitalfreight.svc.cluster.local:9092"
+  OF_ROUTING_BASE_URL: "http://routing-service.orbitalfreight.svc.cluster.local:8085"
+  OF_CUSTOMS_BASE_URL: "http://customs-service.orbitalfreight.svc.cluster.local:8087"
+  OF_BILLING_BASE_URL: "http://billing-service.orbitalfreight.svc.cluster.local:8088"
+  OF_DOCUMENT_BASE_URL: "http://document-service.orbitalfreight.svc.cluster.local:8089"
+  OF_FLEET_BASE_URL: "http://fleet-service.orbitalfreight.svc.cluster.local:8082"
+  OF_ANALYTICS_BASE_URL: "http://analytics-pipeline.orbitalfreight.svc.cluster.local:8093"

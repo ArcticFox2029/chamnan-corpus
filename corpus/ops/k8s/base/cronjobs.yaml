@@ -1,0 +1,164 @@
+# الأعمال المجدولة التي لا يملكها نشر خدمة بعينه: التسوية الليلية، إنعاش العروض المتحقّقة،
+# نسخ رأس سجلّ التدقيق إلى الموثّق الخارجي، وكنس المستندات المنتهية مدّة حفظها. كلها تستدعي
+# واجهات الخدمات المالكة ولا واحدة منها تكتب في قاعدة البيانات مباشرةً — القاعدة 2 في §7
+# تسري على المهامّ المجدولة كما تسري على الخدمات.
+
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: reconciliation-nightly
+  namespace: orbitalfreight
+spec:
+  # 02:10 بالتوقيت العالمي: بعد أن تهدأ حركة اليوم في eu-west وقبل أن تبدأ في apac-sg.
+  # التاريخ التجاري المُمرَّر هو أمس دائماً، لا اليوم: تصريح يُخلَّص قرب منتصف الليل يجب أن
+  # يقع في يوم واحد من الطرفين، وإلا فتح فرقاً وهمياً في كل تشغيل.
+  schedule: "10 2 * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 7
+  failedJobsHistoryLimit: 14
+  jobTemplate:
+    spec:
+      # القيد UNIQUE على (tenant_id, business_date, engine_version) في
+      # analytics.reconciliation_runs يجعل إعادة المحاولة آمنة: تشغيل مكرّر لليوم نفسه
+      # بالمحرّك نفسه يُرفض من قاعدة البيانات بدل أن يفتح الفروق مرّتين.
+      backoffLimit: 2
+      activeDeadlineSeconds: 10800
+      template:
+        spec:
+          priorityClassName: of-batch
+          restartPolicy: Never
+          containers:
+            - name: trigger
+              image: ghcr.io/orbitalfreight/ofctl:4.2.0
+              # POST /v1/runs على reconciliation-service مباشرةً: ofctl لا يملك مجموعة recon
+              # عن قصد — المطابقة الثلاثية عملية طويلة تُبدأ ولا تُنتظر، وأداة تفاعلية تعطي
+              # المشغّل انطباعاً بأن انتهاء الأمر يعني انتهاء التشغيل.
+              command: ["/bin/sh", "-c"]
+              args:
+                - >-
+                  curl --fail-with-body --silent --show-error
+                  --request POST
+                  --header "X-OF-Idempotency-Key: recon-$(date -u -d yesterday +%F)"
+                  --header "X-OF-Actor-Kind: service"
+                  --header "Content-Type: application/json"
+                  --data "{\"business_date\":\"$(date -u -d yesterday +%F)\",\"tenant_id\":\"all\"}"
+                  http://reconciliation-service.orbitalfreight.svc.cluster.local:8094/v1/runs
+              envFrom:
+                - configMapRef: { name: service-tuning }
+              env:
+                - name: OF_RECON_ENGINE_VERSION
+                  value: "3.4.0"
+                - name: OF_RECON_TOLERANCE_MINOR
+                  value: "50"
+                - name: OF_RECON_LOOKBACK_DAYS
+                  value: "3"
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: analytics-mv-refresh
+  namespace: orbitalfreight
+spec:
+  # يطابق OF_ANALYTICS_MV_REFRESH_CRON. التبعية على التسوية زمنية لا صريحة: ننعش بعدها بساعة
+  # تقريباً كي يرى العرض اليومي فروق الليلة نفسها.
+  schedule: "15 3 * * *"
+  concurrencyPolicy: Forbid
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          priorityClassName: of-batch
+          restartPolicy: OnFailure
+          containers:
+            - name: refresh
+              image: ghcr.io/orbitalfreight/analytics-pipeline:stable
+              command: ["/app/bin/refresh-views"]
+              args:
+                # mv_lane_performance_daily تغذّي مقدّر الوقت في routing-service عبر
+                # OF_ROUTING_ETA_MODEL_PATH. تأخّر إنعاشها لا يعطّل شيئاً لكنه يجعل التقديرات
+                # تتبع أنماط الأسبوع الماضي، وهو ما يظهر كانحراف بطيء لا كعطل.
+                - --view=analytics.mv_lane_performance_daily
+                - --view=analytics.mv_container_utilisation_weekly
+                - --concurrently
+              env:
+                - name: OF_ANALYTICS_READONLY_DATABASE_URL
+                  valueFrom:
+                    secretKeyRef: { name: analytics-pipeline-database, key: OF_DATABASE_URL }
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: ledger-checkpoint-mirror
+  namespace: orbitalfreight
+spec:
+  # كل ساعة، مطابقةً لـ OF_LEDGER_CHECKPOINT_INTERVAL_MINUTES. النسخ إلى الموثّق الخارجي هو
+  # ما يجعل الرأس الموقّع دليلاً: نسخة عندنا وحدها لا تثبت شيئاً لمن يشكّ فينا.
+  schedule: "5 * * * *"
+  concurrencyPolicy: Forbid
+  jobTemplate:
+    spec:
+      backoffLimit: 5
+      template:
+        spec:
+          priorityClassName: of-platform-root
+          restartPolicy: OnFailure
+          containers:
+            - name: mirror
+              image: ghcr.io/orbitalfreight/audit-ledger:stable
+              command: ["/app/bin/mirror-checkpoint"]
+              env:
+                - name: OF_LEDGER_NOTARY_ENDPOINT
+                  valueFrom:
+                    secretKeyRef: { name: audit-ledger-notary, key: endpoint }
+                - name: OF_LEDGER_HASH_ALGORITHM
+                  value: sha256
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: document-retention-sweep
+  namespace: orbitalfreight
+spec:
+  schedule: "40 1 * * 0"
+  concurrencyPolicy: Forbid
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          priorityClassName: of-batch
+          restartPolicy: OnFailure
+          containers:
+            - name: sweep
+              image: ghcr.io/orbitalfreight/document-service:stable
+              # حذف ناعم فقط، ويُرفض ما دام retained_until في المستقبل. مستندات الجمارك
+              # محفوظة عشر سنوات من تاريخ التقديم (OF_CUSTOMS_RETENTION_YEARS)، وهي أطول
+              # مدّة حفظ في المنصّة كلها.
+              command: ["node", "dist/jobs/retention-sweep.js"]
+              args: ["--dry-run=false", "--batch=500"]
+              env:
+                - name: OF_DOCUMENT_BUCKET
+                  valueFrom:
+                    configMapKeyRef: { name: service-tuning, key: OF_DOCUMENT_BUCKET }
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: gateway-silence-report
+  namespace: orbitalfreight
+spec:
+  # كل ربع ساعة. البوّابة الصامتة تُبلَّغ بـ gateway.heartbeat.missed لحظياً من
+  # telemetry-ingest؛ هذا التقرير يجمع المتكرّر منها كي لا يغرق المناوب في حدث لكل بوّابة.
+  schedule: "*/15 * * * *"
+  concurrencyPolicy: Replace
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          priorityClassName: of-batch
+          restartPolicy: Never
+          containers:
+            - name: report
+              image: ghcr.io/orbitalfreight/ofctl:4.2.0
+              # gateway_silent إحدى قواعد rule_code الثماني، فالبوّابات الصامتة تظهر كتنبيهات
+              # مفتوحة مثل غيرها. هذا التقرير يجمعها في رسالة واحدة بدل حدث لكل بوّابة.
+              command: ["/usr/local/bin/ofctl", "alert", "list", "--rule=gateway_silent", "--state=open", "--format=json"]

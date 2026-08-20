@@ -1,0 +1,81 @@
+# =============================================================================
+# Stagingové úpravy.
+#
+# Hlavní téma: sundat z manifestů všechno, co potřebuje víc než jeden uzel a
+# víc než jednu zónu, a nechat chování beze změny. Druhé téma: rozpočty
+# výpadků. S jednou replikou by PDB s minAvailable zablokoval vyprázdnění uzlu
+# úplně, takže se na stagingu uvolňují.
+# =============================================================================
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: identity-service
+  namespace: orbitalfreight
+spec:
+  template:
+    spec:
+      # Staging má dva uzly; požadovaná antiafinita z base by druhý pod nechala
+      # navždy v Pending.
+      affinity: null
+      containers:
+        - name: identity-service
+          resources:
+            requests: { cpu: 200m, memory: 512Mi }
+            limits: { cpu: "2", memory: 2Gi }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: geo-service
+  namespace: orbitalfreight
+spec:
+  template:
+    spec:
+      topologySpreadConstraints: null
+      containers:
+        - name: geo-service
+          resources:
+            # Stagingový silniční graf je výřez, ne celá Eurasie.
+            requests: { cpu: 500m, memory: 2Gi }
+            limits: { cpu: "2", memory: 6Gi }
+          env:
+            - name: OF_GEO_ROAD_GRAPH_PATH
+              value: /var/lib/orbitalfreight/geo/road-graph-benelux.mmap
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: identity-service
+  namespace: orbitalfreight
+spec:
+  minAvailable: 1
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: geo-service
+  namespace: orbitalfreight
+spec:
+  minAvailable: 1
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: telemetry-ingest
+  namespace: orbitalfreight
+spec:
+  template:
+    spec:
+      topologySpreadConstraints: null
+      containers:
+        - name: telemetry-ingest
+          env:
+            - name: OF_TELEMETRY_ALLOWED_REGIONS
+              value: eu-west
+            - name: OF_TELEMETRY_BATCH_MAX_READINGS
+              # Nižší strop než v produkci schválně: chceme, aby se chování na
+              # hranici dávky testovalo často, ne jednou za čtvrtletí.
+              value: "1000"
+          resources:
+            requests: { cpu: 500m, memory: 1Gi }
+            limits: { cpu: "2", memory: 2Gi }

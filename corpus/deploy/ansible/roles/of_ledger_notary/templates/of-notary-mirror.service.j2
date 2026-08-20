@@ -1,0 +1,28 @@
+# =============================================================================
+# Jednorázová jednotka, která zrcadlí podepsanou hlavičku řetězce k notáři.
+# Spouští ji časovač {{ of_notary_timer }}, ne systém při startu.
+# =============================================================================
+[Unit]
+Description=ORBITALFREIGHT zrcadlo checkpointů audit-ledgeru
+Documentation=https://docs.orbitalfreight.net/audit/notary-mirror
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User={{ of_notary_user }}
+Group={{ of_notary_group }}
+ExecStart={{ of_notary_home }}/mirror-checkpoint.sh
+TimeoutStartSec={{ of_notary_request_timeout_seconds | int * 3 }}
+Nice=10
+
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths={{ of_notary_archive_dir }}
+{# Zrcadlo nemá a nesmí mít přístup k databázi; jede výhradně přes HTTP API. #}
+IPAddressAllow=any
+
+[Install]
+WantedBy=multi-user.target

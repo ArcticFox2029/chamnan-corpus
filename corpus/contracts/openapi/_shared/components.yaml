@@ -1,0 +1,315 @@
+# Componenti condivisi da tutti i documenti OpenAPI di questa directory: le quattro intestazioni
+# obbligatorie di §0.3, la busta d'errore di §0.4, i parametri di paginazione a cursore di §0.5 e
+# i quattro percorsi che ogni servizio espone senza eccezione (§3.15).
+#
+# Questo file non descrive un servizio e non viene servito da nessuno: esiste perché i quattordici
+# documenti che gli stanno accanto non ridichiarino quattordici volte lo stesso errore 409, con
+# quattordici piccole differenze che poi si scoprono in produzione.
+
+openapi: 3.1.0
+
+info:
+  title: ORBITALFREIGHT — componenti comuni
+  version: 4.2.0
+  description: |
+    Frammento riusabile. I documenti dei servizi lo referenziano con
+    `$ref: '../_shared/components.yaml#/components/...'`, e il bundler in ops/ lo appiattisce prima
+    della pubblicazione: nessun client vede mai un riferimento a file esterni.
+
+paths: {}
+
+components:
+
+  # ---------------------------------------------------------------------------------------------
+  # Sicurezza
+  # ---------------------------------------------------------------------------------------------
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: |
+        Token di accesso RS256 emesso da identity-service, TTL 15 minuti. Ogni servizio lo verifica
+        chiamando `identity.v1.TokenIntrospection/Introspect`; quando identity-service è
+        irraggiungibile ripiega sulla verifica locale della firma contro il JWKS in cache, per non
+        più di `OF_IDENTITY_JWKS_GRACE_SECONDS` secondi, e rifiuta comunque le chiamate a
+        credenziale.
+
+    partnerKey:
+      type: apiKey
+      in: header
+      name: X-OF-Partner-Key
+      description: |
+        Solo per partner-portal-api. Le dodici cifre di `identity.api_credentials.key_prefix`
+        accoppiate al segreto scambiato su `POST /partner/v1/sessions`. Il limite di frequenza
+        `OF_PARTNER_RATE_LIMIT_PER_MINUTE` si applica per prefisso, non per indirizzo IP.
+
+  # ---------------------------------------------------------------------------------------------
+  # Intestazioni obbligatorie
+  # ---------------------------------------------------------------------------------------------
+  parameters:
+    TenantHeader:
+      name: X-OF-Tenant
+      in: header
+      required: true
+      description: |
+        Identificatore del tenant, `tnt_<ULID>`. Deve coincidere con la claim `tid` del token,
+        altrimenti la richiesta è respinta con 403 — senza distinguere fra tenant inesistente e
+        tenant non autorizzato, perché la differenza sarebbe un modo per enumerarli.
+      schema:
+        $ref: '#/components/schemas/TenantId'
+
+    TraceHeader:
+      name: X-OF-Trace-Id
+      in: header
+      required: false
+      description: |
+        Trace-id W3C di 32 caratteri esadecimali. Generato all'ingresso se assente. Propagarlo è
+        ciò che fa collassare la doppia risoluzione di geofence del Diamante A: la cache di
+        `geo.v1.GeoService/ResolveGeofence` dura 30 secondi ed è chiavata su questo valore.
+      schema:
+        type: string
+        pattern: '^[0-9a-f]{32}$'
+        examples: ['4bf92f3577b34da6a3ce929d0e0e4736']
+
+    IdempotencyHeader:
+      name: X-OF-Idempotency-Key
+      in: header
+      required: true
+      description: |
+        Obbligatoria su ogni richiesta non-GET che crea o addebita. Conservata 24 ore: la stessa
+        chiave con lo stesso corpo restituisce la prima risposta, la stessa chiave con un corpo
+        diverso fallisce con `idempotency_key_conflict`.
+      schema:
+        type: string
+        minLength: 8
+        maxLength: 128
+
+    ActorKindHeader:
+      name: X-OF-Actor-Kind
+      in: header
+      required: true
+      description: Natura del chiamante.
+      schema:
+        type: string
+        enum: [user, service, device, partner]
+
+    LimitParam:
+      name: limit
+      in: query
+      required: false
+      description: Massimo 200, predefinito 50. Un valore superiore viene ridotto, non rifiutato.
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 200
+        default: 50
+
+    CursorParam:
+      name: cursor
+      in: query
+      required: false
+      description: |
+        Cursore opaco restituito come `next_cursor` dalla pagina precedente. Non ha struttura
+        garantita e non va decodificato dal client.
+      schema:
+        type: string
+
+  # ---------------------------------------------------------------------------------------------
+  # Schemi
+  # ---------------------------------------------------------------------------------------------
+  schemas:
+    Ulid:
+      type: string
+      description: ULID prefissato. Il prefisso fa parte del valore e non viene mai rimosso.
+      pattern: '^[a-z]{3,4}_[0-9A-HJKMNP-TV-Z]{26}$'
+      examples: ['shp_01J8ZK4T9QW3RM7XN2VB6HD5PC']
+
+    TenantId:
+      type: string
+      pattern: '^tnt_[0-9A-HJKMNP-TV-Z]{26}$'
+      examples: ['tnt_01J7A0000000000000000000AA']
+
+    RegionCode:
+      type: string
+      description: Elenco chiuso di §0.6. Governa residenza del dato e partizionamento.
+      enum: [eu-west, eu-central, na-east, na-west, apac-sg, apac-jp, latam-br, mea-ae]
+
+    CurrencyCode:
+      type: string
+      pattern: '^[A-Z]{3}$'
+      description: ISO 4217. Nessun endpoint ha una valuta predefinita.
+
+    CountryCode:
+      type: string
+      pattern: '^[A-Z]{2}$'
+      description: ISO 3166-1 alpha-2 maiuscolo.
+
+    UnLocode:
+      type: string
+      pattern: '^[A-Z]{5}$'
+      examples: ['DEHAM', 'NLRTM', 'SGSIN']
+
+    MinorAmount:
+      type: integer
+      format: int64
+      description: |
+        Importo in unità minori intere. Non esiste alcuna colonna né alcun campo di risposta in
+        virgola mobile per il denaro, in nessun servizio (§7 regola 4).
+
+    Timestamp:
+      type: string
+      format: date-time
+      description: RFC 3339 in UTC, sempre con la Z finale.
+      examples: ['2026-03-14T09:21:44.118Z']
+
+    LocalDate:
+      type: string
+      format: date
+      description: Data senza ora. Corrisponde alle colonne con suffisso `_on`.
+      examples: ['2026-04-30']
+
+    GeoPoint:
+      type: object
+      required: [lat, lon]
+      properties:
+        lat: { type: number, format: double, minimum: -90, maximum: 90 }
+        lon: { type: number, format: double, minimum: -180, maximum: 180 }
+        accuracy_m:
+          type: integer
+          description: Accuratezza dichiarata dal ricevitore GNSS, sommata a `buffer_m` quando il chiamante lo chiede.
+
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, http_status, message, trace_id, retryable]
+          properties:
+            code:
+              type: string
+              description: snake_case, stabile, parte del contratto pubblico. I client mappano su questo, mai sul messaggio.
+              examples: ['shipment_already_sealed']
+            http_status: { type: integer }
+            message: { type: string }
+            trace_id: { type: string }
+            retryable:
+              type: boolean
+              description: Guida il backoff. `false` significa che ritentare produrrà lo stesso esito.
+            fields:
+              type: array
+              items:
+                type: object
+                required: [path, reason]
+                properties:
+                  path: { type: string, examples: ['containers[0].seal_number'] }
+                  reason: { type: string, examples: ['immutable'] }
+      examples:
+        - error:
+            code: shipment_already_sealed
+            http_status: 409
+            message: 'shipment shp_01J8ZK4T9 is sealed and cannot accept containers'
+            trace_id: '4bf92f3577b34da6a3ce929d0e0e4736'
+            retryable: false
+            fields:
+              - path: 'containers[0].seal_number'
+                reason: immutable
+
+    BuildInfo:
+      type: object
+      description: Corpo di `GET /version`.
+      required: [service_name, semver, build_sha, expected_schema_migration]
+      properties:
+        service_name:
+          type: string
+          description: Coincide con `OF_SERVICE_NAME` e quindi con un nome di §1.
+        semver: { type: string, examples: ['4.2.0'] }
+        build_sha: { type: string, pattern: '^[0-9a-f]{40}$' }
+        built_at: { $ref: '#/components/schemas/Timestamp' }
+        expected_schema_migration:
+          type: integer
+          description: |
+            Numero di migrazione che il binario si aspetta. Se il database ne ha uno inferiore
+            `/readyz` fallisce: meglio un pod non pronto che un pod che scrive su una tabella priva
+            di una colonna.
+        environment:
+          type: string
+          enum: [local, ci, staging, production]
+
+    ReadinessReport:
+      type: object
+      description: |
+        Corpo di `GET /readyz`. Elenca le dipendenze che la prontezza richiede: database, Kafka e
+        identity-service. `GET /healthz` invece non tocca mai nulla di tutto questo — è vivo se il
+        processo risponde, e confondere i due significa far riavviare un pod sano perché il broker
+        è lento.
+      required: [ready, checks]
+      properties:
+        ready: { type: boolean }
+        checks:
+          type: array
+          items:
+            type: object
+            required: [name, ok]
+            properties:
+              name:
+                type: string
+                enum: [database, kafka, identity-service, object-store, road-graph]
+              ok: { type: boolean }
+              latency_ms: { type: integer }
+              detail: { type: string }
+
+  # ---------------------------------------------------------------------------------------------
+  # Risposte riusabili
+  # ---------------------------------------------------------------------------------------------
+  responses:
+    BadRequest:
+      description: Corpo o parametri non validi.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+
+    Unauthorized:
+      description: Token assente, scaduto o non verificabile.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+
+    Forbidden:
+      description: |
+        Token valido ma privo dello scope necessario, oppure `X-OF-Tenant` in disaccordo con la
+        claim `tid`, oppure risorsa appartenente a una regione che questa istanza non può servire.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+
+    NotFound:
+      description: |
+        La risorsa non esiste, o non esiste per questo tenant. I due casi non sono distinguibili
+        dalla risposta, di proposito.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+
+    Conflict:
+      description: Stato incompatibile con l'operazione, o chiave di idempotenza riusata con un corpo diverso.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+
+    TooManyRequests:
+      description: Limite di frequenza superato.
+      headers:
+        Retry-After:
+          schema: { type: integer }
+          description: Secondi di attesa suggeriti.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+
+    UnprocessableEntity:
+      description: Sintatticamente corretto ma respinto da una regola di dominio.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }

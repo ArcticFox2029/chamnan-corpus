@@ -1,0 +1,174 @@
+# =============================================================================
+# Kontroly nasazovacího materiálu proti SPEC.md.
+#
+# Tenhle workflow nestaví nic. Odpovídá na jedinou otázku: souhlasí to, co je
+# v deploy/, s tím, co říká specifikace? Chyby, které hledá, mají společné to,
+# že se za běhu projeví pozdě a nesrozumitelně:
+#
+#   * proměnná OF_*, která není v §5 — služba podle §5 spadne při startu, a
+#     spadne na všech instancích naráz, protože prostředí je všude stejné,
+#   * port, který neodpovídá §1 — služba naběhne a nikdo ji nenajde,
+#   * adresní proměnná na službu, která v §1.1 není jako cíl uvedená — nová
+#     hrana v grafu, případně uzavřený cyklus,
+#   * síťová politika, která nepokrývá deklarované hrany.
+#
+# Běží na každý pull request. Je to nejlevnější místo, kde se tyhle věci dají
+# chytit.
+# =============================================================================
+name: verify-manifests
+
+on:
+  pull_request:
+    paths:
+      - "deploy/**"
+      - "SPEC.md"
+      - "ops/validate-env.py"
+  push:
+    branches: [main]
+    paths:
+      - "deploy/**"
+      - "SPEC.md"
+
+permissions:
+  contents: read
+
+jobs:
+
+  env-vars:
+    name: proměnné proti §5 SPEC.md
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Vyrenderovat prostředí všech čtrnácti služeb
+        run: |
+          python3 -m pip install --quiet ansible-core==2.17.*
+          # --check běh nic nemění a nikam se nepřipojuje (inventář CI má
+          # ansible_connection=local), ale vyrenderuje of-service.env.j2.
+          ansible-playbook \
+            -i deploy/ansible/inventories/ci/hosts.yml \
+            deploy/ansible/site.yml \
+            --check --diff --tags config \
+            --extra-vars "of_render_only=true"
+
+      - name: Porovnat se specifikací
+        run: |
+          # Skript čte §5 SPEC.md jako zdroj pravdy. Neznámá proměnná je chyba,
+          # ne varování — služba, která ji přečte, podle §5 selže při startu.
+          python3 ops/validate-env.py \
+            --spec SPEC.md \
+            --env-dir /etc/orbitalfreight \
+            --strict
+
+  kustomize:
+    name: kustomize build a schémata
+    runs-on: ubuntu-24.04
+    strategy:
+      matrix:
+        overlay: [ci, staging, production]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Nainstalovat nástroje
+        run: |
+          curl -sSL https://github.com/kubernetes-sigs/kustomize/releases/download/kustomize%2Fv5.4.2/kustomize_v5.4.2_linux_amd64.tar.gz | tar -xz -C /usr/local/bin
+          curl -sSL https://github.com/yannh/kubeconform/releases/download/v0.6.6/kubeconform-linux-amd64.tar.gz | tar -xz -C /usr/local/bin kubeconform
+
+      - name: Vyrenderovat overlay
+        run: kustomize build deploy/kubernetes/overlays/${{ matrix.overlay }} > /tmp/${{ matrix.overlay }}.yaml
+
+      - name: Ověřit proti schématům Kubernetes
+        run: |
+          kubeconform \
+            -strict \
+            -kubernetes-version 1.29.0 \
+            -schema-location default \
+            -schema-location 'https://raw.githubusercontent.com/datreeio/CRDs-catalog/main/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json' \
+            -summary /tmp/${{ matrix.overlay }}.yaml
+
+      - name: Zkontrolovat porty proti §1 SPEC.md
+        run: |
+          python3 ops/check-manifest-ports.py \
+            --spec SPEC.md \
+            --manifest /tmp/${{ matrix.overlay }}.yaml
+
+      - name: Zkontrolovat hrany proti §1.1 SPEC.md
+        run: |
+          # Hledá adresní proměnné nastavené na službu, která v §1.1 není
+          # cílem té konkrétní služby. Tady se chytá pokus přidat
+          # OF_BILLING_BASE_URL do customs-service.
+          python3 ops/check-call-graph.py \
+            --spec SPEC.md \
+            --manifest /tmp/${{ matrix.overlay }}.yaml \
+            --fail-on-new-edge
+
+  helm:
+    name: helm lint a template
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: azure/setup-helm@v4
+        with:
+          version: v3.15.2
+
+      - name: Lint chartu
+        run: helm lint deploy/helm/of-service --values deploy/helm/services/billing-service.yaml --values deploy/helm/of-service/values-production.yaml
+
+      - name: Vyrenderovat každou službu ze seznamu
+        run: |
+          for values in deploy/helm/services/*.yaml; do
+            name=$(basename "$values" .yaml)
+            echo "== $name"
+            for env in ci staging production; do
+              helm template "$name" deploy/helm/of-service \
+                --values "deploy/helm/of-service/values-$env.yaml" \
+                --values "$values" > /dev/null
+            done
+          done
+
+      - name: Ověřit, že šablona odmítne službu mimo §1
+        run: |
+          # Negativní test. Když projde, přestala fungovat kontrola v
+          # _helpers.tpl a nasadit půjde cokoli.
+          if helm template ghost deploy/helm/of-service \
+               --set service.name=ghost-service \
+               --set service.httpPort=9999 > /dev/null 2>&1; then
+            echo "of-service.validate nechal projít službu, která není v §1 SPEC.md" >&2
+            exit 1
+          fi
+
+  ansible:
+    name: ansible-lint a syntaxe
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python3 -m pip install --quiet ansible-core==2.17.* ansible-lint==24.*
+
+      - name: Syntaktická kontrola všech tří inventářů
+        run: |
+          for env in ci staging production; do
+            ansible-playbook -i "deploy/ansible/inventories/$env/hosts.yml" \
+              deploy/ansible/site.yml --syntax-check
+            ansible-playbook -i "deploy/ansible/inventories/$env/hosts.yml" \
+              deploy/ansible/rolling-restart.yml --syntax-check
+          done
+
+      - name: ansible-lint
+        run: ansible-lint deploy/ansible --profile production
+
+      - name: Ověřit, že vault soubory jsou opravdu šifrované
+        run: |
+          # Pojistka proti tomu, aby někdo commitnul rozšifrovaný vault po
+          # ladění. Hledá se hlavička, ne obsah.
+          for f in deploy/ansible/inventories/*/group_vars/vault_*.yml; do
+            head -n1 "$f" | grep -q '^\$ANSIBLE_VAULT;1\.2;AES256' || {
+              echo "$f není zašifrovaný" >&2
+              exit 1
+            }
+          done

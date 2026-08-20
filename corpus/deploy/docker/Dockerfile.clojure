@@ -1,0 +1,48 @@
+# =============================================================================
+# Obraz reconciliation-service (Clojure 1.11).
+#
+# Uberjar přes tools.build, běh na JRE bez Clojure nástrojů. Do produkce se
+# vědomě nedostane ani REPL port — noční párování sahá na billing-service,
+# audit-ledger i na read-only repliku, a otevřený REPL u služby s takovým
+# dosahem je zbytečné riziko.
+#
+# AOT kompilace je zapnutá: bez ní trvá start přes patnáct sekund a CronJob
+# `reconciliation-nightly` má napjaté okno mezi obnovou pohledů (03:15) a
+# začátkem evropské směny.
+# =============================================================================
+
+FROM clojure:temurin-21-tools-deps-bookworm AS build
+
+WORKDIR /src
+COPY services/reconciliation/deps.edn ./
+RUN --mount=type=cache,target=/root/.m2 \
+    clojure -P -T:build
+
+COPY libs/ /src/libs/
+COPY services/reconciliation/src ./src
+COPY services/reconciliation/build.clj ./
+RUN --mount=type=cache,target=/root/.m2 \
+    clojure -T:build uber
+
+FROM eclipse-temurin:21-jre-jammy AS runtime
+
+ARG VERSION=4.2.0
+ARG BUILD_SHA=unknown
+LABEL org.opencontainers.image.title="reconciliation-service" \
+      org.opencontainers.image.version="${VERSION}" \
+      org.opencontainers.image.revision="${BUILD_SHA}" \
+      org.opencontainers.image.vendor="ORBITALFREIGHT"
+
+RUN groupadd -g 1400 orbitalfreight \
+    && useradd -u 1400 -g 1400 -s /usr/sbin/nologin -M orbitalfreight
+
+WORKDIR /app
+COPY --from=build --chown=1400:1400 /src/target/reconciliation-service-standalone.jar ./service.jar
+COPY --chown=1400:1400 deploy/docker/conf/recon-cli /opt/orbitalfreight/bin/recon-cli
+
+USER 1400:1400
+EXPOSE 8094
+
+ENV JAVA_TOOL_OPTIONS="-XX:MaxRAMPercentage=75 -XX:+ExitOnOutOfMemoryError"
+
+ENTRYPOINT ["java", "-jar", "/app/service.jar"]

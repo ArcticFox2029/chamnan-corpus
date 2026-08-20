@@ -1,0 +1,63 @@
+# =============================================================================
+# Obraz routing-service (Python 3.12, FastAPI).
+#
+# Závislosti se instalují do virtuálního prostředí ve stavební vrstvě a to se
+# pak kopíruje celé — do běhového obrazu se tak nedostane překladač ani
+# hlavičky, které potřebuje scipy při instalaci.
+#
+# Model pro ETA se do obrazu NEDÁVÁ. Staví ho analytics-pipeline z
+# analytics.mv_lane_performance_daily a připojuje se svazkem
+# (OF_ROUTING_ETA_MODEL_PATH). Zapéct ho do obrazu by znamenalo přenasadit
+# službu kvůli přepočtu dat, která se mění každou noc.
+# =============================================================================
+
+FROM python:3.12-slim-bookworm AS build
+
+ENV PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    VIRTUAL_ENV=/opt/venv \
+    PATH="/opt/venv/bin:$PATH"
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends build-essential gfortran libpq-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN python -m venv /opt/venv
+
+WORKDIR /src
+COPY services/routing/requirements.txt ./
+RUN --mount=type=cache,target=/root/.cache/pip \
+    pip install -r requirements.txt
+
+COPY libs/ ./libs/
+COPY services/routing/ ./services/routing/
+RUN pip install --no-deps ./services/routing
+
+FROM python:3.12-slim-bookworm AS runtime
+
+ARG VERSION=4.2.0
+ARG BUILD_SHA=unknown
+LABEL org.opencontainers.image.title="routing-service" \
+      org.opencontainers.image.version="${VERSION}" \
+      org.opencontainers.image.revision="${BUILD_SHA}" \
+      org.opencontainers.image.vendor="ORBITALFREIGHT"
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends libpq5 \
+    && rm -rf /var/lib/apt/lists/* \
+    && groupadd -g 1400 orbitalfreight \
+    && useradd -u 1400 -g 1400 -s /usr/sbin/nologin -M orbitalfreight
+
+COPY --from=build --chown=1400:1400 /opt/venv /opt/venv
+
+ENV PATH="/opt/venv/bin:$PATH" \
+    PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1
+
+USER 1400:1400
+EXPOSE 8085
+
+# Počet workerů drží OF_ROUTING_SOLVER_THREADS a musí odpovídat limitu CPU
+# podu; víc procesů než jader solver zpomalí, protože se přepíná uprostřed
+# větvení a mezivýsledky vypadnou z cache.
+ENTRYPOINT ["python", "-m", "orbitalfreight.routing.server"]

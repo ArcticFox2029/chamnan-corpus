@@ -1,0 +1,46 @@
+# =============================================================================
+# Výchozí hodnoty role, která staví Postgres 16 pro ORBITALFREIGHT.
+#
+# Cluster je jeden a schémat je deset (§2 SPEC.md). Role zakládá schémata,
+# role vlastníků a čtecí roli of_analytics_ro, kterou drží jenom
+# analytics-pipeline — je to jediný důvod, proč je databáze fyzicky sdílená.
+# Nic víc: migrace tabulek jsou v db/ a pouští je CI, ne Ansible.
+# =============================================================================
+
+of_postgres_version: 16
+of_postgres_port: 5432
+of_postgres_role: replica
+of_postgres_data_dir: "/var/lib/postgresql/{{ of_postgres_version }}/main"
+of_postgres_conf_dir: "/etc/postgresql/{{ of_postgres_version }}/main"
+of_postgres_shared_buffers: 8GB
+of_postgres_effective_cache_size: 24GB
+of_postgres_work_mem: 16MB
+of_postgres_maintenance_work_mem: 1GB
+of_postgres_max_connections: 400
+of_postgres_wal_level: logical
+of_postgres_max_wal_senders: 8
+of_postgres_max_replication_slots: 8
+of_postgres_wal_keep_size: 8GB
+of_postgres_checkpoint_timeout: 15min
+of_postgres_random_page_cost: "1.1"
+of_postgres_statement_timeout_ms: 8000
+of_postgres_idle_in_transaction_timeout_ms: 60000
+of_postgres_synchronous_commit: "on"
+of_postgres_synchronous_standby_names: ""
+of_postgres_replication_slots: []
+of_postgres_readonly_role: of_analytics_ro
+of_postgres_database: orbitalfreight
+
+of_postgres_schemas: []
+of_postgres_extensions: []
+
+# Zápis se pouští jen na primáru. Replika dostane stejnou konfiguraci, ale
+# úlohy, které zakládají schémata a role, se na ní přeskočí — přišly by po
+# replikaci stejně a jen by shodily běh na read-only transakci.
+of_postgres_manage_objects: "{{ of_postgres_role == 'primary' }}"
+
+of_postgres_hba_networks:
+  - { cidr: "10.40.0.0/16", comment: "aplikační uzly eu-west" }
+  - { cidr: "10.41.0.0/16", comment: "aplikační uzly eu-central" }
+  - { cidr: "10.42.0.0/16", comment: "aplikační uzly na-east" }
+  - { cidr: "10.43.0.0/16", comment: "aplikační uzly apac-sg" }

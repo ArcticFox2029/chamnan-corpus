@@ -1,0 +1,81 @@
+# =============================================================================
+# Nasazení na staging po sloučení do main.
+#
+# Jediný workflow, který něco nasazuje — a i ten to dělá cizíma rukama:
+# zavolá Semaphore API a počká na výsledek. Runner GitHubu nemá SSH klíče ani
+# přístup do clusteru a mít je nebude; kdyby je měl, byl by přístup k produkci
+# jen tak daleko, jak daleko je nejbližší kompromitovaná akce třetí strany.
+#
+# Produkce se tímhle nenasazuje vůbec. Ta má vlastní šablonu v Semaphoru s
+# povinným schválením druhým člověkem (require_approval) a běží proti tagu,
+# ne proti větvi.
+# =============================================================================
+name: deploy-staging
+
+on:
+  workflow_run:
+    workflows: [build-images]
+    types: [completed]
+    branches: [main]
+
+concurrency:
+  group: deploy-staging
+  cancel-in-progress: false     # nasazení se nikdy nepřerušuje uprostřed
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    name: spustit šablonu v Semaphoru
+    runs-on: ubuntu-24.04
+    if: github.event.workflow_run.conclusion == 'success'
+    environment:
+      name: staging
+      url: https://api.staging.orbitalfreight.net/version
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Spustit šablonu "Nasadit platformu (staging)"
+        id: task
+        run: |
+          TASK=$(curl --fail --silent \
+            --header "Authorization: Bearer ${{ secrets.OF_SEMAPHORE_TOKEN }}" \
+            --header 'Content-Type: application/json' \
+            --data "{\"template_id\":${{ vars.OF_SEMAPHORE_STAGING_TEMPLATE }},\"environment\":\"{\\\"of_image_tag\\\":\\\"${GITHUB_SHA}\\\"}\"}" \
+            https://semaphore.orbitalfreight.net/api/project/1/tasks)
+          echo "id=$(echo "$TASK" | jq -r .id)" >> "$GITHUB_OUTPUT"
+
+      - name: Počkat na dokončení
+        run: |
+          # Semaphore vrací `status` v {waiting, running, success, error,
+          # stopped}. Čeká se aktivně, protože webhook zpátky do GitHubu by
+          # znamenal veřejně dostupný koncový bod, který nechceme.
+          for _ in $(seq 1 120); do
+            STATUS=$(curl --fail --silent \
+              --header "Authorization: Bearer ${{ secrets.OF_SEMAPHORE_TOKEN }}" \
+              "https://semaphore.orbitalfreight.net/api/project/1/tasks/${{ steps.task.outputs.id }}" \
+              | jq -r .status)
+            case "$STATUS" in
+              success) echo "nasazeno"; exit 0 ;;
+              error|stopped) echo "nasazení skončilo stavem $STATUS" >&2; exit 1 ;;
+              *) sleep 15 ;;
+            esac
+          done
+          echo "nasazení se nedokončilo do třiceti minut" >&2
+          exit 1
+
+      - name: Ověřit verzi na stagingu
+        run: |
+          # /version vrací build SHA, semver a číslo migrace schématu, které
+          # služba očekává (§3.15). Neshoda SHA znamená, že běží starý obraz —
+          # tichá varianta selhaného nasazení.
+          for svc in identity-service container-registry billing-service; do
+            REPORTED=$(curl --fail --silent \
+              "https://api.staging.orbitalfreight.net/internal/${svc}/version" | jq -r .build_sha)
+            if [ "$REPORTED" != "${GITHUB_SHA}" ]; then
+              echo "${svc} hlásí ${REPORTED}, očekáváno ${GITHUB_SHA}" >&2
+              exit 1
+            fi
+          done

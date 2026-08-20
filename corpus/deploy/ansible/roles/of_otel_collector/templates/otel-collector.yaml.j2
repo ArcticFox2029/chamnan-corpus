@@ -1,0 +1,125 @@
+# =============================================================================
+# Konfigurace kolektoru OpenTelemetry pro region {{ of_region }}.
+#
+# Do každého spanu i metriky se doplňuje region a prostředí, protože jinak se
+# v backendu nedá odlišit stejně pojmenovaná operace ze čtyř regionů. Atribut
+# `of.region` musí odpovídat OF_REGION_CODE služby — nesoulad znamená, že se
+# trasa zásilky rozpadne na dvě poloviny v různých pohledech.
+#
+# Generováno rolí of_otel_collector.
+# =============================================================================
+
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:{{ of_otel_grpc_port }}
+        max_recv_msg_size_mib: 16
+      http:
+        endpoint: 0.0.0.0:{{ of_otel_http_port }}
+
+  prometheus/self:
+    config:
+      scrape_configs:
+        - job_name: otel-collector
+          scrape_interval: 30s
+          static_configs:
+            - targets: ["127.0.0.1:{{ of_otel_metrics_port }}"]
+
+processors:
+  memory_limiter:
+    check_interval: 2s
+    limit_mib: {{ of_otel_memory_limit_mib }}
+    spike_limit_mib: {{ (of_otel_memory_limit_mib * 0.2) | int }}
+
+  batch:
+    timeout: {{ of_otel_batch_timeout }}
+    send_batch_size: {{ of_otel_batch_max_size }}
+    send_batch_max_size: {{ of_otel_batch_max_size * 2 }}
+
+  resource/of:
+    attributes:
+      - key: of.environment
+        value: {{ of_environment }}
+        action: upsert
+      - key: of.region
+        value: {{ of_region }}
+        action: upsert
+      - key: of.platform_version
+        value: "{{ of_platform_version }}"
+        action: upsert
+
+  attributes/redact:
+    # Tokeny z hlavičky Authorization se do trasování nesmí dostat ani zkrácené.
+    # X-OF-Tenant naopak necháváme — bez tenanta se incident nedá zúžit.
+    actions:
+      - key: http.request.header.authorization
+        action: delete
+      - key: http.request.header.x_of_idempotency_key
+        action: hash
+      - key: db.statement
+        action: hash
+
+  tail_sampling:
+    decision_wait: 10s
+    num_traces: 100000
+    policies:
+      - name: chyby-vzdy
+        type: status_code
+        status_code: { status_codes: [ERROR] }
+      - name: pomale-trace
+        type: latency
+        latency: { threshold_ms: {{ of_otel_tail_sampling_latency_ms }} }
+      - name: celni-rizeni-vzdy
+        # Vše, co se dotkne customs-service, se vzorkuje celé: podle §7
+        # pravidla 6 se v celním řízení nic nepřepisuje a rekonstrukce toho,
+        # co se stalo, je jediná obrana při kontrole.
+        type: string_attribute
+        string_attribute:
+          key: service.name
+          values: [customs-service, audit-ledger]
+      - name: zbytek
+        type: probabilistic
+        probabilistic: { sampling_percentage: {{ (of_otel_tail_sampling_default_rate * 100) | int }} }
+
+exporters:
+  otlphttp/traces:
+    endpoint: {{ of_otel_traces_backend }}
+    compression: zstd
+    retry_on_failure:
+      enabled: true
+      initial_interval: 500ms
+      max_interval: 30s
+    sending_queue:
+      enabled: true
+      queue_size: {{ of_otel_queue_size }}
+
+  prometheusremotewrite/metrics:
+    endpoint: {{ of_otel_metrics_backend }}
+    external_labels:
+      of_region: {{ of_region }}
+      of_environment: {{ of_environment }}
+
+extensions:
+  health_check:
+    endpoint: 0.0.0.0:{{ of_otel_health_port }}
+  pprof:
+    endpoint: 127.0.0.1:1777
+
+service:
+  extensions: [health_check, pprof]
+  telemetry:
+    logs:
+      level: {{ of_log_level }}
+      encoding: {{ of_log_format }}
+    metrics:
+      address: 0.0.0.0:{{ of_otel_metrics_port }}
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [memory_limiter, resource/of, attributes/redact, tail_sampling, batch]
+      exporters: [otlphttp/traces]
+    metrics:
+      receivers: [otlp, prometheus/self]
+      processors: [memory_limiter, resource/of, batch]
+      exporters: [prometheusremotewrite/metrics]

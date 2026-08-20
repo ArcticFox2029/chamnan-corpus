@@ -1,0 +1,298 @@
+# Tipi di ingresso delle mutazioni e filtri delle query. Stanno in un file a parte perché sono la
+# metà dello schema che cambia più spesso: aggiungere un filtro non tocca i tipi di dominio, e
+# tenerli separati rende evidente in revisione se una modifica è additiva o no.
+#
+# Regola valida per ogni input di mutazione: chi crea o addebita porta `idempotencyKey`, e il
+# gateway lo inoltra come `X-OF-Idempotency-Key` al servizio a valle (§7 regola 5).
+
+"""
+Chiave di idempotenza fornita dal client, conservata 24 ore dal servizio che la riceve. Ripetere
+la stessa mutazione con la stessa chiave restituisce il primo risultato invece di creare un
+secondo oggetto.
+"""
+input IdempotencyInput {
+  key: String!
+}
+
+input CreateShipmentInput {
+  idempotencyKey: String!
+  reference: String!
+  originFacilityId: ULID!
+
+  "Deve essere diverso da originFacilityId: il vincolo shipments_endpoints_differ lo impone comunque."
+  destinationFacilityId: ULID!
+
+  incoterm: String!
+  slaDeadlineAt: DateTime
+  declaredValue: MoneyInput
+  regionCode: RegionCode!
+}
+
+"""
+Importo in ingresso. Nessun campo float da nessuna parte: l'importo arriva in unità minori come
+stringa e la valuta è obbligatoria.
+"""
+input MoneyInput {
+  amountMinor: Long!
+  currency: CurrencyCode!
+}
+
+"""
+Cambio di stato di una spedizione. È l'unico modo di toccare `freight.shipments.status`, e
+corrisponde a PATCH /v1/shipments/{shipment_id}/status.
+"""
+input ChangeShipmentStatusInput {
+  idempotencyKey: String!
+  shipmentId: ULID!
+  toStatus: ShipmentStatus!
+
+  "Perché: 'operator_action', 'customs_hold', 'pod_recorded', 'customer_cancellation'."
+  reasonCode: String!
+
+  note: String
+}
+
+input AttachContainerInput {
+  idempotencyKey: String!
+  shipmentId: ULID!
+  containerId: ULID!
+
+  "Validato contro OF_FREIGHT_SEAL_FORMAT_REGEX; un sigillo fuori formato è rifiutato, non normalizzato."
+  sealNumber: String!
+
+  grossKg: Long!
+  loadedAt: DateTime
+}
+
+input RegisterContainerInput {
+  idempotencyKey: String!
+
+  "Codice BIC di undici caratteri. Unico a livello di piattaforma."
+  isoCode: String!
+
+  isoSizeType: String!
+  ownerCarrierId: ULID
+  tareWeightKg: Long!
+  maxGrossKg: Long!
+  isReefer: Boolean! = false
+
+  "Accettato solo se isReefer è vero."
+  setpointC: Float
+
+  hazardClassCodes: [String!]
+}
+
+input RecordScanInput {
+  idempotencyKey: String!
+  shipmentId: ULID!
+  containerId: ULID
+  scanType: ScanType!
+  facilityId: ULID
+
+  """
+  Ora del fatto secondo il terminale. Se dista da adesso più di
+  OF_FREIGHT_SCAN_CLOCK_SKEW_TOLERANCE_S la scansione viene registrata e segnalata, non respinta:
+  l'app inspector-android lavora regolarmente offline e la sua ora è quello che è.
+  """
+  occurredAt: DateTime!
+
+  position: GeoPointInput
+  deviceSerial: String
+  notes: String
+}
+
+input GeoPointInput {
+  lat: Float!
+  lon: Float!
+  accuracyM: Int
+}
+
+input PlanRouteInput {
+  idempotencyKey: String!
+  shipmentId: ULID!
+  strategy: RouteStrategy! = FASTEST
+
+  "Oltre OF_ROUTING_MAX_LEGS la pianificazione è rifiutata invece di essere troncata."
+  maxLegs: Int
+
+  "Valichi da evitare, per esempio dopo una chiusura annunciata."
+  excludeCrossingIds: [ULID!]
+
+  departAfter: DateTime
+}
+
+input ReplanRouteInput {
+  idempotencyKey: String!
+  routeId: ULID!
+  strategy: RouteStrategy
+  reasonCode: String!
+}
+
+input AssignVehicleInput {
+  idempotencyKey: String!
+  shipmentId: ULID!
+  legId: ULID
+  vehicleId: ULID!
+  driverId: ULID!
+
+  """
+  Se vero, l'idoneità di patente, ADR e ore di guida viene verificata prima di riservare. La
+  riserva vera e propria è comunque arbitrata dal vincolo di esclusione su
+  `fleet.vehicle_assignments`, non da questo controllo.
+  """
+  enforceEligibility: Boolean! = true
+}
+
+input ReleaseAssignmentInput {
+  idempotencyKey: String!
+  assignmentId: ULID!
+  releasedAt: DateTime
+  distanceTravelledM: Long
+  releaseReason: ReleaseReason!
+}
+
+enum ReleaseReason {
+  COMPLETED
+  LEG_REPLANNED
+  DRIVER_UNAVAILABLE
+  VEHICLE_BREAKDOWN
+  SHIPMENT_CANCELLED
+  DISPATCHER_OVERRIDE
+}
+
+input CreateDeclarationInput {
+  idempotencyKey: String!
+  shipmentId: ULID!
+  crossingId: ULID!
+  direction: DeclarationDirection!
+  brokerUserId: ULID
+  currency: CurrencyCode!
+  lines: [DeclarationLineInput!]!
+}
+
+input DeclarationLineInput {
+  seqNo: Int!
+  hsCode: String!
+  description: String!
+  originCountry: CountryCode!
+  quantity: Float!
+  unit: String!
+  netWeightKg: Float!
+  customsValue: MoneyInput!
+}
+
+"""
+Deposito presso l'autorità. Da qui in poi la dichiarazione non si modifica più: una correzione è
+un emendamento, che tiene lo stesso `mrn` (§7 regola 6).
+"""
+input FileDeclarationInput {
+  idempotencyKey: String!
+  declarationId: ULID!
+
+  "doc_… della fattura commerciale allegata, obbligatoria per le importazioni."
+  commercialInvoiceDocumentId: ULID
+}
+
+input TariffLookupInput {
+  hsCode: String!
+  destinationCountry: CountryCode!
+
+  "Omesso significa «qualsiasi origine», che è la riga con origin_country nullo."
+  originCountry: CountryCode
+
+  "Data di efficacia. Serve a risolvere la riga valida allora, non quella valida oggi."
+  onDate: Date!
+}
+
+input CreateInvoiceInput {
+  idempotencyKey: String!
+  shipmentId: ULID!
+  currency: CurrencyCode!
+  dueOn: Date
+}
+
+input AddInvoiceLineInput {
+  idempotencyKey: String!
+  invoiceId: ULID!
+  chargeCode: ChargeCode!
+  description: String!
+  quantity: Float! = 1
+  unitPrice: MoneyInput!
+  sourceKind: String
+  sourceId: ULID
+}
+
+input RecordPaymentInput {
+  idempotencyKey: String!
+  invoiceId: ULID!
+  method: PaymentMethod!
+  amount: MoneyInput!
+  receivedAt: DateTime!
+
+  "Riferimento bancario o del PSP. Unico per metodo: è ciò che rende innocua la reimportazione di un file di estratto conto."
+  externalRef: String
+}
+
+input UploadDocumentInput {
+  idempotencyKey: String!
+  ownerType: DocumentOwnerType!
+  ownerId: ULID!
+  kind: DocumentKind!
+  mimeType: String!
+  byteSize: Long!
+
+  "Impronta calcolata dal client. Se coincide con un documento già presente per lo stesso proprietario, il caricamento riusa il blob esistente."
+  sha256: String!
+
+  regionCode: RegionCode!
+}
+
+input NotificationPreferenceInput {
+  channel: NotificationChannel!
+
+  "Nome di evento di §4, oppure '*' per tutti."
+  eventName: String!
+
+  enabled: Boolean!
+  quietHoursStart: String
+  quietHoursEnd: String
+
+  "Fuso IANA, per esempio 'Europe/Hamburg'."
+  timezone: String! = "UTC"
+}
+
+enum NotificationChannel {
+  EMAIL
+  SMS
+  PUSH
+  WEBHOOK
+  CONSOLE
+}
+
+input ShipmentFilter {
+  status: [ShipmentStatus!]
+  originFacilityId: ULID
+  destinationFacilityId: ULID
+  regionCode: RegionCode
+  createdAfter: DateTime
+  createdBefore: DateTime
+
+  "Ricerca esatta sul riferimento del cliente, non testuale: l'indice è su (tenant_id, reference)."
+  reference: String
+}
+
+input AlertFilter {
+  containerId: ULID
+  ruleCode: [AlertRuleCode!]
+
+  "Severità minima inclusa."
+  severityMin: Int
+
+  openOnly: Boolean! = true
+}
+
+input DiscrepancyFilter {
+  state: DiscrepancyState
+  kind: [DiscrepancyKind!]
+  businessDate: Date
+}

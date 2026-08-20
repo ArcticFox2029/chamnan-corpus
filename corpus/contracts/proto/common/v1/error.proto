@@ -1,0 +1,64 @@
+// Copyright (c) 2026 ORBITALFREIGHT Holding B.V.
+// SPDX-License-Identifier: LicenseRef-ORBITALFREIGHT-Internal
+//
+// Busta d'errore unica della piattaforma (§0.4). Vale identica per i servizi HTTP e per quelli
+// gRPC, dove viaggia dentro google.rpc.Status.details: un client che sa leggere un errore di
+// billing-service sa leggere anche un errore di geo-service senza codice specifico per servizio.
+
+syntax = "proto3";
+
+package common.v1;
+
+option go_package = "github.com/orbitalfreight/contracts/gen/go/common/v1;commonv1";
+option java_package = "com.orbitalfreight.contracts.common.v1";
+option java_multiple_files = true;
+
+// Il corpo che ogni servizio restituisce in caso di fallimento. Nessun servizio ha il permesso di
+// inventarsi una forma alternativa: il pannello operativo in web/ e le due app in apps/ leggono
+// solo questa.
+message ErrorEnvelope {
+  common.v1.Error error = 1;
+}
+
+message Error {
+  // snake_case, stabile, parte del contratto pubblico. Cambiarlo è una breaking change tanto
+  // quanto rimuovere un campo. Esempi reali: `shipment_already_sealed`, `tariff_not_effective`,
+  // `region_not_allowed`, `idempotency_key_conflict`.
+  string code = 1;
+
+  // Lo stato HTTP che il gateway REST espone. Sul canale gRPC resta valorizzato lo stesso, così
+  // che partner-portal-api possa riflettere l'errore a monte senza rimappare nulla.
+  int32 http_status = 2;
+
+  // Messaggio leggibile, in inglese, mai localizzato: la localizzazione avviene nel client a
+  // partire da `code`.
+  string message = 3;
+
+  // Trace-id W3C della richiesta che ha fallito. È l'unica chiave con cui l'assistenza ritrova
+  // l'evento in ops/.
+  string trace_id = 4;
+
+  // Guida il backoff del client. `false` significa che ritentare produrrà lo stesso errore:
+  // un sigillo già apposto non diventa modificabile riprovando.
+  bool retryable = 5;
+
+  repeated common.v1.FieldViolation fields = 6;
+
+  // Suggerimento di attesa prima del ritentativo, valorizzato solo quando retryable è true;
+  // rispecchia l'intestazione Retry-After sul lato HTTP.
+  uint32 retry_after_seconds = 7;
+}
+
+// Puntatore preciso al campo che ha causato il rifiuto. `path` usa la notazione JSON del corpo
+// della richiesta, indici compresi: `containers[0].seal_number`.
+message FieldViolation {
+  string path = 1;
+
+  // Anch'esso snake_case e stabile: `immutable`, `required`, `out_of_range`, `unknown_enum_value`,
+  // `not_in_tenant`.
+  string reason = 2;
+
+  // Valore atteso quando ha senso mostrarlo (un formato, un intervallo). Mai il valore ricevuto:
+  // il campo rifiutato può contenere un segreto.
+  string expectation = 3;
+}

@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    यह फ़ाइल गोदाम स्कैनर की सारी दिखने वाली पंक्तियाँ रखती है। नियम एक ही है:
+    ORBITALFREIGHT की शब्दावली (scan_type, status, rule_code) कभी अनुवादित नहीं
+    होती — वह तार पर जाने वाला मान है — पर उसके आगे जो लेबल दिखता है वह होता है।
+    इसीलिए नीचे हर स्थिति-लेबल के साथ कोष्ठक में असली मान लिखा है, ताकि गोदाम का
+    कर्मचारी फ़ोन पर वही शब्द देखे जो सहायता-डेस्क अपने डैशबोर्ड पर देखती है।
+-->
+<resources>
+    <string name="app_name">ORBITALFREIGHT Warehouse</string>
+    <string name="alert_channel_id">of_telemetry_alerts</string>
+    <string name="alert_channel_name">Container alerts</string>
+
+    <string name="scan_title">Scan container</string>
+    <string name="scan_hint_iso_code">BIC code (MSCU3948571)</string>
+    <string name="scan_hint_seal">Seal number</string>
+    <string name="scan_shipment_reference">Reference: %1$s</string>
+    <string name="scan_queued">Queued offline — %1$d waiting</string>
+    <string name="scan_uploaded">Recorded at %1$s</string>
+
+    <!-- freight.shipment_scan_events.scan_type के आठ वैध मान। -->
+    <string name="scan_type_gate_in">Gate in (gate_in)</string>
+    <string name="scan_type_gate_out">Gate out (gate_out)</string>
+    <string name="scan_type_load">Load (load)</string>
+    <string name="scan_type_unload">Unload (unload)</string>
+    <string name="scan_type_seal_check">Seal check (seal_check)</string>
+    <string name="scan_type_customs_inspection">Customs inspection (customs_inspection)</string>
+    <string name="scan_type_damage_report">Damage report (damage_report)</string>
+    <string name="scan_type_proof_of_delivery">Proof of delivery (proof_of_delivery)</string>
+
+    <!-- freight.shipments.status के आठ वैध मान। -->
+    <string name="shipment_status_draft">Draft</string>
+    <string name="shipment_status_booked">Booked</string>
+    <string name="shipment_status_sealed">Sealed</string>
+    <string name="shipment_status_in_transit">In transit</string>
+    <string name="shipment_status_at_risk">At risk</string>
+    <string name="shipment_status_held_at_customs">Held at customs</string>
+    <string name="shipment_status_delivered">Delivered</string>
+    <string name="shipment_status_cancelled">Cancelled</string>
+
+    <!-- सर्वर की त्रुटि-लिफ़ाफ़े (§0.4) की `code` से मिलान करके दिखाए जाते हैं।
+         जो कोड यहाँ नहीं है उसके लिए `message` जस का तस दिखा दिया जाता है। -->
+    <string name="error_shipment_already_sealed">This shipment is sealed. Detach is no longer possible.</string>
+    <string name="error_seal_mismatch">Seal does not match the one recorded at gate in.</string>
+    <string name="error_tenant_mismatch">This device is registered to another tenant.</string>
+    <string name="error_offline_queued">No connection. The scan is stored and will be sent automatically.</string>
+
+    <string name="damage_photo_title">Damage photo</string>
+    <string name="damage_photo_too_large">Photo is larger than the 25 MB the document service accepts.</string>
+
+    <string name="legacy_upload_notice">Sending queued scans…</string>
+    <string name="legacy_seal_check_title">Seal check (classic)</string>
+    <string name="legacy_damage_report_title">Damage report (classic)</string>
+</resources>

@@ -1,0 +1,203 @@
+# Superficie REST di audit-ledger (Go 1.22, porta 8092). La sola scrittura è gRPC
+# (`audit.v1.LedgerService/Append`, descritta in proto/audit/v1/ledger.proto); tutto ciò che sta
+# qui è lettura e verifica.
+#
+# Il servizio consuma tutti e sei i topic di §4 e chiama esclusivamente identity-service. La
+# ragione per cui la lettura è separata dalla scrittura è che il registro deve poter essere
+# verificato da chi non ha alcun diritto di scriverci.
+
+openapi: 3.1.0
+
+info:
+  title: audit-ledger
+  version: 4.2.0
+  description: |
+    `platform.audit_ledger_entries` è in sola aggiunta: il ruolo che possiede la connessione ha
+    INSERT e SELECT e basta, e un trigger BEFORE UPDATE OR DELETE solleva comunque. Ogni riga
+    contiene l'hash della precedente, quindi togliere o correggere una voce rompe la verifica di
+    tutte quelle successive — che è esattamente il punto.
+
+    `entry_id` è un BIGINT monotono e non un ULID prefissato: la catena dipende dall'ordine totale,
+    e fra scrittori concorrenti un ULID non lo garantisce.
+
+servers:
+  - url: http://audit-ledger.orbitalfreight.svc.cluster.local:8092
+
+tags: [{ name: entries }, { name: checkpoints }, { name: operations }]
+
+security:
+  - bearerAuth: []
+
+paths:
+
+  /v1/entries:
+    get:
+      operationId: listEntries
+      tags: [entries]
+      summary: Voci per soggetto
+      description: |
+        Filtrabile per soggetto e non per attore, di proposito: l'indice `ledger_subject_idx` è su
+        `(subject_type, subject_id, entry_id DESC)` e il registro serve a rispondere «cosa è
+        successo a questa cosa». La domanda opposta — «cosa ha fatto questa persona» — richiede una
+        scansione, e la si fa nell'esportazione notturna verso analytics-pipeline, non qui.
+      parameters:
+        - $ref: './_shared/components.yaml#/components/parameters/TenantHeader'
+        - $ref: './_shared/components.yaml#/components/parameters/LimitParam'
+        - $ref: './_shared/components.yaml#/components/parameters/CursorParam'
+        - name: subject_type
+          in: query
+          required: true
+          schema:
+            type: string
+            enum: [shipment, container, scan, declaration, invoice, carrier, credential, session, discrepancy]
+        - name: subject_id
+          in: query
+          required: true
+          schema: { $ref: './_shared/components.yaml#/components/schemas/Ulid' }
+        - name: since
+          in: query
+          schema: { $ref: './_shared/components.yaml#/components/schemas/Timestamp' }
+      responses:
+        '200':
+          description: Pagina di voci, dalla più recente.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items: { type: array, items: { $ref: '#/components/schemas/LedgerEntry' } }
+                  next_cursor: { type: [string, 'null'] }
+              examples:
+                sigillatura:
+                  value:
+                    items:
+                      - entry_id: 88412907
+                        tenant_id: tnt_01J7A0000000000000000000AA
+                        actor_kind: user
+                        actor_id: usr_01J7B3K9WQ2ERTYUIOPASDFGHJ
+                        action: shipment.sealed
+                        subject_type: shipment
+                        subject_id: shp_01J8ZK4T9QW3RM7XN2VB6HD5PC
+                        payload: { seal_count: 1, from_status: booked }
+                        trace_id: 4bf92f3577b34da6a3ce929d0e0e4736
+                        recorded_at: '2026-03-14T14:33:02.881Z'
+                        entry_hash: 3d1a...c07f
+                        checkpoint_id: 12094
+                    next_cursor: null
+
+  /v1/entries/{entry_id}/proof:
+    get:
+      operationId: getInclusionProof
+      tags: [entries]
+      summary: Prova di inclusione nel checkpoint pubblicato
+      description: |
+        Restituisce il cammino Merkle dalla foglia alla radice e la firma della testa, che viene
+        rispecchiata ogni ora su `OF_LEDGER_NOTARY_ENDPOINT`. Senza quell'ancoraggio esterno la
+        catena dimostra soltanto la propria coerenza interna, il che non è niente.
+
+        Una voce non ancora ripiegata in un checkpoint restituisce 409: `checkpoint_id` è nullo
+        finché il ripiegamento non avviene, ogni `OF_LEDGER_CHECKPOINT_INTERVAL_MINUTES`.
+      parameters:
+        - $ref: './_shared/components.yaml#/components/parameters/TenantHeader'
+        - name: entry_id
+          in: path
+          required: true
+          schema: { type: integer, format: int64 }
+      responses:
+        '200':
+          description: Prova.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/InclusionProof' }
+        '409':
+          description: Voce non ancora inclusa in un checkpoint.
+          content:
+            application/json:
+              schema: { $ref: './_shared/components.yaml#/components/schemas/Error' }
+
+  /v1/checkpoints/latest:
+    get:
+      operationId: latestCheckpoint
+      tags: [checkpoints]
+      summary: Testa firmata corrente
+      description: |
+        La stessa testa che il verificatore in tools/ confronta con la copia depositata presso il
+        notaio esterno. Se le due divergono, il registro è stato riscritto ed è il caso di
+        smettere di fidarsi di tutto ciò che segue.
+      parameters:
+        - $ref: './_shared/components.yaml#/components/parameters/TenantHeader'
+      responses:
+        '200':
+          description: Checkpoint.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  checkpoint_id: { type: integer, format: int64 }
+                  tree_size: { type: integer, format: int64 }
+                  root_hash: { type: string, pattern: '^[0-9a-f]{64}$' }
+                  signature: { type: string }
+                  hash_algorithm:
+                    type: string
+                    const: sha256
+                    description: Copia di `OF_LEDGER_HASH_ALGORITHM`. Cambiarlo apre una catena nuova, non riscrive quella esistente.
+                  created_at: { $ref: './_shared/components.yaml#/components/schemas/Timestamp' }
+                  notarised_at: { $ref: './_shared/components.yaml#/components/schemas/Timestamp' }
+
+  /healthz:
+    $ref: './_shared/universal-paths.yaml#/paths/~1healthz'
+  /readyz:
+    $ref: './_shared/universal-paths.yaml#/paths/~1readyz'
+  /metrics:
+    $ref: './_shared/universal-paths.yaml#/paths/~1metrics'
+  /version:
+    $ref: './_shared/universal-paths.yaml#/paths/~1version'
+
+components:
+  securitySchemes:
+    bearerAuth:
+      $ref: './_shared/components.yaml#/components/securitySchemes/bearerAuth'
+
+  schemas:
+    LedgerEntry:
+      type: object
+      properties:
+        entry_id:
+          type: integer
+          format: int64
+          description: Sequenza monotona. L'unica chiave della piattaforma che non è un ULID prefissato.
+        tenant_id: { $ref: './_shared/components.yaml#/components/schemas/TenantId' }
+        actor_kind: { type: string, enum: [user, service, device, partner, system] }
+        actor_id: { type: string }
+        action: { type: string, examples: ['shipment.sealed', 'credential.revoked'] }
+        subject_type: { type: string }
+        subject_id: { type: string }
+        payload:
+          type: object
+          additionalProperties: true
+          description: Entra nell'hash della voce, quindi è congelato. Non ci vanno segreti.
+        trace_id: { type: [string, 'null'] }
+        recorded_at:
+          allOf:
+            - $ref: './_shared/components.yaml#/components/schemas/Timestamp'
+          description: '`clock_timestamp()`, non `now()`: due voci della stessa transazione devono avere istanti distinti.'
+        entry_hash: { type: string }
+        checkpoint_id: { type: [integer, 'null'], format: int64 }
+
+    InclusionProof:
+      type: object
+      properties:
+        entry_id: { type: integer, format: int64 }
+        entry_hash: { type: string }
+        path:
+          type: array
+          items:
+            type: object
+            properties:
+              hash: { type: string }
+              is_right_sibling: { type: boolean }
+        checkpoint_id: { type: integer, format: int64 }
+        checkpoint_root: { type: string }
+        checkpoint_signature: { type: string }
+        hash_algorithm: { type: string }

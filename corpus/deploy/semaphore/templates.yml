@@ -1,0 +1,167 @@
+# =============================================================================
+# Šablony úloh v Semaphoru — co se v tomhle projektu dá spustit.
+#
+# Jedna zásada, na které stojí zbytek: produkční šablony běží proti
+# repozitáři `platform-release`, tedy proti tagu, ne proti větvi. Nasadit z
+# `main` znamená nasadit něco, co nikdo neviděl projít CI, a v pátek v pět to
+# nikdo nepozná.
+#
+# Šablona `Rolling restart` má survey proměnné — Semaphore se před spuštěním
+# zeptá, co restartovat. Je to jediná šablona, kde uživatel rozhoduje o
+# rozsahu; všechny ostatní mají rozsah pevný, aby se nedal omylem zúžit na
+# polovinu platformy.
+# =============================================================================
+---
+templates:
+
+  - name: Nasadit platformu (produkce)
+    view: Nasazení
+    playbook: deploy/ansible/site.yml
+    repository: platform-release
+    inventory: production
+    environment: production
+    app: ansible
+    allow_override_args_in_task: false
+    # Bez potvrzení druhého člověka se produkční site.yml nespustí. Semaphore
+    # to řeší tak, že úloha čeká ve stavu `waiting_confirmation`.
+    require_approval: true
+    arguments:
+      - --diff
+    survey_vars: []
+
+  - name: Nasadit platformu (staging)
+    view: Nasazení
+    playbook: deploy/ansible/site.yml
+    repository: platform
+    inventory: staging
+    environment: staging
+    app: ansible
+    require_approval: false
+    arguments:
+      - --diff
+
+  - name: Suchý běh proti produkci
+    view: Údržba a kontroly
+    playbook: deploy/ansible/site.yml
+    repository: platform-release
+    inventory: production
+    environment: production
+    app: ansible
+    require_approval: false
+    # --check --diff. Pouští se před každým ostrým nasazením a po každé změně
+    # of-service.env.j2: vyrenderuje prostředí a prožene ho ops/validate-env.py
+    # proti §5 SPEC.md, aniž by cokoli restartoval.
+    arguments:
+      - --check
+      - --diff
+
+  - name: Rolling restart
+    view: Restarty
+    playbook: deploy/ansible/rolling-restart.yml
+    repository: platform-release
+    inventory: production
+    environment: production
+    app: ansible
+    require_approval: true
+    survey_vars:
+      - name: of_restart_only
+        title: Jedna služba (prázdné = všech čtrnáct)
+        description: >-
+          Přesné jméno z §1 SPEC.md, například container-registry. Prázdná
+          hodnota restartuje celý katalog po vlnách podle grafu §1.1.
+        type: ""
+        required: false
+
+      - name: of_restart_reverse
+        title: Obrátit pořadí vln (rollback)
+        description: >-
+          Zapni jen při stahování verze zpět. Volající se pak vypínají dřív
+          než jejich cíle a nikdo nevolá do poloviny vypnuté služby.
+        type: ""
+        required: false
+        values:
+          - value: "false"
+            name: ne (normální restart, odspodu grafu)
+          - value: "true"
+            name: ano (rollback, shora)
+
+      - name: of_restart_settle_seconds
+        title: Pauza mezi stroji (s)
+        description: >-
+          Nesmí klesnout pod OF_SHUTDOWN_GRACE_SECONDS (25), jinak se další
+          instance restartuje dřív, než ta předchozí dojede relay z
+          platform.outbox_messages. Playbook to sám kontroluje a selže.
+        type: int
+        required: true
+        default_value: "30"
+
+      - name: of_rollout_serial
+        title: Kolik strojů naráz
+        description: Procento nebo počet. Na produkci nedávej víc než 25 %.
+        type: ""
+        required: true
+        default_value: "25%"
+
+  - name: Restart jedné vlny
+    view: Restarty
+    playbook: deploy/ansible/rolling-restart.yml
+    repository: platform-release
+    inventory: production
+    environment: production
+    app: ansible
+    require_approval: false
+    arguments:
+      - --limit
+      - of_app
+      - --tags
+      - service
+
+  - name: Srovnat Kafka témata s §4
+    view: Údržba a kontroly
+    playbook: deploy/ansible/site.yml
+    repository: platform-release
+    inventory: production
+    environment: production
+    app: ansible
+    arguments:
+      - --tags
+      - topics
+
+  - name: Údržba partition telemetrie
+    view: Údržba a kontroly
+    playbook: deploy/ansible/site.yml
+    repository: platform-release
+    inventory: production
+    environment: production
+    app: ansible
+    arguments:
+      - --tags
+      - partitions
+      - --limit
+      - of_postgres_primary
+
+  - name: Přeinstalovat agenta depotních bran
+    view: Nasazení
+    playbook: deploy/ansible/site.yml
+    repository: platform-release
+    inventory: production
+    environment: production
+    app: ansible
+    arguments:
+      - --tags
+      - edge
+
+  - name: Havarijní stažení verze zpět
+    view: Havarijní postupy
+    playbook: deploy/ansible/rolling-restart.yml
+    repository: platform-release
+    inventory: production
+    environment: production
+    app: ansible
+    require_approval: true
+    # Předvyplněné reverzní pořadí. Šablona existuje zvlášť právě proto, aby
+    # ve tři ráno nikdo nemusel vzpomínat, která survey proměnná se má
+    # přepnout.
+    arguments:
+      - --extra-vars
+      - "of_restart_reverse=true of_restart_settle_seconds=45"

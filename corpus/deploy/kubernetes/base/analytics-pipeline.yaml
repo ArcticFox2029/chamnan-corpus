@@ -1,0 +1,148 @@
+# =============================================================================
+# analytics-pipeline — dávkové a proudové agregace, vlastník schématu
+# `analytics` a obou materializovaných pohledů.
+#
+# Jediná služba s read-only rolí `of_analytics_ro` na všech schématech (§2).
+# Je to výslovná výjimka z pravidla 2 v §7 a zároveň jediný důvod, proč je
+# fyzická databáze vůbec sdílená. Druhé připojení
+# (OF_ANALYTICS_READONLY_DATABASE_URL) je proto oddělené od zápisového do
+# `analytics` — kdyby se sloučila, měl by dávkový job právo zapisovat do cizích
+# schémat a nikdo by to nepoznal dřív než při havárii.
+#
+# Spark executory se spouštějí jako samostatné pody přes Kubernetes API; proto
+# jako jediná služba má připojený token servisního účtu a roli
+# analytics-spark-executors v rbac.yaml.
+#
+# Obnovu materializovaných pohledů dělá CronJob v cronjobs.yaml, ne tenhle
+# deployment. Deployment obsluhuje jen dotazy z konzole
+# (GET /v1/metrics/lane-performance) a stav běhů.
+# =============================================================================
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: analytics-pipeline
+  namespace: orbitalfreight
+  labels:
+    app.kubernetes.io/name: analytics-pipeline
+    app.kubernetes.io/part-of: orbitalfreight
+    app.kubernetes.io/component: analytics
+    orbitalfreight.net/language: scala
+    orbitalfreight.net/restart-wave: "3"
+spec:
+  replicas: 3
+  revisionHistoryLimit: 3
+  strategy:
+    type: RollingUpdate
+    rollingUpdate: { maxUnavailable: 1, maxSurge: 1 }
+  selector:
+    matchLabels: { app.kubernetes.io/name: analytics-pipeline }
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: analytics-pipeline
+        app.kubernetes.io/part-of: orbitalfreight
+        orbitalfreight.net/restart-wave: "3"
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8093"
+    spec:
+      serviceAccountName: analytics-pipeline
+      imagePullSecrets: [{ name: of-registry-pull }]
+      terminationGracePeriodSeconds: 60
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1400
+        runAsGroup: 1400
+        fsGroup: 1400
+        seccompProfile: { type: RuntimeDefault }
+      containers:
+        - name: analytics-pipeline
+          image: registry.orbitalfreight.net/of/analytics-pipeline:4.2.0
+          ports:
+            - { name: http, containerPort: 8093 }
+          envFrom:
+            - configMapRef: { name: of-common-config }
+            - secretRef: { name: analytics-readonly-database }
+          env:
+            - name: OF_SERVICE_NAME
+              value: analytics-pipeline
+            - name: OF_HTTP_PORT
+              value: "8093"
+            - name: OF_KAFKA_CONSUMER_GROUP
+              value: analytics-pipeline-v2
+            - name: OF_DB_PASSWORD
+              valueFrom:
+                secretKeyRef: { name: of-database-passwords, key: analytics-pipeline }
+            - name: OF_DATABASE_URL
+              # Zápisové připojení výhradně do `analytics`. Schéma je odvozené
+              # a smí se kdykoli zahodit a přepočítat.
+              value: postgres://analytics_svc:$(OF_DB_PASSWORD)@pg-primary.orbitalfreight.svc.cluster.local:5432/orbitalfreight?search_path=analytics&application_name=analytics-pipeline&sslmode=verify-full
+            - name: OF_CONTAINER_REGISTRY_GRPC_ADDR
+              valueFrom:
+                configMapKeyRef: { name: of-service-addresses, key: OF_CONTAINER_REGISTRY_GRPC_ADDR }
+            - name: OF_GEO_GRPC_ADDR
+              valueFrom:
+                configMapKeyRef: { name: of-service-addresses, key: OF_GEO_GRPC_ADDR }
+            - name: OF_ANALYTICS_SPARK_MASTER
+              value: k8s://https://kubernetes.default.svc:443
+            - name: OF_ANALYTICS_WAREHOUSE_URI
+              value: s3://of-warehouse-eu-west/parquet
+            - name: OF_ANALYTICS_MV_REFRESH_CRON
+              # Stejná hodnota jako schedule CronJobu v cronjobs.yaml. Služba ji
+              # čte kvůli tomu, aby uměla říct, kdy byl pohled naposledy platný.
+              value: "15 3 * * *"
+            - name: OF_ANALYTICS_BACKFILL_DAYS
+              value: "30"
+          resources:
+            requests: { cpu: "2", memory: 6Gi }
+            limits: { cpu: "6", memory: 12Gi }
+          livenessProbe:
+            httpGet: { path: /healthz, port: http }
+            periodSeconds: 15
+          readinessProbe:
+            httpGet: { path: /readyz, port: http }
+            periodSeconds: 10
+            failureThreshold: 3
+          volumeMounts:
+            - { name: model-share, mountPath: /var/lib/orbitalfreight/routing }
+            - { name: spark-scratch, mountPath: /var/tmp/spark }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: ["ALL"] }
+      volumes:
+        - name: model-share
+          persistentVolumeClaim:
+            claimName: analytics-model-share
+        - name: spark-scratch
+          emptyDir: { sizeLimit: 32Gi }
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: analytics-model-share
+  namespace: orbitalfreight
+  labels:
+    app.kubernetes.io/part-of: orbitalfreight
+spec:
+  # Sem zapisuje analytics-pipeline model ETA a odsud ho routing-service jen
+  # čte (OF_ROUTING_ETA_MODEL_PATH). ReadWriteMany proto, že zapisovatel a
+  # čtenáři běží na jiných uzlech.
+  accessModes: [ReadWriteMany]
+  storageClassName: of-nfs
+  resources:
+    requests: { storage: 60Gi }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: analytics-pipeline
+  namespace: orbitalfreight
+  labels:
+    app.kubernetes.io/name: analytics-pipeline
+    app.kubernetes.io/part-of: orbitalfreight
+spec:
+  type: ClusterIP
+  selector: { app.kubernetes.io/name: analytics-pipeline }
+  ports:
+    - { name: http, port: 8093, targetPort: http }

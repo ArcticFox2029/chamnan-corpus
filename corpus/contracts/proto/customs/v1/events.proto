@@ -1,0 +1,96 @@
+syntax = "proto3";
+
+package customs.v1;
+
+import "common/v1/money.proto";
+import "google/protobuf/timestamp.proto";
+
+// Payload degli eventi del topic of.customs.v1 — 12 partizioni, 90 giorni di retention, la più
+// lunga insieme a of.billing.v1 perché una controversia doganale si apre mesi dopo il fatto.
+//
+// customs-service non ha superficie gRPC: tutto ciò che espone in sincrono è REST (§3.7). Questi
+// messaggi esistono per i consumatori che generano stub tipizzati, billing-service in testa.
+// L'evento DeclarationCleared è metà del ciclo spezzato di §1.2: è così che billing-service
+// apprende il dazio definitivo, senza che customs-service lo spinga con una chiamata.
+
+option go_package = "github.com/orbitalfreight/contracts/gen/go/customs/v1;customsv1";
+option java_package = "com.orbitalfreight.contracts.customs.v1";
+option java_multiple_files = true;
+option csharp_namespace = "OrbitalFreight.Contracts.Customs.V1";
+
+// Rispecchia il CHECK su customs.customs_declarations.direction.
+enum DeclarationDirection {
+  DECLARATION_DIRECTION_UNSPECIFIED = 0;
+  DECLARATION_DIRECTION_IMPORT = 1;
+  DECLARATION_DIRECTION_EXPORT = 2;
+  DECLARATION_DIRECTION_TRANSIT = 3;
+}
+
+// Rispecchia il CHECK su customs.customs_declarations.status. Non c'è transizione all'indietro:
+// una correzione dopo lo sdoganamento produce AMENDED con lo stesso mrn, mai un ritorno a DRAFT
+// (§7 regola 6).
+enum DeclarationStatus {
+  DECLARATION_STATUS_UNSPECIFIED = 0;
+  DECLARATION_STATUS_DRAFT = 1;
+  DECLARATION_STATUS_SUBMITTED = 2;
+  DECLARATION_STATUS_UNDER_REVIEW = 3;
+  DECLARATION_STATUS_HELD = 4;
+  DECLARATION_STATUS_CLEARED = 5;
+  DECLARATION_STATUS_REJECTED = 6;
+  DECLARATION_STATUS_AMENDED = 7;
+}
+
+// event_name: customs.declaration.filed — produttore customs-service.
+// Consumatori: notification-service, container-registry, reconciliation-service, audit-ledger.
+// container-registry lo usa per portare la spedizione in `held_at_customs` quando l'autorità
+// trattiene.
+message DeclarationFiled {
+  string declaration_id = 1;
+  string shipment_id = 2;
+
+  // bxg_<ULID>, FK logica verso geo.border_crossings.
+  string crossing_id = 3;
+
+  // Copiato da geo.border_crossings.customs_office_code del valico.
+  string customs_office_code = 4;
+
+  DeclarationDirection direction = 5;
+
+  // Numero di riferimento assegnato dall'autorità all'accettazione. Unico a livello di piattaforma.
+  string mrn = 6;
+
+  uint32 line_count = 7;
+
+  // Dazio e IVA valutati al deposito, con la loro valuta. Non sono definitivi: l'autorità può
+  // rettificare, e il valore che conta per la fatturazione è quello di DeclarationCleared.
+  common.v1.Money assessed_duty = 8;
+  common.v1.Money assessed_vat = 9;
+
+  google.protobuf.Timestamp filed_at = 10;
+
+  // usr_… dello spedizioniere doganale, da customs.customs_declarations.broker_user_id.
+  string filed_by = 11;
+}
+
+// event_name: customs.declaration.cleared — produttore customs-service.
+// Consumatori: billing-service, container-registry, notification-service, reconciliation-service,
+// analytics-pipeline, audit-ledger.
+message DeclarationCleared {
+  string declaration_id = 1;
+  string shipment_id = 2;
+  string mrn = 3;
+  google.protobuf.Timestamp cleared_at = 4;
+
+  // Gli importi definitivi. billing-service scrive questi in billing.invoices.duty_minor e
+  // tax_minor; se differiscono da quelli di DeclarationFiled, reconciliation-service aprirà una
+  // discrepanza `duty_mismatch` a meno che lo scarto non stia dentro OF_RECON_TOLERANCE_MINOR.
+  common.v1.Money assessed_duty = 5;
+  common.v1.Money assessed_vat = 6;
+
+  // Se l'autorità ha eseguito un controllo fisico. Fa nascere una riga di scansione
+  // `customs_inspection` lato container-registry e, in genere, una riga di sosta lato fatturazione.
+  bool inspection_performed = 7;
+
+  // doc_<ULID> della decisione doganale caricata su document-service, di tipo `customs_decision`.
+  string decision_document_id = 8;
+}

@@ -1,0 +1,497 @@
+# =============================================================================
+# Lokální vývojové prostředí ORBITALFREIGHT.
+#
+# Nespouští všech čtrnáct služeb. Spouští datovou vrstvu a tu část platformy,
+# kterou člověk potřebuje k tomu, aby se dala vyzkoušet jedna cesta od začátku
+# do konce: přihlášení, založení zásilky, sken, deklarace, faktura.
+#
+# Profily rozhodují, co poběží:
+#   docker compose up                       datová vrstva + identity + freight
+#   docker compose --profile customs up     + customs a billing
+#   docker compose --profile edge up        + telemetrie a agent brány
+#   docker compose --profile all up         všechno, co je tady definované
+#
+# Jména služeb odpovídají §1 SPEC.md, protože z nich compose skládá DNS jména
+# uvnitř sítě — a služby si adresy staví přesně tak, jak jsou v §5:
+# `http://document-service:8089`. Přejmenovat kontejner znamená rozbít adresu,
+# kterou má sedm dalších v prostředí.
+#
+# OF_ENVIRONMENT je všude `local`. Je to jediné prostředí, kde smí být
+# OF_TELEMETRY_SIGNATURE_REQUIRED false (§5.5).
+# =============================================================================
+name: orbitalfreight
+
+x-common-env: &common-env
+  OF_ENVIRONMENT: local
+  OF_REGION_CODE: eu-west          # musí být ze zavřeného seznamu §0.6
+  OF_LOG_LEVEL: debug
+  OF_LOG_FORMAT: text              # `text` jen lokálně, jinde vždycky json
+  OF_KAFKA_BROKERS: kafka:9092
+  OF_OTEL_EXPORTER_ENDPOINT: http://otel-collector:4317
+  OF_OTEL_SAMPLE_RATIO: "1.0"
+  OF_IDENTITY_GRPC_ADDR: identity-service:9081
+  OF_IDENTITY_JWKS_URL: http://identity-service:8081/.well-known/jwks.json
+  OF_IDENTITY_JWKS_GRACE_SECONDS: "300"
+  OF_OUTBOX_RELAY_INTERVAL_MS: "250"
+  OF_SHUTDOWN_GRACE_SECONDS: "5"
+  OF_DATABASE_MAX_CONNS: "5"
+  OF_DATABASE_STATEMENT_TIMEOUT_MS: "8000"
+
+x-healthcheck: &healthcheck
+  interval: 10s
+  timeout: 3s
+  retries: 12
+  start_period: 30s
+
+services:
+
+  # --- datová vrstva --------------------------------------------------------
+
+  postgres:
+    image: postgis/postgis:16-3.4
+    environment:
+      POSTGRES_DB: orbitalfreight
+      POSTGRES_USER: orbitalfreight
+      POSTGRES_PASSWORD: local-only-never-in-any-other-environment
+    ports: ["5432:5432"]
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      # Migrace z db/ založí všech deset schémat včetně partition telemetrie.
+      - ../../db/migrations:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U orbitalfreight -d orbitalfreight"]
+      <<: *healthcheck
+
+  kafka:
+    image: bitnami/kafka:3.7
+    environment:
+      KAFKA_CFG_NODE_ID: "1"
+      KAFKA_CFG_PROCESS_ROLES: controller,broker
+      KAFKA_CFG_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_CFG_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093
+      KAFKA_CFG_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      KAFKA_CFG_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      # Vypnuté schválně, stejně jako na produkčních brokerech: téma vzniklé
+      # za běhu má jednu partition a tím padá jediná záruka pořadí, kterou
+      # platforma dává — pořadí událostí v rámci jednoho shipment_id.
+      KAFKA_CFG_AUTO_CREATE_TOPICS_ENABLE: "false"
+    ports: ["9092:9092"]
+    healthcheck:
+      test: ["CMD-SHELL", "kafka-topics.sh --bootstrap-server localhost:9092 --list"]
+      <<: *healthcheck
+
+  kafka-topics:
+    # Jednorázově založí šest témat z §4 se správnými počty partition. Lokálně
+    # se replication.factor drží na jedné, počty partition ale zůstávají —
+    # jinak se chyba v klíčování projeví až na stagingu.
+    image: bitnami/kafka:3.7
+    depends_on:
+      kafka: { condition: service_healthy }
+    entrypoint: ["/bin/bash", "-c"]
+    command:
+      - |
+        set -e
+        create() { kafka-topics.sh --bootstrap-server kafka:9092 --create --if-not-exists \
+                     --topic "$$1" --partitions "$$2" --replication-factor 1; }
+        create of.identity.v1 12
+        create of.freight.v1 48
+        create of.telemetry.v1 96
+        create of.customs.v1 12
+        create of.billing.v1 12
+        create of.platform.v1 24
+        for t in of.identity.v1 of.freight.v1 of.telemetry.v1 of.customs.v1 of.billing.v1 of.platform.v1; do
+          create "$$t.dlq" 6
+        done
+        echo "šest témat z §4 SPEC.md založeno"
+    restart: "no"
+
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.104.0
+    command: ["--config=/etc/otel/config.yaml"]
+    volumes:
+      - ./conf/otel-local.yaml:/etc/otel/config.yaml:ro
+    ports: ["4317:4317", "4318:4318"]
+
+  # --- vlna 0 a 1 -----------------------------------------------------------
+
+  identity-service:
+    build:
+      context: ../..
+      dockerfile: deploy/docker/Dockerfile.go
+      args: { SERVICE: identity-service }
+    environment:
+      <<: *common-env
+      OF_SERVICE_NAME: identity-service
+      OF_HTTP_PORT: "8081"
+      OF_GRPC_PORT: "9081"
+      OF_DATABASE_URL: postgres://orbitalfreight:local-only-never-in-any-other-environment@postgres:5432/orbitalfreight?search_path=identity&sslmode=disable
+      OF_IDENTITY_SIGNING_KEY_PATH: /etc/orbitalfreight/keys/dev-rs256.pem
+      OF_IDENTITY_ACCESS_TOKEN_TTL_SECONDS: "900"
+      OF_IDENTITY_REFRESH_TOKEN_TTL_DAYS: "30"
+      # Lokálně nízké, jinak každé přihlášení zabere sekundu na notebooku.
+      OF_IDENTITY_ARGON2_MEMORY_KIB: "8192"
+      OF_IDENTITY_MFA_ISSUER: ORBITALFREIGHT-LOCAL
+      OF_IDENTITY_MAX_ORG_DEPTH: "12"
+    volumes:
+      - ./conf/dev-keys:/etc/orbitalfreight/keys:ro
+    ports: ["8081:8081", "9081:9081"]
+    depends_on:
+      postgres: { condition: service_healthy }
+      kafka: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD", "/usr/local/bin/service", "healthcheck"]
+      <<: *healthcheck
+
+  geo-service:
+    build:
+      context: ../..
+      dockerfile: deploy/docker/Dockerfile.cpp
+    environment:
+      <<: *common-env
+      OF_SERVICE_NAME: geo-service
+      OF_HTTP_PORT: "8086"
+      OF_GRPC_PORT: "9086"
+      OF_DATABASE_URL: postgres://orbitalfreight:local-only-never-in-any-other-environment@postgres:5432/orbitalfreight?search_path=geo,public&sslmode=disable
+      # Výřez místo celé Eurasie — plný graf má desítky gigabajtů.
+      OF_GEO_ROAD_GRAPH_PATH: /var/lib/orbitalfreight/geo/road-graph-fixture.mmap
+      OF_GEO_FENCE_CACHE_TTL_SECONDS: "30"
+      OF_GEO_MATRIX_MAX_POINTS: "64"
+      OF_GEO_SIMPLIFY_TOLERANCE_M: "12"
+    volumes:
+      - ../../tools/fixtures/geo:/var/lib/orbitalfreight/geo:ro
+    ports: ["8086:8086", "9086:9086"]
+    depends_on:
+      postgres: { condition: service_healthy }
+
+  document-service:
+    build:
+      context: ../..
+      dockerfile: deploy/docker/Dockerfile.node
+    environment:
+      <<: *common-env
+      OF_SERVICE_NAME: document-service
+      OF_HTTP_PORT: "8089"
+      OF_KAFKA_CONSUMER_GROUP: document-service-v2
+      OF_DATABASE_URL: postgres://orbitalfreight:local-only-never-in-any-other-environment@postgres:5432/orbitalfreight?search_path=platform&sslmode=disable
+      OF_DOCUMENT_BUCKET: of-documents-local
+      OF_DOCUMENT_KMS_KEY_ID: local-dev-key
+      OF_DOCUMENT_SIGNED_URL_TTL_SECONDS: "900"
+      OF_DOCUMENT_MAX_UPLOAD_BYTES: "134217728"
+      OF_DOCUMENT_ALLOWED_MIME_TYPES: application/pdf,image/jpeg,image/png,image/heic,application/xml
+      OF_DOCUMENT_BUCKET_ENDPOINT: http://minio:9000
+    ports: ["8089:8089"]
+    depends_on:
+      postgres: { condition: service_healthy }
+      minio: { condition: service_started }
+
+  minio:
+    image: minio/minio:RELEASE.2024-06-13T22-53-53Z
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: orbitalfreight
+      MINIO_ROOT_PASSWORD: local-only-never-in-any-other-environment
+    ports: ["9000:9000", "9001:9001"]
+    volumes:
+      - miniodata:/data
+
+  audit-ledger:
+    build:
+      context: ../..
+      dockerfile: deploy/docker/Dockerfile.go
+      args: { SERVICE: audit-ledger }
+    environment:
+      <<: *common-env
+      OF_SERVICE_NAME: audit-ledger
+      OF_HTTP_PORT: "8092"
+      OF_GRPC_PORT: "9092"
+      OF_KAFKA_CONSUMER_GROUP: audit-ledger-v5
+      OF_DATABASE_URL: postgres://orbitalfreight:local-only-never-in-any-other-environment@postgres:5432/orbitalfreight?search_path=platform&sslmode=disable
+      OF_LEDGER_CHECKPOINT_INTERVAL_MINUTES: "5"
+      # Lokálně se k notáři nechodí; checkpoint se jen počítá a ukládá.
+      OF_LEDGER_NOTARY_ENDPOINT: ""
+      OF_LEDGER_HASH_ALGORITHM: sha256
+    ports: ["8092:8092", "9092:9092"]
+    depends_on:
+      postgres: { condition: service_healthy }
+
+  # --- vlna 2 a 3 -----------------------------------------------------------
+
+  container-registry:
+    build:
+      context: ../..
+      dockerfile: deploy/docker/Dockerfile.kotlin
+    environment:
+      <<: *common-env
+      OF_SERVICE_NAME: container-registry
+      OF_HTTP_PORT: "8083"
+      OF_GRPC_PORT: "9083"
+      OF_KAFKA_CONSUMER_GROUP: container-registry-v3
+      OF_DATABASE_URL: postgres://orbitalfreight:local-only-never-in-any-other-environment@postgres:5432/orbitalfreight?search_path=freight&sslmode=disable
+      OF_GEO_GRPC_ADDR: geo-service:9086
+      OF_DOCUMENT_BASE_URL: http://document-service:8089
+      OF_FREIGHT_SEAL_FORMAT_REGEX: "^[A-Z]{2}[0-9]{7}$$"
+      OF_FREIGHT_SCAN_CLOCK_SKEW_TOLERANCE_S: "900"
+      OF_FREIGHT_AUTO_AT_RISK_SEVERITY: "3"
+    ports: ["8083:8083", "9083:9083"]
+    depends_on:
+      identity-service: { condition: service_healthy }
+      geo-service: { condition: service_started }
+      document-service: { condition: service_started }
+
+  routing-service:
+    build:
+      context: ../..
+      dockerfile: deploy/docker/Dockerfile.python
+    environment:
+      <<: *common-env
+      OF_SERVICE_NAME: routing-service
+      OF_HTTP_PORT: "8085"
+      OF_KAFKA_CONSUMER_GROUP: routing-service-v2
+      OF_DATABASE_URL: postgres://orbitalfreight:local-only-never-in-any-other-environment@postgres:5432/orbitalfreight?search_path=routing&sslmode=disable
+      OF_GEO_GRPC_ADDR: geo-service:9086
+      OF_CUSTOMS_BASE_URL: http://customs-service:8087
+      OF_ROUTING_SOLVER_THREADS: "2"
+      OF_ROUTING_MAX_LEGS: "24"
+      OF_ROUTING_ETA_MODEL_PATH: /var/lib/orbitalfreight/routing/eta-model-fixture.bin
+      OF_ROUTING_REPLAN_COOLDOWN_SECONDS: "10"
+    volumes:
+      - ../../tools/fixtures/routing:/var/lib/orbitalfreight/routing:ro
+    ports: ["8085:8085"]
+    depends_on:
+      geo-service: { condition: service_started }
+
+  # --- profil customs -------------------------------------------------------
+
+  customs-service:
+    profiles: [customs, all]
+    build:
+      context: ../..
+      dockerfile: deploy/docker/Dockerfile.dotnet
+    environment:
+      <<: *common-env
+      OF_SERVICE_NAME: customs-service
+      OF_HTTP_PORT: "8087"
+      OF_KAFKA_CONSUMER_GROUP: customs-service-v4
+      OF_DATABASE_URL: postgres://orbitalfreight:local-only-never-in-any-other-environment@postgres:5432/orbitalfreight?search_path=customs&sslmode=disable
+      OF_DOCUMENT_BASE_URL: http://document-service:8089
+      OF_AUDIT_LEDGER_GRPC_ADDR: audit-ledger:9092
+      # Lokální atrapa celní správy. Odpovídá stejným formátem jako NCTS a
+      # umí i odmítnutí, protože jinak se cesta `rejected` nikdy neotestuje.
+      OF_CUSTOMS_AUTHORITY_ENDPOINT: http://customs-authority-stub:9900/filing/v5
+      OF_CUSTOMS_AUTHORITY_CERT_PATH: /etc/orbitalfreight/keys/dev-customs.p12
+      OF_CUSTOMS_TARIFF_CACHE_TTL_SECONDS: "60"
+      OF_CUSTOMS_RETENTION_YEARS: "10"
+    volumes:
+      - ./conf/dev-keys:/etc/orbitalfreight/keys:ro
+    ports: ["8087:8087"]
+    depends_on:
+      audit-ledger: { condition: service_started }
+
+  customs-authority-stub:
+    profiles: [customs, all]
+    image: registry.orbitalfreight.net/of/customs-authority-stub:4.2.0
+    ports: ["9900:9900"]
+
+  billing-service:
+    profiles: [customs, all]
+    build:
+      context: ../..
+      dockerfile: deploy/docker/Dockerfile.ruby
+    environment:
+      <<: *common-env
+      OF_SERVICE_NAME: billing-service
+      OF_HTTP_PORT: "8088"
+      OF_KAFKA_CONSUMER_GROUP: billing-service-v7
+      OF_DATABASE_URL: postgres://orbitalfreight:local-only-never-in-any-other-environment@postgres:5432/orbitalfreight?search_path=billing&sslmode=disable
+      OF_CUSTOMS_BASE_URL: http://customs-service:8087
+      OF_FLEET_BASE_URL: http://fleet-service:8082
+      OF_DOCUMENT_BASE_URL: http://document-service:8089
+      OF_BILLING_INVOICE_NUMBER_FORMAT: "OF-{tenant_short}-{year}-{seq:06d}"
+      OF_BILLING_DEFAULT_PAYMENT_TERMS_DAYS: "30"
+      OF_BILLING_FX_RATE_SOURCE: fixture
+      OF_BILLING_HOLD_ON_DISCREPANCY_KINDS: duty_mismatch,missing_declaration
+      RAILS_ENV: production
+    ports: ["8088:8088"]
+    depends_on:
+      customs-service: { condition: service_started }
+
+  # --- profil edge ----------------------------------------------------------
+
+  telemetry-ingest:
+    profiles: [edge, all]
+    build:
+      context: ../..
+      dockerfile: deploy/docker/Dockerfile.rust
+      args: { COMPONENT: telemetry-ingest }
+    environment:
+      <<: *common-env
+      OF_SERVICE_NAME: telemetry-ingest
+      OF_HTTP_PORT: "8084"
+      OF_GRPC_PORT: "9084"
+      OF_KAFKA_CONSUMER_GROUP: telemetry-ingest-v9
+      OF_DATABASE_URL: postgres://orbitalfreight:local-only-never-in-any-other-environment@postgres:5432/orbitalfreight?search_path=telemetry&sslmode=disable
+      OF_CONTAINER_REGISTRY_GRPC_ADDR: container-registry:9083
+      OF_GEO_GRPC_ADDR: geo-service:9086
+      OF_TELEMETRY_BATCH_MAX_READINGS: "500"
+      # Jediné prostředí, kde smí být false (§5.5). Fixtury nejsou podepsané.
+      OF_TELEMETRY_SIGNATURE_REQUIRED: "false"
+      OF_TELEMETRY_PUBLISH_SAMPLE_RATE: "1"
+      OF_TELEMETRY_HEARTBEAT_TIMEOUT_MINUTES: "5"
+      OF_TELEMETRY_ALLOWED_REGIONS: eu-west
+      OF_TELEMETRY_RULES_PATH: /etc/orbitalfreight/telemetry/rules.yaml
+    volumes:
+      - ./conf/telemetry-rules.yaml:/etc/orbitalfreight/telemetry/rules.yaml:ro
+    ports: ["8084:8084", "9084:9084"]
+    depends_on:
+      container-registry: { condition: service_started }
+
+  edge-gateway-agent:
+    profiles: [edge, all]
+    build:
+      context: ../..
+      dockerfile: deploy/docker/Dockerfile.rust
+      args: { COMPONENT: of-edge-agent }
+    environment:
+      OF_ENVIRONMENT: local
+      OF_REGION_CODE: eu-west
+      OF_SERVICE_NAME: edge-gateway-agent
+      OF_LOG_LEVEL: debug
+      OF_LOG_FORMAT: text
+      OF_EDGE_GATEWAY_SERIAL: GW-LOCAL-0001
+      OF_EDGE_DEPOT_ID: dep_01J7C2M4X0PQRA5TDN8VYK3EWZ
+      OF_TELEMETRY_INGEST_BASE_URL: http://telemetry-ingest:8084
+      OF_TELEMETRY_INGEST_GRPC_ADDR: telemetry-ingest:9084
+      OF_EDGE_TRANSPORT: http_batch
+      OF_EDGE_BATCH_MAX_READINGS: "400"
+      OF_EDGE_BATCH_FLUSH_INTERVAL_MS: "5000"
+      OF_EDGE_HEARTBEAT_INTERVAL_SECONDS: "30"
+      OF_EDGE_SPOOL_DIR: /var/lib/orbitalfreight/telemetry
+      # Bez sériové linky: agent čte fixtury místo koncentrátoru senzorů.
+      OF_EDGE_SERIAL_DEVICES: ""
+      OF_EDGE_FIXTURE_PATH: /fixtures/readings.ndjson
+    volumes:
+      - ../../tools/fixtures/telemetry:/fixtures:ro
+    depends_on:
+      telemetry-ingest: { condition: service_started }
+
+  # --- profil all -----------------------------------------------------------
+
+  fleet-service:
+    profiles: [all]
+    build:
+      context: ../..
+      dockerfile: deploy/docker/Dockerfile.java
+    environment:
+      <<: *common-env
+      OF_SERVICE_NAME: fleet-service
+      OF_HTTP_PORT: "8082"
+      OF_GRPC_PORT: "9082"
+      OF_KAFKA_CONSUMER_GROUP: fleet-service-v3
+      OF_DATABASE_URL: postgres://orbitalfreight:local-only-never-in-any-other-environment@postgres:5432/orbitalfreight?search_path=fleet&sslmode=disable
+      OF_CONTAINER_REGISTRY_GRPC_ADDR: container-registry:9083
+      OF_ROUTING_BASE_URL: http://routing-service:8085
+      OF_GEO_GRPC_ADDR: geo-service:9086
+      OF_DOCUMENT_BASE_URL: http://document-service:8089
+      OF_FLEET_HOS_RULESET: eu_561
+      OF_FLEET_ASSIGNMENT_LOCK_TIMEOUT_MS: "2500"
+      OF_FLEET_LICENCE_EXPIRY_WARN_DAYS: "45"
+    ports: ["8082:8082", "9082:9082"]
+    depends_on:
+      container-registry: { condition: service_started }
+
+  notification-service:
+    profiles: [all]
+    build:
+      context: ../..
+      dockerfile: deploy/docker/Dockerfile.elixir
+    environment:
+      <<: *common-env
+      OF_SERVICE_NAME: notification-service
+      OF_HTTP_PORT: "8090"
+      OF_KAFKA_CONSUMER_GROUP: notification-service-v6
+      OF_DATABASE_URL: postgres://orbitalfreight:local-only-never-in-any-other-environment@postgres:5432/orbitalfreight?search_path=platform&sslmode=disable
+      OF_DOCUMENT_BASE_URL: http://document-service:8089
+      # Zachytávač pošty místo skutečného SMTP — jinak by lokální běh posílal
+      # e-maily na adresy z fixtur, které patří skutečným lidem.
+      OF_NOTIFY_SMTP_URL: smtp://mailpit:1025
+      OF_NOTIFY_SMS_PROVIDER_TOKEN: local-noop
+      OF_NOTIFY_WEBHOOK_TIMEOUT_MS: "4000"
+      OF_NOTIFY_MAX_ATTEMPTS: "8"
+      OF_NOTIFY_TEMPLATE_DIR: /etc/orbitalfreight/notification/templates
+    volumes:
+      - ../../services/notification/priv/templates:/etc/orbitalfreight/notification/templates:ro
+    ports: ["8090:8090"]
+    depends_on:
+      mailpit: { condition: service_started }
+
+  mailpit:
+    profiles: [all]
+    image: axllent/mailpit:v1.18
+    ports: ["1025:1025", "8025:8025"]
+
+  partner-portal-api:
+    profiles: [all]
+    build:
+      context: ../..
+      dockerfile: deploy/docker/Dockerfile.php
+    environment:
+      <<: *common-env
+      OF_SERVICE_NAME: partner-portal-api
+      OF_HTTP_PORT: "8091"
+      OF_KAFKA_CONSUMER_GROUP: partner-portal-api-v2
+      OF_BILLING_BASE_URL: http://billing-service:8088
+      OF_CUSTOMS_BASE_URL: http://customs-service:8087
+      OF_CONTAINER_REGISTRY_GRPC_ADDR: container-registry:9083
+      OF_PARTNER_RATE_LIMIT_PER_MINUTE: "600"
+      OF_PARTNER_SESSION_TTL_MINUTES: "30"
+      OF_PARTNER_ALLOWED_ORIGINS: http://localhost:5173
+    ports: ["8091:8091"]
+    depends_on:
+      billing-service: { condition: service_started }
+
+  reconciliation-service:
+    profiles: [all]
+    build:
+      context: ../..
+      dockerfile: deploy/docker/Dockerfile.clojure
+    environment:
+      <<: *common-env
+      OF_SERVICE_NAME: reconciliation-service
+      OF_HTTP_PORT: "8094"
+      OF_KAFKA_CONSUMER_GROUP: reconciliation-service-v3
+      OF_DATABASE_URL: postgres://orbitalfreight:local-only-never-in-any-other-environment@postgres:5432/orbitalfreight?search_path=analytics&sslmode=disable
+      OF_BILLING_BASE_URL: http://billing-service:8088
+      OF_AUDIT_LEDGER_GRPC_ADDR: audit-ledger:9092
+      OF_ANALYTICS_BASE_URL: http://analytics-pipeline:8093
+      OF_RECON_TOLERANCE_MINOR: "50"
+      OF_RECON_ENGINE_VERSION: 4.2.0-local
+      OF_RECON_LOOKBACK_DAYS: "7"
+    ports: ["8094:8094"]
+    depends_on:
+      billing-service: { condition: service_started }
+
+  analytics-pipeline:
+    profiles: [all]
+    build:
+      context: ../..
+      dockerfile: deploy/docker/Dockerfile.scala
+    environment:
+      <<: *common-env
+      OF_SERVICE_NAME: analytics-pipeline
+      OF_HTTP_PORT: "8093"
+      OF_KAFKA_CONSUMER_GROUP: analytics-pipeline-v2
+      OF_DATABASE_URL: postgres://orbitalfreight:local-only-never-in-any-other-environment@postgres:5432/orbitalfreight?search_path=analytics&sslmode=disable
+      OF_ANALYTICS_READONLY_DATABASE_URL: postgres://of_analytics_ro:local-only-never-in-any-other-environment@postgres:5432/orbitalfreight?sslmode=disable
+      OF_CONTAINER_REGISTRY_GRPC_ADDR: container-registry:9083
+      OF_GEO_GRPC_ADDR: geo-service:9086
+      OF_ANALYTICS_SPARK_MASTER: "local[2]"
+      OF_ANALYTICS_WAREHOUSE_URI: s3://of-warehouse-local/parquet
+      OF_ANALYTICS_MV_REFRESH_CRON: "*/15 * * * *"
+      OF_ANALYTICS_BACKFILL_DAYS: "3"
+    ports: ["8093:8093"]
+    depends_on:
+      postgres: { condition: service_healthy }
+
+volumes:
+  pgdata:
+  miniodata:

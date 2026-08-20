@@ -1,0 +1,65 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    सील जाँच की पुरानी स्क्रीन का लेआउट, जो LegacySealCheckActivity पर चढ़ता है।
+
+    यह जान-बूझकर बहुत सादा है और रहेगा: गेट पर काम करने वाला कर्मचारी दस्ताने पहने
+    होता है और अक्सर बारिश में खड़ा होता है, इसलिए हर स्पर्श-लक्ष्य 56dp ऊँचा है और
+    स्क्रीन पर तीन से ज़्यादा चीज़ें कभी नहीं होतीं। Compose वाली नई स्क्रीन में भी
+    यही माप हैं — वह इसी लेआउट से नापे गए थे।
+
+    अपेक्षित सील बड़े अक्षरों में इसलिए दिखती है कि कर्मचारी को उसे पढ़ना नहीं,
+    मिलाना होता है; भिन्नता दिखने में एक सेकंड से ज़्यादा नहीं लगना चाहिए।
+-->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:padding="16dp">
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="@string/scan_hint_iso_code"
+        android:textSize="14sp" />
+
+    <!-- BIC कोड ग्यारह अक्षर का है और हमेशा बड़े अक्षरों में; रिंग-स्कैनर वैसा
+         ही भेजता है, हाथ से टाइप करने पर Activity खुद बड़ा कर देती है। -->
+    <EditText
+        android:id="@+id/legacy_iso_code"
+        android:layout_width="match_parent"
+        android:layout_height="56dp"
+        android:inputType="textCapCharacters"
+        android:maxLength="11"
+        android:textSize="22sp" />
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="16dp"
+        android:text="@string/scan_hint_seal"
+        android:textSize="14sp" />
+
+    <EditText
+        android:id="@+id/legacy_seal_number"
+        android:layout_width="match_parent"
+        android:layout_height="56dp"
+        android:inputType="textCapCharacters"
+        android:textSize="22sp" />
+
+    <!-- gate_in पर दर्ज सील, स्थानीय कैश से। खाली होने का अर्थ है कि इस डिब्बे
+         की कोई खुली जोड़ी कैश में नहीं मिली। -->
+    <TextView
+        android:id="@+id/legacy_expected_seal"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="24dp"
+        android:textSize="32sp"
+        android:textStyle="bold" />
+
+    <Button
+        android:id="@+id/legacy_submit"
+        android:layout_width="match_parent"
+        android:layout_height="64dp"
+        android:layout_marginTop="32dp"
+        android:text="@string/legacy_seal_check_title" />
+</LinearLayout>

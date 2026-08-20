@@ -1,0 +1,267 @@
+# Superficie REST di partner-portal-api (PHP 8.3 su Laravel 11, porta 8091). È la finestra stretta
+# e limitata in frequenza che spedizionieri e vettori esterni hanno il permesso di toccare, e
+# l'unico servizio che non monta sotto /v1: sta sotto /partner/v1 perché è esposto da un ingress
+# separato con regole WAF proprie.
+#
+# Non possiede alcuno schema. Ogni risposta qui dentro è una vista ridotta di ciò che
+# billing-service, customs-service e container-registry gli restituiscono; ciò che manca —
+# `declared_value_minor` in testa — manca perché il partner non deve vederlo, non perché non sia
+# stato ancora aggiunto.
+
+openapi: 3.1.0
+
+info:
+  title: partner-portal-api
+  version: 4.2.0
+  description: |
+    Autenticazione a credenziale, non a utente: un partner presenta il proprio `key_prefix` e il
+    segreto della riga di `identity.api_credentials`, e ottiene una sessione che dura
+    `OF_PARTNER_SESSION_TTL_MINUTES`. Il limite di frequenza `OF_PARTNER_RATE_LIMIT_PER_MINUTE` si
+    applica per prefisso, mai per indirizzo IP — un grande spedizioniere sta dietro a un solo NAT e
+    limitarlo per IP significherebbe limitare tutti i suoi uffici insieme.
+
+    Consuma `identity.credential.revoked` e sfratta la voce dalla cache entro cinque secondi, e
+    `billing.invoice.issued` per mostrare al partner la fattura appena emessa senza interrogare
+    billing-service a ogni caricamento di pagina.
+
+servers:
+  - url: https://partner.orbitalfreight.com
+    description: Ingress pubblico dedicato, con WAF.
+
+tags: [{ name: sessions }, { name: shipments }, { name: invoices }, { name: documents }, { name: operations }]
+
+security:
+  - partnerKey: []
+
+paths:
+
+  /partner/v1/sessions:
+    post:
+      operationId: partnerLogin
+      tags: [sessions]
+      summary: Accesso partner con coppia di chiavi
+      description: |
+        Verifica la coppia contro `identity.api_credentials` attraverso identity-service — mai
+        leggendo quella tabella, che appartiene a un altro servizio. Le credenziali revocate
+        falliscono immediatamente se l'evento di revoca è già arrivato, e comunque entro la
+        finestra di cinque secondi.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [key_prefix, client_secret]
+              properties:
+                key_prefix: { type: string, minLength: 12, maxLength: 12 }
+                client_secret: { type: string, format: password }
+      responses:
+        '201':
+          description: Sessione aperta.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  session_token: { type: string }
+                  expires_at: { $ref: './_shared/components.yaml#/components/schemas/Timestamp' }
+                  tenant_id: { $ref: './_shared/components.yaml#/components/schemas/TenantId' }
+                  scopes: { type: array, items: { type: string } }
+        '401': { $ref: './_shared/components.yaml#/components/responses/Unauthorized' }
+        '429': { $ref: './_shared/components.yaml#/components/responses/TooManyRequests' }
+
+  /partner/v1/shipments:
+    get:
+      operationId: partnerListShipments
+      tags: [shipments]
+      summary: Solo le spedizioni che il partner tocca davvero
+      description: |
+        Il filtro non è un parametro: deriva dai ruoli della credenziale. Un vettore vede le
+        spedizioni su cui ha un assegnamento in `fleet.vehicle_assignments`; uno spedizioniere
+        doganale quelle su cui compare come `broker_user_id` di una dichiarazione. Non esiste modo
+        di ampliare l'insieme dal lato client.
+      parameters:
+        - $ref: './_shared/components.yaml#/components/parameters/LimitParam'
+        - $ref: './_shared/components.yaml#/components/parameters/CursorParam'
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [booked, sealed, in_transit, at_risk, held_at_customs, delivered]
+      responses:
+        '200':
+          description: Pagina di spedizioni in vista ridotta.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items: { type: array, items: { $ref: '#/components/schemas/PartnerShipment' } }
+                  next_cursor: { type: [string, 'null'] }
+        '429': { $ref: './_shared/components.yaml#/components/responses/TooManyRequests' }
+
+  /partner/v1/shipments/{shipment_id}:
+    get:
+      operationId: partnerGetShipment
+      tags: [shipments]
+      summary: Vista ridotta di una spedizione
+      description: |
+        Rispetto alla risposta di container-registry mancano `declared_value_minor`, le note delle
+        scansioni e ogni riferimento a utenti interni. La rimozione avviene qui, non a valle:
+        container-registry restituisce la spedizione intera e questo servizio la pota.
+      parameters:
+        - name: shipment_id
+          in: path
+          required: true
+          schema: { $ref: './_shared/components.yaml#/components/schemas/Ulid' }
+      responses:
+        '200':
+          description: Spedizione ridotta.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PartnerShipment' }
+              examples:
+                senza_valore:
+                  value:
+                    shipment_id: shp_01J8ZK4T9QW3RM7XN2VB6HD5PC
+                    reference: PO-2026-88134
+                    origin_unlocode: DEHAM
+                    destination_unlocode: SGSIN
+                    incoterm: CIF
+                    status: in_transit
+                    sla_deadline_at: '2026-04-28T12:00:00Z'
+                    containers:
+                      - iso_code: MSCU3948571
+                        seal_number: SGL-4471982
+                        gross_kg: 21840
+                    last_scan:
+                      scan_type: gate_out
+                      occurred_at: '2026-03-16T04:55:12Z'
+                      facility_unlocode: ATWLS
+        '403':
+          description: La credenziale non ha alcun ruolo che tocchi questa spedizione.
+          content:
+            application/json:
+              schema: { $ref: './_shared/components.yaml#/components/schemas/Error' }
+        '404': { $ref: './_shared/components.yaml#/components/responses/NotFound' }
+
+  /partner/v1/invoices/{invoice_id}:
+    get:
+      operationId: partnerGetInvoice
+      tags: [invoices]
+      summary: Fattura, inoltrata da billing-service
+      description: |
+        Proxy in sola lettura. Il partner vede totali e scadenza ma non `hold_reason`: che una
+        fattura sia bloccata da una discrepanza aperta è un fatto interno, e comunicarlo a un
+        fornitore prima che sia risolto ha già prodotto una telefonata di troppo.
+      parameters:
+        - name: invoice_id
+          in: path
+          required: true
+          schema: { $ref: './_shared/components.yaml#/components/schemas/Ulid' }
+      responses:
+        '200':
+          description: Fattura in vista partner.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  invoice_id: { $ref: './_shared/components.yaml#/components/schemas/Ulid' }
+                  invoice_number: { type: [string, 'null'] }
+                  currency: { $ref: './_shared/components.yaml#/components/schemas/CurrencyCode' }
+                  total_minor: { $ref: './_shared/components.yaml#/components/schemas/MinorAmount' }
+                  status: { type: string, enum: [issued, part_paid, settled, void] }
+                  due_on: { $ref: './_shared/components.yaml#/components/schemas/LocalDate' }
+                  rendered_document_id: { $ref: './_shared/components.yaml#/components/schemas/Ulid' }
+
+  /partner/v1/declarations/{declaration_id}/documents:
+    post:
+      operationId: partnerUploadDeclarationDocument
+      tags: [documents]
+      summary: Lo spedizioniere carica un certificato di origine
+      description: |
+        L'unica scrittura concessa al portale. Il file viene inoltrato a document-service con
+        `owner_type = declaration`; se il documento identico è già presente per la stessa
+        dichiarazione — capita quando spedizioniere e committente lo caricano entrambi — la risposta
+        è quella esistente e non ne nasce un secondo.
+      parameters:
+        - $ref: './_shared/components.yaml#/components/parameters/IdempotencyHeader'
+        - name: declaration_id
+          in: path
+          required: true
+          schema: { $ref: './_shared/components.yaml#/components/schemas/Ulid' }
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [kind, file]
+              properties:
+                kind:
+                  type: string
+                  enum: [certificate_of_origin, commercial_invoice, packing_list]
+                file: { type: string, format: binary }
+      responses:
+        '201':
+          description: Caricato.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  document_id: { $ref: './_shared/components.yaml#/components/schemas/Ulid' }
+                  kind: { type: string }
+                  sha256: { type: string }
+                  uploaded_at: { $ref: './_shared/components.yaml#/components/schemas/Timestamp' }
+        '415':
+          description: Tipo MIME non ammesso da `OF_DOCUMENT_ALLOWED_MIME_TYPES`.
+          content:
+            application/json:
+              schema: { $ref: './_shared/components.yaml#/components/schemas/Error' }
+        '429': { $ref: './_shared/components.yaml#/components/responses/TooManyRequests' }
+
+  /healthz:
+    $ref: './_shared/universal-paths.yaml#/paths/~1healthz'
+  /readyz:
+    $ref: './_shared/universal-paths.yaml#/paths/~1readyz'
+  /metrics:
+    $ref: './_shared/universal-paths.yaml#/paths/~1metrics'
+  /version:
+    $ref: './_shared/universal-paths.yaml#/paths/~1version'
+
+components:
+  securitySchemes:
+    partnerKey:
+      $ref: './_shared/components.yaml#/components/securitySchemes/partnerKey'
+
+  schemas:
+    PartnerShipment:
+      type: object
+      description: |
+        Vista ridotta. Le strutture compaiono per UN/LOCODE e non per `fac_…`, perché
+        l'identificatore interno non dice nulla al partner e lo espone a una enumerazione inutile.
+      properties:
+        shipment_id: { $ref: './_shared/components.yaml#/components/schemas/Ulid' }
+        reference: { type: string }
+        origin_unlocode: { $ref: './_shared/components.yaml#/components/schemas/UnLocode' }
+        destination_unlocode: { $ref: './_shared/components.yaml#/components/schemas/UnLocode' }
+        incoterm: { type: string }
+        status: { type: string }
+        sla_deadline_at: { $ref: './_shared/components.yaml#/components/schemas/Timestamp' }
+        containers:
+          type: array
+          items:
+            type: object
+            properties:
+              iso_code: { type: string }
+              seal_number: { type: string }
+              gross_kg: { type: integer }
+        last_scan:
+          type: object
+          properties:
+            scan_type: { type: string }
+            occurred_at: { $ref: './_shared/components.yaml#/components/schemas/Timestamp' }
+            facility_unlocode: { $ref: './_shared/components.yaml#/components/schemas/UnLocode' }

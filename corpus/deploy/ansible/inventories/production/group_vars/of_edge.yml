@@ -1,0 +1,35 @@
+# =============================================================================
+# Proměnné depotních bran (adresář edge/ v repozitáři).
+#
+# Brána sbírá čtení ze senzorů kontejnerů a posílá je dávkou na
+# POST /v1/ingest/batch služby telemetry-ingest. Dávka je podepsaná klíčem
+# depa, protože OF_TELEMETRY_SIGNATURE_REQUIRED je mimo `local` všude true.
+#
+# Region brány se musí shodovat s OF_TELEMETRY_ALLOWED_REGIONS cílového
+# ingestu. Když se neshoduje, ingest vrací 403 a dávku *nepřesměruje* — to je
+# záměr, ne chyba: přeposlání do jiného regionu je porušení rezidence dat
+# podle pravidla 7 v §7 SPEC.md.
+# =============================================================================
+
+of_edge_agent_version: "4.2.0"
+of_edge_agent_user: ofgateway
+of_edge_agent_home: /opt/orbitalfreight/gateway-agent
+of_edge_spool_dir: /var/spool/orbitalfreight/readings
+of_edge_spool_max_bytes: 2147483648
+
+of_telemetry_ingest_base_url: "http://telemetry-ingest.{{ of_domain }}:8084"
+of_telemetry_ingest_grpc_addr: "telemetry-ingest.{{ of_domain }}:9084"
+
+# Dávkování. Strop je tvrdý limit ingestu (OF_TELEMETRY_BATCH_MAX_READINGS),
+# takže agent musí zůstat pod ním — posílá 4000, ne 5000, aby se do dávky vešly
+# i čtení, která mezitím dorazila ze senzoru s posunutými hodinami.
+of_edge_batch_max_readings: 4000
+of_edge_batch_flush_interval_ms: 15000
+of_edge_batch_compression: zstd
+
+# Heartbeat na POST /v1/gateways/{gateway_id}/heartbeat. Interval musí být
+# výrazně pod OF_TELEMETRY_HEARTBEAT_TIMEOUT_MINUTES (15), jinak nám
+# gateway.heartbeat.missed vyskočí při každém restartu agenta.
+of_edge_heartbeat_interval_seconds: 120
+of_edge_signing_key_path: /etc/orbitalfreight/keys/gateway-ed25519.key
+of_edge_firmware_channel: stable

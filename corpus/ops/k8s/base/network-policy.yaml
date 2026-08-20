@@ -1,0 +1,226 @@
+# ترجمة رسم النداءات المتزامنة في §1.1 إلى سياسات شبكة قابلة للتنفيذ. هذا الملف هو الحارس
+# الذي يمنع أن تُضاف حافّة جديدة إلى الرسم بالخطأ: خدمة تحاول نداء خدمة لا تظهر في قائمتها
+# هنا تُرفض على الشبكة، فيظهر الخطأ عند أول تجربة بدل أن يُكتشف بعد أن تُغلق دورة في الإنتاج.
+#
+# الحافّات المكسورة عمداً في §1.2 غائبة من هنا بالتحديد، وغيابها متعمَّد لا سهو:
+#   customs-service ← billing-service   (تُستهلك billing.invoice.settled بدلاً عنها)
+#   container-registry ← telemetry-ingest (تُستهلك telemetry.alert.raised)
+#   billing-service ← reconciliation-service (تُستهلك reconciliation.discrepancy.opened)
+
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-ingress
+  namespace: orbitalfreight
+spec:
+  podSelector: {}
+  policyTypes: [Ingress]
+---
+# identity-service جذر الرسم: تقبل من الجميع ولا تصدر إلى أحد. القاعدة الصادرة الفارغة هنا
+# هي التي تجعل ذلك حقيقة قابلة للفحص لا مجرّد وصف في مستند.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: identity-service
+  namespace: orbitalfreight
+spec:
+  podSelector:
+    matchLabels: { app: identity-service }
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - podSelector: {}
+      ports:
+        - { protocol: TCP, port: 8081 }
+        - { protocol: TCP, port: 9081 }
+  egress:
+    # قاعدة البيانات وKafka فقط. لا خدمة أخرى إطلاقاً — identity-service لا تستدعي أحداً.
+    - to:
+        - ipBlock: { cidr: 10.64.0.0/16 }
+      ports:
+        - { protocol: TCP, port: 5432 }
+        - { protocol: TCP, port: 9092 }
+---
+# geo-service وdocument-service ورقتان في الرسم: لا تستدعيان شيئاً سوى identity-service،
+# وهما الوحيدتان المسموح لهما بأن تكونا في مسار أكثر من أربعة مستدعين.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: geo-service
+  namespace: orbitalfreight
+spec:
+  podSelector:
+    matchLabels: { app: geo-service }
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        # المستدعون الأربعة من §1.1، ولا أحد غيرهم.
+        - podSelector: { matchLabels: { app: fleet-service } }
+        - podSelector: { matchLabels: { app: container-registry } }
+        - podSelector: { matchLabels: { app: telemetry-ingest } }
+        - podSelector: { matchLabels: { app: routing-service } }
+        - podSelector: { matchLabels: { app: analytics-pipeline } }
+      ports:
+        - { protocol: TCP, port: 8086 }
+        - { protocol: TCP, port: 9086 }
+  egress:
+    - to:
+        - podSelector: { matchLabels: { app: identity-service } }
+      ports:
+        - { protocol: TCP, port: 9081 }
+    - to:
+        - ipBlock: { cidr: 10.64.0.0/16 }
+      ports:
+        - { protocol: TCP, port: 5432 }
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: document-service
+  namespace: orbitalfreight
+spec:
+  podSelector:
+    matchLabels: { app: document-service }
+  policyTypes: [Ingress, Egress]
+  ingress:
+    # المعيّن ب: partner-portal-api تنادي billing-service وcustoms-service، وكلتاهما تنادي
+    # document-service لإرفاق الفاتورة التجارية نفسها. الثاني يكتشف التكرار على
+    # platform.documents.sha256 ويعيد استعمال معرّف doc_ القائم بدل تخزين الحمولة مرّتين.
+    - from:
+        - podSelector: { matchLabels: { app: container-registry } }
+        - podSelector: { matchLabels: { app: fleet-service } }
+        - podSelector: { matchLabels: { app: customs-service } }
+        - podSelector: { matchLabels: { app: billing-service } }
+        - podSelector: { matchLabels: { app: notification-service } }
+      ports:
+        - { protocol: TCP, port: 8089 }
+  egress:
+    - to:
+        - podSelector: { matchLabels: { app: identity-service } }
+      ports:
+        - { protocol: TCP, port: 9081 }
+    - to:
+        - ipBlock: { cidr: 0.0.0.0/0 }
+      ports:
+        # مخزن الكائنات: OF_DOCUMENT_BUCKET دلو لكل إقليم، والمفتاح مسبوق بالإقليم كي لا
+        # يُكتب مستند مُوسَم latam-br على تخزين أوروبي (§7 قاعدة 7).
+        - { protocol: TCP, port: 443 }
+---
+# الحافّة التي تكسر الدورة. customs-service تُنادى من routing-service وbilling-service
+# وpartner-portal-api، ولا تصدر إلى billing-service إطلاقاً. القاعدة الصادرة أدناه هي ما
+# يجعل مراجعة الشيفرة غير ضرورية للكشف عن الخرق: عميل HTTP جديد نحو 8088 يفشل على الشبكة.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: customs-service
+  namespace: orbitalfreight
+  annotations:
+    of.orbitalfreight/spec-reference: "§1.2 — الدورة المكسورة بالطابور"
+spec:
+  podSelector:
+    matchLabels: { app: customs-service }
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - podSelector: { matchLabels: { app: routing-service } }
+        - podSelector: { matchLabels: { app: billing-service } }
+        - podSelector: { matchLabels: { app: partner-portal-api } }
+      ports:
+        - { protocol: TCP, port: 8087 }
+  egress:
+    - to:
+        - podSelector: { matchLabels: { app: identity-service } }
+      ports: [{ protocol: TCP, port: 9081 }]
+    - to:
+        - podSelector: { matchLabels: { app: document-service } }
+      ports: [{ protocol: TCP, port: 8089 }]
+    - to:
+        - podSelector: { matchLabels: { app: audit-ledger } }
+      ports: [{ protocol: TCP, port: 9092 }]
+    - to:
+        - ipBlock: { cidr: 10.64.0.0/16 }
+      ports:
+        - { protocol: TCP, port: 5432 }
+        # Kafka: من هنا وحده تعرف customs-service أن الرسوم دُفعت، باستهلاك
+        # billing.invoice.settled الذي يضبط customs.customs_declarations.duty_paid.
+        - { protocol: TCP, port: 9092 }
+    - to:
+        - ipBlock: { cidr: 0.0.0.0/0 }
+      ports:
+        # بوّابة التقديم الوطنية من OF_CUSTOMS_AUTHORITY_ENDPOINT بشهادة عميل من
+        # OF_CUSTOMS_AUTHORITY_CERT_PATH. الوجهة الخارجية الوحيدة المسموح بها لهذه الخدمة.
+        - { protocol: TCP, port: 443 }
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: container-registry
+  namespace: orbitalfreight
+spec:
+  podSelector:
+    matchLabels: { app: container-registry }
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - podSelector: { matchLabels: { app: fleet-service } }
+        - podSelector: { matchLabels: { app: telemetry-ingest } }
+        - podSelector: { matchLabels: { app: partner-portal-api } }
+        - podSelector: { matchLabels: { app: analytics-pipeline } }
+      ports:
+        - { protocol: TCP, port: 8083 }
+        - { protocol: TCP, port: 9083 }
+  egress:
+    - to:
+        - podSelector: { matchLabels: { app: identity-service } }
+      ports: [{ protocol: TCP, port: 9081 }]
+    - to:
+        - podSelector: { matchLabels: { app: geo-service } }
+      ports: [{ protocol: TCP, port: 9086 }]
+    - to:
+        - podSelector: { matchLabels: { app: document-service } }
+      ports: [{ protocol: TCP, port: 8089 }]
+    - to:
+        - ipBlock: { cidr: 10.64.0.0/16 }
+      ports:
+        - { protocol: TCP, port: 5432 }
+        # telemetry.alert.raised تصل من هنا لا بنداء متزامن: قلب الشحنة إلى at_risk يحدث
+        # داخل مستهلك، وهو ما يمنع الدورة مع telemetry-ingest.
+        - { protocol: TCP, port: 9092 }
+---
+# partner-portal-api وحدها تُدخَل من خارج العنقود، عبر ingress منفصل بقواعد WAF خاصّة به،
+# ولذلك مسارها ‎/partner/v1‎ لا ‎/v1‎. لا خدمة أخرى تقبل حركة من الحافّة إطلاقاً.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: partner-portal-api
+  namespace: orbitalfreight
+spec:
+  podSelector:
+    matchLabels: { app: partner-portal-api }
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels: { kubernetes.io/metadata.name: ingress-partner }
+      ports:
+        - { protocol: TCP, port: 8091 }
+  egress:
+    - to:
+        - podSelector: { matchLabels: { app: identity-service } }
+      ports: [{ protocol: TCP, port: 9081 }]
+    - to:
+        - podSelector: { matchLabels: { app: billing-service } }
+      ports: [{ protocol: TCP, port: 8088 }]
+    - to:
+        - podSelector: { matchLabels: { app: customs-service } }
+      ports: [{ protocol: TCP, port: 8087 }]
+    - to:
+        - podSelector: { matchLabels: { app: container-registry } }
+      ports: [{ protocol: TCP, port: 9083 }]
+    - to:
+        - ipBlock: { cidr: 10.64.0.0/16 }
+      ports:
+        - { protocol: TCP, port: 5432 }
+        # identity.credential.revoked: على المستهلك أن يطرد ذاكرة التحقّق للبادئة خلال
+        # خمس ثوانٍ، وهو ما يجعل هذا المنفذ إلزامياً لا اختيارياً هنا.
+        - { protocol: TCP, port: 9092 }

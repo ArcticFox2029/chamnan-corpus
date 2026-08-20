@@ -1,0 +1,77 @@
+// Percorso caldo fra telemetry-ingest e container-registry: dato un container_id, quale spedizione
+// lo sta trasportando adesso. telemetry-ingest la chiama per ogni lettura che supera una soglia,
+// per poter valorizzare telemetry.telemetry_alerts.shipment_id al momento in cui l'allarme nasce.
+// È l'unica RPC di container-registry, ed esiste proprio per non fare quella domanda in HTTP
+// migliaia di volte al secondo.
+
+syntax = "proto3";
+
+package freight.v1;
+
+import "common/v1/identifiers.proto";
+import "freight/v1/types.proto";
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/orbitalfreight/contracts/gen/go/freight/v1;freightv1";
+option java_package = "com.orbitalfreight.contracts.freight.v1";
+option java_multiple_files = true;
+option kotlin_package = "com.orbitalfreight.contracts.freight.v1";
+
+// In ascolto su container-registry:9083, cioè OF_CONTAINER_REGISTRY_GRPC_ADDR.
+service ContainerLookup {
+  // Risolve la spedizione attiva per un contenitore a un dato istante. «Attiva» significa una
+  // riga di freight.shipment_containers con loaded_at valorizzato e unloaded_at nullo, su una
+  // spedizione il cui stato non è né delivered né cancelled.
+  //
+  // Nota per chi implementa il chiamante: la risposta è cacheabile per la durata di un batch di
+  // ingest, non oltre. Un container cambia spedizione allo sbarco, e una cache più lunga attribuiva
+  // le letture alla tratta precedente.
+  rpc ResolveShipmentForContainer(ResolveShipmentForContainerRequest)
+      returns (ResolveShipmentForContainerResponse);
+}
+
+message ResolveShipmentForContainerRequest {
+  common.v1.RequestContext context = 1;
+
+  // cnt_<ULID>.
+  string container_id = 2;
+
+  // Istante a cui risolvere. telemetry-ingest passa qui `recorded_at` della lettura, non l'ora
+  // corrente: un batch ritrasmesso dopo un buco di connettività porta letture vecchie di ore, e
+  // vanno attribuite alla spedizione di allora.
+  google.protobuf.Timestamp at = 3;
+
+  // Se true la risposta include il numero di sigillo e il peso lordo dalla riga di
+  // freight.shipment_containers. Fuori dal percorso di allarme non servono, e ottenerli costa una
+  // join in più.
+  bool include_pairing = 4;
+}
+
+message ResolveShipmentForContainerResponse {
+  // Vuoto quando il contenitore è a magazzino e non viaggia. Non è un errore: telemetry-ingest
+  // registra comunque la lettura, semplicemente senza shipment_id.
+  string shipment_id = 1;
+
+  string tenant_id = 2;
+
+  common.v1.RegionCode region_code = 3;
+
+  freight.v1.ShipmentStatus status = 4;
+
+  // Presenti solo se include_pairing era true.
+  string seal_number = 5;
+  int64 gross_kg = 6;
+
+  // Scadenza SLA della spedizione. telemetry-ingest la porta dentro telemetry.alert.raised così
+  // che notification-service possa decidere l'urgenza senza interrogare container-registry.
+  google.protobuf.Timestamp sla_deadline_at = 7;
+
+  // Istante in cui container-registry ha risolto. Serve al chiamante per misurare quanto è
+  // vecchia la risposta se la sta riusando dentro il batch.
+  google.protobuf.Timestamp resolved_at = 8;
+
+  // DEPRECATO in schema_version 2: era la struttura piena della spedizione, ed era troppa roba per
+  // il percorso caldo — la risposta pesava dieci volte la domanda. Chi ha davvero bisogno del
+  // dettaglio chiama GET /v1/shipments/{shipment_id}.
+  freight.v1.Shipment shipment = 9 [deprecated = true];
+}

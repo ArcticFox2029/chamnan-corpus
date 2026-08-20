@@ -1,0 +1,195 @@
+syntax = "proto3";
+
+package fleet.v1;
+
+import "common/v1/error.proto";
+import "common/v1/identifiers.proto";
+import "common/v1/money.proto";
+import "google/protobuf/timestamp.proto";
+
+// Contratto gRPC di fleet-service (fleet-service:9082). Riserva veicolo e conducente per una
+// tratta di spedizione, e soprattutto rende esplicito che l'arbitro della concorrenza non è questo
+// codice ma il vincolo di esclusione su fleet.vehicle_assignments: due Assign in corsa sullo
+// stesso veicolo non si accordano fra loro, uno dei due riceve un errore dal database.
+//
+// Chiamato dalla app driver-ios quando il conducente accetta un incarico, e dalla console
+// operatore in web/ quando lo spedizioniere assegna a mano.
+
+option go_package = "github.com/orbitalfreight/contracts/gen/go/fleet/v1;fleetv1";
+option java_package = "com.orbitalfreight.contracts.fleet.v1";
+option java_multiple_files = true;
+option java_outer_classname = "FleetProto";
+
+service FleetService {
+  // Riserva la coppia veicolo+conducente per una tratta. Attende sul vincolo di esclusione al
+  // massimo OF_FLEET_ASSIGNMENT_LOCK_TIMEOUT_MS; scaduto quel tempo restituisce
+  // `assignment_conflict` con retryable = true. In caso di successo scrive la riga e la riga di
+  // platform.outbox_messages che diventerà fleet.assignment.created, nella stessa transazione.
+  rpc Assign(AssignRequest) returns (AssignResponse);
+
+  // Chiude un assegnamento timbrando fleet.vehicle_assignments.released_at e pubblica
+  // fleet.assignment.released. Idempotente: rilasciare un assegnamento già chiuso restituisce la
+  // riga esistente invece di un errore, perché route.replanned può farci arrivare due volte.
+  rpc Release(ReleaseRequest) returns (ReleaseResponse);
+
+  // Verifica patente, abilitazione ADR e ore di guida residue senza riservare nulla.
+  // routing-service la usa in fase di pianificazione per non produrre tratte che nessun
+  // conducente disponibile potrebbe coprire.
+  rpc CheckEligibility(CheckEligibilityRequest) returns (CheckEligibilityResponse);
+}
+
+message AssignRequest {
+  common.v1.RequestContext context = 1;
+
+  // shp_<ULID>. FK logica verso freight.shipments: fleet-service la verifica chiamando
+  // container-registry, non leggendo lo schema freight.
+  string shipment_id = 2;
+
+  // leg_<ULID>. Facoltativo: un assegnamento porta a porta senza rotta pianificata non ha tratta.
+  // Quando è valorizzato, è la chiave con cui l'evento route.replanned decide se questo
+  // assegnamento va rilasciato perché la tratta non esiste più.
+  string leg_id = 3;
+
+  string vehicle_id = 4;
+  string driver_id = 5;
+
+  // usr_… dello spedizioniere, oppure 'svc:routing-service' quando l'assegnamento nasce da una
+  // ripianificazione automatica.
+  string assigned_by = 6;
+
+  // Inizio della finestra di riserva. Se omesso vale now(). Il vincolo di esclusione lavora su
+  // tstzrange(assigned_at, released_at, '[)'), quindi una riserva che inizia esattamente quando
+  // un'altra finisce non è un conflitto.
+  google.protobuf.Timestamp assigned_at = 7;
+
+  // Se true, il servizio verifica l'idoneità prima di riservare e fallisce con
+  // `driver_not_eligible` invece di creare un assegnamento che l'ispezione su strada boccerebbe.
+  bool enforce_eligibility = 8;
+}
+
+message AssignResponse {
+  // asg_<ULID>.
+  string assignment_id = 1;
+
+  google.protobuf.Timestamp assigned_at = 2;
+
+  // Valorizzato solo quando enforce_eligibility era true: dice cosa è stato controllato, così che
+  // l'app driver-ios possa mostrare la scadenza patente in avvicinamento senza una seconda
+  // chiamata.
+  EligibilityReport eligibility = 3;
+
+  // event_id (evt_…) della riga di outbox che diventerà fleet.assignment.created. Restituirlo
+  // permette al chiamante di correlare la propria richiesta con l'evento che vedrà arrivare, senza
+  // dover indovinare per timestamp.
+  string outbox_event_id = 4;
+}
+
+message ReleaseRequest {
+  common.v1.RequestContext context = 1;
+  string assignment_id = 2;
+  google.protobuf.Timestamp released_at = 3;
+
+  // Distanza effettivamente percorsa, letta dal telematico di bordo. Finisce dentro
+  // fleet.assignment.released e da lì in una riga `linehaul` di billing.invoice_lines, con
+  // source_kind = 'assignment'.
+  common.v1.Distance distance_travelled_m = 4;
+
+  ReleaseReason reason = 5;
+}
+
+message ReleaseResponse {
+  string assignment_id = 1;
+  google.protobuf.Timestamp released_at = 2;
+
+  // true quando l'assegnamento era già chiuso e questa chiamata non ha cambiato nulla.
+  bool already_released = 3;
+
+  string outbox_event_id = 4;
+}
+
+// Perché la riserva è finita. `LEG_REPLANNED` è quello prodotto dal consumo di route.replanned:
+// fleet-service rilascia gli assegnamenti la cui leg_id non compare più fra le tratte della nuova
+// versione della rotta.
+enum ReleaseReason {
+  RELEASE_REASON_UNSPECIFIED = 0;
+  RELEASE_REASON_COMPLETED = 1;
+  RELEASE_REASON_LEG_REPLANNED = 2;
+  RELEASE_REASON_DRIVER_UNAVAILABLE = 3;
+  RELEASE_REASON_VEHICLE_BREAKDOWN = 4;
+  RELEASE_REASON_SHIPMENT_CANCELLED = 5;
+  RELEASE_REASON_DISPATCHER_OVERRIDE = 6;
+}
+
+message CheckEligibilityRequest {
+  common.v1.RequestContext context = 1;
+  string driver_id = 2;
+  string vehicle_id = 3;
+
+  // Momento previsto di inizio servizio: la patente potrebbe essere valida adesso e scaduta
+  // all'ora di partenza pianificata.
+  google.protobuf.Timestamp planned_start_at = 4;
+
+  // Durata pianificata della tratta. Serve a confrontarla con le ore di guida residue invece che
+  // con il solo stato attuale.
+  uint32 planned_duration_s = 5;
+
+  // Se la tratta trasporta merci pericolose serve un conducente con adr_expires_on futuro e un
+  // veicolo con adr_certified.
+  bool requires_adr = 6;
+}
+
+message CheckEligibilityResponse {
+  bool eligible = 1;
+  EligibilityReport report = 2;
+
+  // Popolato quando eligible è false: un motivo per ciascun controllo fallito, con lo stesso
+  // vocabolario snake_case degli errori di §0.4 (`licence_expired`, `adr_missing`,
+  // `hos_daily_limit_reached`, `insurance_expired`).
+  repeated common.v1.FieldViolation blockers = 3;
+}
+
+message EligibilityReport {
+  // Da fleet.drivers.licence_expires_on, formato YYYY-MM-DD (colonna con suffisso `_on`, quindi
+  // data senza ora).
+  string licence_expires_on = 1;
+
+  string adr_expires_on = 2;
+
+  // Da fleet.carriers.insurance_expires_on del vettore che possiede il veicolo.
+  string carrier_insurance_expires_on = 3;
+
+  // Quale legge sulle ore di guida è stata applicata; rispecchia OF_FLEET_HOS_RULESET.
+  HoursOfServiceRuleset ruleset = 4;
+
+  // Secondi di guida ancora disponibili nella finestra corrente. È lo stesso numero che
+  // GET /v1/drivers/{driver_id}/availability restituisce in HTTP.
+  uint32 remaining_drive_seconds = 5;
+
+  // Secondi al termine del riposo obbligatorio, 0 se il conducente non è in riposo.
+  uint32 rest_remaining_seconds = 6;
+
+  // Giorni alla scadenza patente sotto i quali far scattare la notifica preventiva; copia di
+  // OF_FLEET_LICENCE_EXPIRY_WARN_DAYS, restituita perché il client possa colorare l'avviso senza
+  // conoscere la configurazione del servizio.
+  uint32 licence_expiry_warn_days = 7;
+}
+
+enum HoursOfServiceRuleset {
+  HOURS_OF_SERVICE_RULESET_UNSPECIFIED = 0;
+  HOURS_OF_SERVICE_RULESET_EU_561 = 1;
+  HOURS_OF_SERVICE_RULESET_US_FMCSA = 2;
+  HOURS_OF_SERVICE_RULESET_NONE = 3;
+}
+
+// Vocabolario di fleet.vehicles.vehicle_class. Elencato qui perché routing-service ne ha bisogno
+// per scegliere il modo di una tratta e non può leggere lo schema fleet.
+enum VehicleClass {
+  VEHICLE_CLASS_UNSPECIFIED = 0;
+  VEHICLE_CLASS_VAN = 1;
+  VEHICLE_CLASS_RIGID = 2;
+  VEHICLE_CLASS_TRACTOR = 3;
+  VEHICLE_CLASS_CHASSIS = 4;
+  VEHICLE_CLASS_REEFER_TRACTOR = 5;
+  VEHICLE_CLASS_RAIL_WAGON = 6;
+  VEHICLE_CLASS_BARGE = 7;
+}

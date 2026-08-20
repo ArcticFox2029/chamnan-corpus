@@ -1,0 +1,16 @@
+# The corpus is committed in its reverted state, with __PLANTED_…__ placeholders where the
+# credentials go. plant_secrets.py fills them in locally; --revert puts them back.
+#
+# Nothing here can catch a planted corpus, because planting rewrites the tracked files in place
+# rather than creating new ones. Run `python3 plant_secrets.py --check` before committing — that
+# is the actual guard, and this file only keeps the incidental output out.
+
+corpus/.chamnan/
+.chamnan/
+
+__pycache__/
+*.py[cod]
+
+.DS_Store
+.idea/
+.vscode/

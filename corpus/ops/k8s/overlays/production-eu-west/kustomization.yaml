@@ -1,0 +1,67 @@
+# طبقة الإنتاج لإقليم eu-west فوق k8s/base. الفروق عن القاعدة كلّها إقليمية بطبيعتها: اسم
+# الإقليم الذي يُختم في كل مغلّف حدث، الدلو الذي تكتب فيه document-service، ونسبة العيّنات.
+# ما ليس إقليمياً لا مكان له هنا — تكراره في ثماني طبقات يعني ثماني فرص للانحراف.
+
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: orbitalfreight
+
+resources:
+  - ../../base/namespace.yaml
+  - ../../base/network-policy.yaml
+  - ../../base/cronjobs.yaml
+
+commonLabels:
+  of.orbitalfreight/region: eu-west
+  of.orbitalfreight/environment: production
+
+configMapGenerator:
+  - name: service-tuning
+    behavior: merge
+    literals:
+      # الإقليم إقامة بيانات لا تجزئة (§7 قاعدة 7): دفعة مستشعرات موسومة بإقليم آخر تُرفض
+      # 403 ولا يُعاد توجيهها، ومستند موسوم eu-west لا يُكتب في دلو غيره.
+      - OF_TELEMETRY_ALLOWED_REGIONS=eu-west
+      - OF_DOCUMENT_BUCKET=orbitalfreight-documents-eu-west
+      - OF_DOCUMENT_SIGNED_URL_TTL_SECONDS=900
+      # 0.05 في الإنتاج و1.0 في staging. الفرق مقصود: أثر كامل على حجم eu-west يكلّف أكثر
+      # ممّا يفيد، والحوادث تُتتبَّع بمعرّف الأثر الذي تمرّره ops/ نفسها في X-OF-Trace-Id.
+      - OF_OTEL_SAMPLE_RATIO=0.05
+      - OF_LOG_LEVEL=info
+      - OF_LOG_FORMAT=json
+
+patches:
+  # eu-west ليست إقليم كتابة identity: المخطّط يُكتب في eu-central وحده ويُنسخ إلى هنا.
+  # النسخ للقراءة تحتاج نسخاً أكثر لا أقلّ — كل خدمة في الإقليم تنادي Introspect قبل كل طلب.
+  - target:
+      kind: Deployment
+      name: identity-service
+    patch: |-
+      - op: replace
+        path: /spec/replicas
+        value: 8
+
+  # ذروة eu-west بعد ظهر أوروبا، وهي أعلى حمل قراءات في المنصّة كلها بعد apac-sg.
+  - target:
+      kind: Deployment
+      name: telemetry-ingest
+    patch: |-
+      - op: replace
+        path: /spec/replicas
+        value: 16
+
+  # تشغيل تسوية واحد لكل إقليم، ولا أكثر: نسختان تعنيان تسويتين متنافستين على التاريخ
+  # التجاري نفسه، والقيد UNIQUE في analytics.reconciliation_runs سيرفض الثانية بعد أن تكون
+  # قد استهلكت ساعة من العنقود بلا فائدة.
+  - target:
+      kind: CronJob
+      name: reconciliation-nightly
+    patch: |-
+      - op: replace
+        path: /spec/schedule
+        value: "10 2 * * *"
+
+images:
+  - name: ghcr.io/orbitalfreight/ofctl
+    newTag: 4.2.0

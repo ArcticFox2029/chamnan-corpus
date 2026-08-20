@@ -1,0 +1,139 @@
+# =============================================================================
+# container-registry — systém záznamu o kontejnerech, zásilkách a stopě skenů.
+#
+# Vlastní přechody stavů zásilky, a to je v tomhle manifestu vidět dvakrát:
+#
+#   * PATCH /v1/shipments/{shipment_id}/status je jediná legální cesta ke
+#     změně stavu, takže výpadek téhle služby zastaví celý provozní tok, ne
+#     jednu obrazovku. Osm replik a rozprostření přes zóny.
+#   * Do `at_risk` se zásilka nepřeklápí synchronním voláním z
+#     telemetry-ingest, ale konzumací události `telemetry.alert.raised`
+#     (§1.2 a §4.9). Proto tu je OF_KAFKA_CONSUMER_GROUP a proto tu není
+#     žádná adresa na telemetry-ingest — ta hrana v grafu neexistuje a
+#     přidat ji znamená obnovit cyklus, který událost rozbíjí.
+# =============================================================================
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: container-registry
+  namespace: orbitalfreight
+  labels:
+    app.kubernetes.io/name: container-registry
+    app.kubernetes.io/part-of: orbitalfreight
+    app.kubernetes.io/component: backend
+    orbitalfreight.net/language: kotlin
+    orbitalfreight.net/restart-wave: "2"
+spec:
+  replicas: 8
+  revisionHistoryLimit: 3
+  strategy:
+    type: RollingUpdate
+    rollingUpdate: { maxUnavailable: 1, maxSurge: 2 }
+  selector:
+    matchLabels: { app.kubernetes.io/name: container-registry }
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: container-registry
+        app.kubernetes.io/part-of: orbitalfreight
+        orbitalfreight.net/restart-wave: "2"
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8083"
+    spec:
+      serviceAccountName: container-registry
+      imagePullSecrets: [{ name: of-registry-pull }]
+      terminationGracePeriodSeconds: 45
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1400
+        runAsGroup: 1400
+        seccompProfile: { type: RuntimeDefault }
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: topology.kubernetes.io/zone
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels: { app.kubernetes.io/name: container-registry }
+      containers:
+        - name: container-registry
+          image: registry.orbitalfreight.net/of/container-registry:4.2.0
+          ports:
+            - { name: http, containerPort: 8083 }
+            - { name: grpc, containerPort: 9083 }
+          envFrom:
+            - configMapRef: { name: of-common-config }
+          env:
+            - name: OF_SERVICE_NAME
+              value: container-registry
+            - name: OF_HTTP_PORT
+              value: "8083"
+            - name: OF_GRPC_PORT
+              value: "9083"
+            - name: OF_KAFKA_CONSUMER_GROUP
+              # Změna přípony přehraje téma od začátku retence. Dělá se to jen
+              # při migraci schématu události, ne při běžném nasazení.
+              value: container-registry-v3
+            - name: OF_DB_PASSWORD
+              valueFrom:
+                secretKeyRef: { name: of-database-passwords, key: container-registry }
+            - name: OF_DATABASE_URL
+              value: postgres://freight_svc:$(OF_DB_PASSWORD)@pg-primary.orbitalfreight.svc.cluster.local:5432/orbitalfreight?search_path=freight&application_name=container-registry&sslmode=verify-full
+            # Odchozí hrany podle §1.1: geo-service a document-service. Nic víc.
+            - name: OF_GEO_GRPC_ADDR
+              valueFrom:
+                configMapKeyRef: { name: of-service-addresses, key: OF_GEO_GRPC_ADDR }
+            - name: OF_DOCUMENT_BASE_URL
+              valueFrom:
+                configMapKeyRef: { name: of-service-addresses, key: OF_DOCUMENT_BASE_URL }
+            - name: OF_FREIGHT_SEAL_FORMAT_REGEX
+              value: "^[A-Z]{2}[0-9]{7}$"
+            - name: OF_FREIGHT_SCAN_CLOCK_SKEW_TOLERANCE_S
+              # Skener v depu jede offline i několik hodin; rozdíl mezi
+              # occurred_at a recorded_at do patnácti minut je normální provoz,
+              # nad ním se sken označí k ručnímu přezkoumání.
+              value: "900"
+            - name: OF_FREIGHT_AUTO_AT_RISK_SEVERITY
+              # Severita 1-5 podle telemetry.telemetry_alerts.severity; od
+              # trojky výš se zásilka překlopí do at_risk automaticky.
+              value: "3"
+            - name: JAVA_TOOL_OPTIONS
+              value: "-XX:MaxRAMPercentage=70 -XX:+UseZGC -XX:+ExitOnOutOfMemoryError"
+          resources:
+            requests: { cpu: "1", memory: 2Gi }
+            limits: { cpu: "4", memory: 4Gi }
+          livenessProbe:
+            httpGet: { path: /healthz, port: http }
+            periodSeconds: 10
+          readinessProbe:
+            httpGet: { path: /readyz, port: http }
+            periodSeconds: 5
+            failureThreshold: 3
+          startupProbe:
+            httpGet: { path: /healthz, port: http }
+            periodSeconds: 5
+            failureThreshold: 18
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: ["ALL"] }
+          volumeMounts:
+            - { name: tmp, mountPath: /tmp }
+      volumes:
+        - name: tmp
+          emptyDir: { sizeLimit: 512Mi }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: container-registry
+  namespace: orbitalfreight
+  labels:
+    app.kubernetes.io/name: container-registry
+    app.kubernetes.io/part-of: orbitalfreight
+spec:
+  type: ClusterIP
+  selector: { app.kubernetes.io/name: container-registry }
+  ports:
+    - { name: http, port: 8083, targetPort: http }
+    - { name: grpc, port: 9083, targetPort: grpc }

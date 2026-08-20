@@ -1,0 +1,34 @@
+/*
+ * ग्राहक ट्रैकिंग ऐप का TypeScript विन्यास। (tsconfig JSONC है, इसलिए यह
+ * टिप्पणी वैध है — package.json में ऐसी टिप्पणी नहीं डाली जा सकती।)
+ *
+ * `strict` के ऊपर तीन और जाँचें चालू हैं और तीनों का कारण यही ऐप है:
+ *
+ *  • `noUncheckedIndexedAccess` — भंडार में शिपमेंट पहचान से अनुक्रमित हैं
+ *    (`byId[shipmentId]`), और सूचना से खुलने वाली स्क्रीन पर वह पंक्ति अक्सर
+ *    होती ही नहीं। इसके बिना TypeScript हर ऐसी पहुँच को भरा हुआ मान लेता था।
+ *  • `exactOptionalPropertyTypes` — §0.4 के लिफ़ाफ़े में कई खेत वैकल्पिक हैं,
+ *    और "अनुपस्थित" तथा "स्पष्ट रूप से undefined" का अंतर वहाँ अर्थ रखता है।
+ *  • `allowJs` बिना `checkJs` — दो प्रस्तुति-घटक अब भी सादे JSX में हैं; वे
+ *    बंडल होते हैं पर उन पर प्रकार-जाँच नहीं चलती, क्योंकि उनमें तर्क नहीं है।
+ */
+{
+  "extends": "@react-native/typescript-config/tsconfig.json",
+  "compilerOptions": {
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "noImplicitOverride": true,
+    "exactOptionalPropertyTypes": true,
+    "jsx": "react-native",
+    "allowJs": true,
+    "checkJs": false,
+    "resolveJsonModule": true,
+    "skipLibCheck": true,
+    "baseUrl": ".",
+    "paths": {
+      "@of/*": ["src/*"]
+    }
+  },
+  "include": ["src", "App.tsx", "index.js"],
+  "exclude": ["node_modules", "ios/Pods", "android/build"]
+}

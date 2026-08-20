@@ -1,0 +1,157 @@
+# =============================================================================
+# geo-service — geometrická horká cesta: point-in-fence, snap-to-road,
+# matice vzdáleností.
+#
+# List synchronního grafu (§1.2): nevolá nic kromě identity-service, ale volá
+# ho container-registry, routing-service, telemetry-ingest, fleet-service i
+# analytics-pipeline. Proto osm replik a proto je v pdb.yaml chráněný stejně
+# přísně jako identity-service.
+#
+# Dvě věci, které tenhle manifest musí zajistit a jinde by nedávaly smysl:
+#
+#   * Silniční graf (OF_GEO_ROAD_GRAPH_PATH) se mapuje do paměti. Je to
+#     desítky gigabajtů read-only dat sdílených všemi vlákny, takže PVC v
+#     režimu ReadOnlyMany a odpovídající limit paměti.
+#   * Cache výsledků ResolveGeofence žije 30 sekund a je klíčovaná na
+#     X-OF-Trace-Id (§1.2, diamant A). Je to cache v procesu — restart podu ji
+#     zahodí, což je v pořádku, ale zároveň to znamená, že rychlý rolling
+#     restart dočasně zdvojnásobí počet dotazů na fence. Odtud maxUnavailable 1.
+# =============================================================================
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: geo-service
+  namespace: orbitalfreight
+  labels:
+    app.kubernetes.io/name: geo-service
+    app.kubernetes.io/part-of: orbitalfreight
+    app.kubernetes.io/component: backend
+    orbitalfreight.net/language: cpp
+    orbitalfreight.net/restart-wave: "1"
+spec:
+  replicas: 8
+  revisionHistoryLimit: 3
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 1
+      maxSurge: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: geo-service
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: geo-service
+        app.kubernetes.io/part-of: orbitalfreight
+        orbitalfreight.net/restart-wave: "1"
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8086"
+    spec:
+      serviceAccountName: geo-service
+      imagePullSecrets: [{ name: of-registry-pull }]
+      terminationGracePeriodSeconds: 45
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1400
+        runAsGroup: 1400
+        seccompProfile: { type: RuntimeDefault }
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: topology.kubernetes.io/zone
+          whenUnsatisfiable: DoNotSchedule
+          labelSelector:
+            matchLabels: { app.kubernetes.io/name: geo-service }
+      containers:
+        - name: geo-service
+          image: registry.orbitalfreight.net/of/geo-service:4.2.0
+          ports:
+            - { name: http, containerPort: 8086 }
+            - { name: grpc, containerPort: 9086 }
+          envFrom:
+            - configMapRef: { name: of-common-config }
+          env:
+            - name: OF_SERVICE_NAME
+              value: geo-service
+            - name: OF_HTTP_PORT
+              value: "8086"
+            - name: OF_GRPC_PORT
+              value: "9086"
+            - name: OF_DB_PASSWORD
+              valueFrom:
+                secretKeyRef: { name: of-database-passwords, key: geo-service }
+            - name: OF_DATABASE_URL
+              # PostGIS 3.4 žije v tomhle schématu; search_path proto musí
+              # obsahovat i public, kde jsou funkce rozšíření.
+              value: postgres://geo_svc:$(OF_DB_PASSWORD)@pg-replica.orbitalfreight.svc.cluster.local:5432/orbitalfreight?search_path=geo,public&application_name=geo-service&sslmode=verify-full
+            - name: OF_GEO_ROAD_GRAPH_PATH
+              value: /var/lib/orbitalfreight/geo/road-graph-eurasia.mmap
+            - name: OF_GEO_FENCE_CACHE_TTL_SECONDS
+              value: "30"
+            - name: OF_GEO_MATRIX_MAX_POINTS
+              value: "64"
+            - name: OF_GEO_SIMPLIFY_TOLERANCE_M
+              value: "12"
+          resources:
+            requests: { cpu: "2", memory: 8Gi }
+            limits: { cpu: "6", memory: 20Gi }
+          livenessProbe:
+            httpGet: { path: /healthz, port: http }
+            periodSeconds: 10
+            failureThreshold: 3
+          readinessProbe:
+            httpGet: { path: /readyz, port: http }
+            periodSeconds: 5
+            failureThreshold: 2
+          startupProbe:
+            # Namapování silničního grafu trvá i minutu. Bez startupProbe by
+            # liveness pod zabila dřív, než se stihne načíst.
+            httpGet: { path: /healthz, port: http }
+            periodSeconds: 5
+            failureThreshold: 24
+          volumeMounts:
+            - { name: road-graph, mountPath: /var/lib/orbitalfreight/geo, readOnly: true }
+            - { name: tmp, mountPath: /tmp }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: ["ALL"] }
+      volumes:
+        - name: road-graph
+          persistentVolumeClaim:
+            claimName: geo-road-graph
+            readOnly: true
+        - name: tmp
+          emptyDir: { sizeLimit: 256Mi }
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: geo-road-graph
+  namespace: orbitalfreight
+  labels:
+    app.kubernetes.io/name: geo-service
+spec:
+  # ReadOnlyMany: graf staví offline dávka a všech osm replik ho jenom čte.
+  accessModes: [ReadOnlyMany]
+  storageClassName: of-nvme-shared
+  resources:
+    requests:
+      storage: 120Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: geo-service
+  namespace: orbitalfreight
+  labels:
+    app.kubernetes.io/name: geo-service
+    app.kubernetes.io/part-of: orbitalfreight
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: geo-service
+  ports:
+    - { name: http, port: 8086, targetPort: http }
+    - { name: grpc, port: 9086, targetPort: grpc }

@@ -1,0 +1,54 @@
+# =============================================================================
+# Výchozí hodnoty základní role, kterou dostane každý stroj v inventáři.
+#
+# Role staví to, co je stejné pro aplikační uzly, brokery, Postgres i depotní
+# brány: uživatele, adresáře pod /etc/orbitalfreight, čas, limity a rotaci
+# logů. Nic, co je specifické pro jednu službu, sem nepatří — od toho je
+# of_service.
+# =============================================================================
+
+of_common_user: orbitalfreight
+of_common_group: orbitalfreight
+of_common_uid: 1400
+of_common_gid: 1400
+
+of_common_config_dir: /etc/orbitalfreight
+of_common_keys_dir: /etc/orbitalfreight/keys
+of_common_state_dir: /var/lib/orbitalfreight
+of_common_log_dir: /var/log/orbitalfreight
+
+of_common_packages:
+  - ca-certificates
+  - chrony
+  - curl
+  - jq
+  - logrotate
+  - rsyslog
+  - unzip
+
+# Hodiny jsou na téhle platformě bezpečnostní prvek, ne pohodlí: scan se podle
+# §5.4 označí jako podezřelý, když recorded_at - occurred_at překročí
+# OF_FREIGHT_SCAN_CLOCK_SKEW_TOLERANCE_S, a hash řetězec audit-ledgeru se
+# opírá o monotónní pořadí entry_id.
+of_common_ntp_servers:
+  - 0.europe.pool.ntp.org
+  - 1.europe.pool.ntp.org
+  - 2.europe.pool.ntp.org
+
+of_common_max_open_files: 65535
+of_common_max_processes: 8192
+of_common_sysctl:
+  net.core.somaxconn: 4096
+  net.ipv4.tcp_max_syn_backlog: 8192
+  net.ipv4.ip_local_port_range: "10000 65535"
+  vm.max_map_count: 262144
+  vm.swappiness: 1
+
+of_common_journald_max_use: 4G
+of_common_journald_max_retention: 7day
+of_common_logrotate_keep_days: 14
+
+# Sběr metrik pro /metrics z §3.15. Node exporter běží na každém stroji,
+# aplikační exportéry si přidává of_service podle portu služby.
+of_common_node_exporter_version: "1.8.1"
+of_common_node_exporter_port: 9100

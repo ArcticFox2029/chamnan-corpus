@@ -1,0 +1,69 @@
+# =============================================================================
+# Jednotka systemd pro službu ORBITALFREIGHT běžící v podmanu.
+#
+# Dvě čísla tu spolu musí sedět a snadno se rozejdou: TimeoutStopSec je delší
+# než OF_SHUTDOWN_GRACE_SECONDS. Služba po SIGTERM přestane přijímat požadavky,
+# dojede rozdělané transakce a nechá relay vyprázdnit platform.outbox_messages —
+# a teprve když to celé nestihne, má ji systemd zabít. Opačné pořadí znamená
+# stavovou změnu zapsanou do Postgresu bez události v Kafce, což je přesně to,
+# čemu §7 pravidlo 3 brání.
+#
+# Generováno rolí of_service.
+# =============================================================================
+[Unit]
+Description=ORBITALFREIGHT {{ of_service.name }} ({{ of_environment }}/{{ of_region }})
+Documentation=https://runbooks.orbitalfreight.net/services/{{ of_service.name }}
+After=network-online.target
+Wants=network-online.target
+{% if of_service.name != 'identity-service' %}
+# Měkká vazba: identity-service na tomhle uzlu být nemusí, ale když tu je,
+# nemá smysl startovat dřív než ona — introspekci volá každá služba (§1.2).
+After=of-identity-service.service
+{% endif %}
+StartLimitIntervalSec=300
+StartLimitBurst=5
+
+[Service]
+Type=notify
+NotifyAccess=all
+User={{ of_common_user }}
+Group={{ of_common_group }}
+EnvironmentFile={{ of_service_env_file }}
+WorkingDirectory={{ of_common_state_dir }}/{{ of_service.name }}
+
+ExecStartPre=-/usr/bin/podman rm -f of-{{ of_service.name }}
+ExecStart=/usr/bin/podman run \
+  --rm \
+  --name of-{{ of_service.name }} \
+  --sdnotify=container \
+  --network {{ of_service_network }} \
+  --env-file {{ of_service_env_file }} \
+  --memory {{ of_service_memory_limit }} \
+  --ulimit nofile={{ of_service_nofile }}:{{ of_service_nofile }} \
+  --read-only \
+  --tmpfs /tmp:rw,size=256m \
+  --volume {{ of_common_keys_dir }}:{{ of_common_keys_dir }}:ro \
+  --volume {{ of_common_state_dir }}/{{ of_service.name }}:{{ of_common_state_dir }}/{{ of_service.name }}:rw \
+{% for volume in of_service_extra_volumes %}
+  --volume {{ volume }} \
+{% endfor %}
+  --label of.service={{ of_service.name }} \
+  --label of.region={{ of_region }} \
+  --label of.restart-wave={{ of_service.restart_wave }} \
+  {{ of_service_image }}
+ExecStop=/usr/bin/podman stop --time {{ of_shutdown_grace_seconds }} of-{{ of_service.name }}
+
+Restart=always
+RestartSec={{ of_service_restart_sec }}
+TimeoutStopSec={{ of_systemd_stop_timeout_seconds }}
+CPUQuota={{ of_service_cpu_quota }}
+LimitNOFILE={{ of_service_nofile }}
+
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths={{ of_common_state_dir }}/{{ of_service.name }} {{ of_common_log_dir }}
+
+[Install]
+WantedBy=multi-user.target

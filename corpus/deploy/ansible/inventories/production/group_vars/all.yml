@@ -1,0 +1,249 @@
+# =============================================================================
+# Produkční proměnné společné všem skupinám.
+#
+# Tady žije katalog čtrnácti služeb z §1 SPEC.md — jméno, port, jestli má gRPC
+# a v jaké vlně se restartuje. Katalog je jediné místo, kde se tahle tabulka
+# opisuje; role of_service, playbook rolling-restart.yml i šablona
+# of-service.env.j2 z něj jenom čtou. Když přibude patnáctá služba, edituje se
+# nejdřív SPEC.md a pak tenhle soubor, nic jiného.
+#
+# `of_restart_wave` je topologické pořadí synchronního grafu z §1.1: vlna 0 je
+# identity-service, na kterou volá všech třináct zbylých, vlna 1 jsou listy
+# (geo-service, document-service) a audit-ledger, a tak dál nahoru. Restart
+# proti tomuhle pořadí znamená, že služba naběhne dřív než to, co při readiness
+# probe volá, a /readyz jí bude vracet 503, dokud ji killnem.
+#
+# Hesla a klíče tu nejsou. Všechno citlivé je v vault_production.yml.
+# =============================================================================
+
+of_release_channel: stable
+of_registry: registry.orbitalfreight.net
+of_image_prefix: "{{ of_registry }}/of"
+of_image_tag: "4.2.0"
+
+# --- společné proměnné z §5.1 SPEC.md ---------------------------------------
+of_log_level: info
+of_log_format: json
+of_database_max_conns: 40
+of_database_statement_timeout_ms: 8000
+of_otel_exporter_endpoint: "http://otel-collector.{{ of_domain }}:4317"
+of_otel_sample_ratio: "0.05"
+of_identity_jwks_grace_seconds: 300
+of_outbox_relay_interval_ms: 250
+of_shutdown_grace_seconds: 25
+
+# systemd TimeoutStopSec musí zůstat nad OF_SHUTDOWN_GRACE_SECONDS, jinak nám
+# systemd sestřelí proces uprostřed vyprazdňování platform.outbox_messages.
+of_systemd_stop_timeout_seconds: "{{ of_shutdown_grace_seconds | int + 20 }}"
+
+of_kafka_brokers: >-
+  of-prod-kafka-eu-west-01.orbitalfreight.net:9092,of-prod-kafka-eu-west-02.orbitalfreight.net:9092,of-prod-kafka-eu-west-03.orbitalfreight.net:9092
+
+# --- adresy, které §5 označuje jako sdílená jména ----------------------------
+# Píší se stejně u každého volajícího, viz úvod §5 SPEC.md.
+of_identity_grpc_addr: "identity-service.{{ of_domain }}:9081"
+of_identity_jwks_url: "http://identity-service.{{ of_domain }}:8081/.well-known/jwks.json"
+of_container_registry_grpc_addr: "container-registry.{{ of_domain }}:9083"
+of_geo_grpc_addr: "geo-service.{{ of_domain }}:9086"
+of_audit_ledger_grpc_addr: "audit-ledger.{{ of_domain }}:9092"
+of_routing_base_url: "http://routing-service.{{ of_domain }}:8085"
+of_customs_base_url: "http://customs-service.{{ of_domain }}:8087"
+of_billing_base_url: "http://billing-service.{{ of_domain }}:8088"
+of_document_base_url: "http://document-service.{{ of_domain }}:8089"
+of_fleet_base_url: "http://fleet-service.{{ of_domain }}:8082"
+of_analytics_base_url: "http://analytics-pipeline.{{ of_domain }}:8093"
+
+# --- katalog čtrnácti služeb -------------------------------------------------
+of_services:
+  - name: identity-service
+    runtime: go
+    http_port: 8081
+    grpc_port: 9081
+    schema: identity
+    restart_wave: 0
+    consumer_group: null           # identity-service jenom publikuje
+    replicas: 6
+  - name: geo-service
+    runtime: cpp
+    http_port: 8086
+    grpc_port: 9086
+    schema: geo
+    restart_wave: 1
+    consumer_group: null
+    replicas: 8
+  - name: document-service
+    runtime: node
+    http_port: 8089
+    grpc_port: null
+    schema: platform
+    restart_wave: 1
+    consumer_group: document-service-v2
+    replicas: 4
+  - name: audit-ledger
+    runtime: go
+    http_port: 8092
+    grpc_port: 9092
+    schema: platform
+    restart_wave: 1
+    consumer_group: audit-ledger-v5
+    replicas: 3
+  - name: container-registry
+    runtime: kotlin
+    http_port: 8083
+    grpc_port: 9083
+    schema: freight
+    restart_wave: 2
+    consumer_group: container-registry-v3
+    replicas: 8
+  - name: customs-service
+    runtime: dotnet
+    http_port: 8087
+    grpc_port: null
+    schema: customs
+    restart_wave: 2
+    consumer_group: customs-service-v4
+    replicas: 4
+  - name: notification-service
+    runtime: elixir
+    http_port: 8090
+    grpc_port: null
+    schema: platform
+    restart_wave: 2
+    consumer_group: notification-service-v6
+    replicas: 4
+  - name: routing-service
+    runtime: python
+    http_port: 8085
+    grpc_port: null
+    schema: routing
+    restart_wave: 3
+    consumer_group: routing-service-v2
+    replicas: 6
+  - name: telemetry-ingest
+    runtime: rust
+    http_port: 8084
+    grpc_port: 9084
+    schema: telemetry
+    restart_wave: 3
+    consumer_group: telemetry-ingest-v9
+    replicas: 12
+  - name: analytics-pipeline
+    runtime: scala
+    http_port: 8093
+    grpc_port: null
+    schema: analytics
+    restart_wave: 3
+    consumer_group: analytics-pipeline-v2
+    replicas: 3
+  - name: fleet-service
+    runtime: java
+    http_port: 8082
+    grpc_port: 9082
+    schema: fleet
+    restart_wave: 4
+    consumer_group: fleet-service-v3
+    replicas: 5
+  - name: billing-service
+    runtime: ruby
+    http_port: 8088
+    grpc_port: null
+    schema: billing
+    restart_wave: 5
+    consumer_group: billing-service-v7
+    replicas: 4
+  - name: partner-portal-api
+    runtime: php
+    http_port: 8091
+    grpc_port: null
+    schema: null                   # partner-portal-api nemá vlastní schéma
+    restart_wave: 6
+    consumer_group: partner-portal-api-v2
+    replicas: 4
+  - name: reconciliation-service
+    runtime: clojure
+    http_port: 8094
+    grpc_port: null
+    schema: analytics
+    restart_wave: 6
+    consumer_group: reconciliation-service-v3
+    replicas: 2
+
+# --- per-service proměnné z §5.2 až §5.15 ------------------------------------
+of_service_settings:
+  identity-service:
+    OF_IDENTITY_SIGNING_KEY_PATH: /etc/orbitalfreight/keys/identity-rs256-current.pem
+    OF_IDENTITY_ACCESS_TOKEN_TTL_SECONDS: "900"
+    OF_IDENTITY_REFRESH_TOKEN_TTL_DAYS: "30"
+    OF_IDENTITY_ARGON2_MEMORY_KIB: "262144"
+    OF_IDENTITY_MFA_ISSUER: ORBITALFREIGHT
+    OF_IDENTITY_MAX_ORG_DEPTH: "12"
+  fleet-service:
+    OF_FLEET_HOS_RULESET: eu_561
+    OF_FLEET_ASSIGNMENT_LOCK_TIMEOUT_MS: "2500"
+    OF_FLEET_LICENCE_EXPIRY_WARN_DAYS: "45"
+  container-registry:
+    OF_FREIGHT_SEAL_FORMAT_REGEX: '^[A-Z]{2}[0-9]{7}$'
+    OF_FREIGHT_SCAN_CLOCK_SKEW_TOLERANCE_S: "900"
+    OF_FREIGHT_AUTO_AT_RISK_SEVERITY: high
+  telemetry-ingest:
+    OF_TELEMETRY_BATCH_MAX_READINGS: "5000"
+    OF_TELEMETRY_SIGNATURE_REQUIRED: "true"
+    OF_TELEMETRY_PUBLISH_SAMPLE_RATE: "20"
+    OF_TELEMETRY_HEARTBEAT_TIMEOUT_MINUTES: "15"
+    OF_TELEMETRY_ALLOWED_REGIONS: eu-west,eu-central,na-east,apac-sg
+    OF_TELEMETRY_RULES_PATH: /etc/orbitalfreight/telemetry/rules.yaml
+  routing-service:
+    OF_ROUTING_SOLVER_THREADS: "8"
+    OF_ROUTING_MAX_LEGS: "24"
+    OF_ROUTING_ETA_MODEL_PATH: /var/lib/orbitalfreight/routing/eta-model-2026-07.bin
+    OF_ROUTING_REPLAN_COOLDOWN_SECONDS: "180"
+  geo-service:
+    OF_GEO_ROAD_GRAPH_PATH: /var/lib/orbitalfreight/geo/road-graph-eurasia.mmap
+    OF_GEO_FENCE_CACHE_TTL_SECONDS: "30"
+    OF_GEO_MATRIX_MAX_POINTS: "64"
+    OF_GEO_SIMPLIFY_TOLERANCE_M: "12"
+  customs-service:
+    OF_CUSTOMS_AUTHORITY_ENDPOINT: https://ncts.douane.eu/filing/v5
+    OF_CUSTOMS_AUTHORITY_CERT_PATH: /etc/orbitalfreight/keys/customs-authority-client.p12
+    OF_CUSTOMS_TARIFF_CACHE_TTL_SECONDS: "86400"
+    OF_CUSTOMS_RETENTION_YEARS: "10"
+  billing-service:
+    OF_BILLING_INVOICE_NUMBER_FORMAT: "OF-{tenant_short}-{year}-{seq:06d}"
+    OF_BILLING_DEFAULT_PAYMENT_TERMS_DAYS: "30"
+    OF_BILLING_FX_RATE_SOURCE: ecb-daily
+    OF_BILLING_HOLD_ON_DISCREPANCY_KINDS: duty_mismatch,missing_declaration,amount_mismatch
+  document-service:
+    OF_DOCUMENT_BUCKET: of-documents-eu-west
+    OF_DOCUMENT_KMS_KEY_ID: arn:of:kms:eu-west:key/8f2b1c40-doc-prod
+    OF_DOCUMENT_SIGNED_URL_TTL_SECONDS: "900"
+    OF_DOCUMENT_MAX_UPLOAD_BYTES: "134217728"
+    OF_DOCUMENT_ALLOWED_MIME_TYPES: application/pdf,image/jpeg,image/png,image/heic,application/xml
+  notification-service:
+    OF_NOTIFY_PUSH_APNS_KEY_PATH: /etc/orbitalfreight/keys/apns-driver-ios.p8
+    OF_NOTIFY_PUSH_FCM_KEY_PATH: /etc/orbitalfreight/keys/fcm-inspector-android.json
+    OF_NOTIFY_WEBHOOK_TIMEOUT_MS: "4000"
+    OF_NOTIFY_MAX_ATTEMPTS: "8"
+    OF_NOTIFY_TEMPLATE_DIR: /etc/orbitalfreight/notification/templates
+  partner-portal-api:
+    OF_PARTNER_RATE_LIMIT_PER_MINUTE: "600"
+    OF_PARTNER_SESSION_TTL_MINUTES: "30"
+    OF_PARTNER_ALLOWED_ORIGINS: https://portal.orbitalfreight.net,https://broker.orbitalfreight.net
+  analytics-pipeline:
+    OF_ANALYTICS_SPARK_MASTER: "spark://of-prod-spark-eu-west-01.orbitalfreight.net:7077"
+    OF_ANALYTICS_WAREHOUSE_URI: s3://of-warehouse-eu-west/parquet
+    OF_ANALYTICS_MV_REFRESH_CRON: "15 3 * * *"
+    OF_ANALYTICS_BACKFILL_DAYS: "30"
+  audit-ledger:
+    OF_LEDGER_CHECKPOINT_INTERVAL_MINUTES: "60"
+    OF_LEDGER_NOTARY_ENDPOINT: https://notary.orbitalfreight.net/v1/checkpoints
+    OF_LEDGER_HASH_ALGORITHM: sha256
+  reconciliation-service:
+    OF_RECON_TOLERANCE_MINOR: "50"
+    OF_RECON_ENGINE_VERSION: "4.2.0"
+    OF_RECON_LOOKBACK_DAYS: "7"
+
+# Koncový bod Postgresu, který of-service.env.j2 vkládá do OF_DATABASE_URL.
+# Aplikace míří na regionální repliku; jediná výjimka je identity-service,
+# která podle §2 zapisuje výhradně v eu-central a dostává primár napřímo.
+of_postgres_endpoint: "pg-{{ of_region }}.{{ of_domain }}"
+of_postgres_primary_endpoint: "of-prod-pg-eu-central-01.orbitalfreight.net"

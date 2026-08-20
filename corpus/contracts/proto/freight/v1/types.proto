@@ -1,0 +1,175 @@
+syntax = "proto3";
+
+package freight.v1;
+
+import "common/v1/identifiers.proto";
+import "common/v1/money.proto";
+import "google/protobuf/timestamp.proto";
+
+// Vocabolario del dominio merci: stati di spedizione, tipi di scansione, tipi di struttura e le
+// forme di lettura di freight.shipments, freight.containers e freight.shipment_scan_events.
+// Vive separato da container_lookup.proto perché lo importano anche i .proto degli eventi e i
+// generatori di stub per le app in apps/, che non hanno alcun bisogno del client gRPC.
+
+option go_package = "github.com/orbitalfreight/contracts/gen/go/freight/v1;freightv1";
+option java_package = "com.orbitalfreight.contracts.freight.v1";
+option java_multiple_files = true;
+
+// Rispecchia il CHECK su freight.shipments.status. Le transizioni legali passano tutte da
+// PATCH /v1/shipments/{shipment_id}/status: non esiste altra strada per cambiare questo campo.
+enum ShipmentStatus {
+  SHIPMENT_STATUS_UNSPECIFIED = 0;
+  SHIPMENT_STATUS_DRAFT = 1;
+  SHIPMENT_STATUS_BOOKED = 2;
+
+  // Da qui in poi POST /v1/shipments/{shipment_id}/containers è rifiutato con
+  // `shipment_already_sealed`.
+  SHIPMENT_STATUS_SEALED = 3;
+
+  SHIPMENT_STATUS_IN_TRANSIT = 4;
+
+  // Impostato da container-registry consumando telemetry.alert.raised con severità almeno pari a
+  // OF_FREIGHT_AUTO_AT_RISK_SEVERITY. Non è telemetry-ingest a chiamare: quell'arco sincrono
+  // chiuderebbe un ciclo ed è rotto dalla coda.
+  SHIPMENT_STATUS_AT_RISK = 5;
+
+  SHIPMENT_STATUS_HELD_AT_CUSTOMS = 6;
+  SHIPMENT_STATUS_DELIVERED = 7;
+  SHIPMENT_STATUS_CANCELLED = 8;
+}
+
+// Rispecchia il CHECK su freight.shipment_scan_events.scan_type. billing-service reagisce a un
+// solo valore di questo enum, PROOF_OF_DELIVERY, ed è quello che sblocca la fatturazione.
+enum ScanType {
+  SCAN_TYPE_UNSPECIFIED = 0;
+  SCAN_TYPE_GATE_IN = 1;
+  SCAN_TYPE_GATE_OUT = 2;
+  SCAN_TYPE_LOAD = 3;
+  SCAN_TYPE_UNLOAD = 4;
+  SCAN_TYPE_SEAL_CHECK = 5;
+  SCAN_TYPE_CUSTOMS_INSPECTION = 6;
+  SCAN_TYPE_DAMAGE_REPORT = 7;
+  SCAN_TYPE_PROOF_OF_DELIVERY = 8;
+}
+
+// Rispecchia freight.facilities.kind.
+enum FacilityKind {
+  FACILITY_KIND_UNSPECIFIED = 0;
+  FACILITY_KIND_SEAPORT = 1;
+  FACILITY_KIND_AIRPORT = 2;
+  FACILITY_KIND_RAIL_TERMINAL = 3;
+  FACILITY_KIND_WAREHOUSE = 4;
+  FACILITY_KIND_CUSTOMER_SITE = 5;
+  FACILITY_KIND_BONDED_STORE = 6;
+}
+
+message Shipment {
+  string shipment_id = 1;
+  string tenant_id = 2;
+
+  // Riferimento di prenotazione del cliente. Unico per tenant, non globalmente: due clienti
+  // usano lo stesso numero d'ordine più spesso di quanto si creda.
+  string reference = 3;
+
+  string origin_facility_id = 4;
+  string destination_facility_id = 5;
+
+  // Incoterm a tre lettere: 'DAP', 'CIF', 'EXW'. Determina chi paga il dazio e quindi se
+  // billing-service emette una riga `duty_disbursement`.
+  string incoterm = 6;
+
+  ShipmentStatus status = 7;
+  google.protobuf.Timestamp sla_deadline_at = 8;
+
+  // Valore dichiarato. partner-portal-api lo rimuove dalla propria vista
+  // GET /partner/v1/shipments/{shipment_id}: un vettore non deve vedere quanto vale il carico.
+  common.v1.Money declared_value = 9;
+
+  common.v1.RegionCode region_code = 10;
+  google.protobuf.Timestamp created_at = 11;
+  google.protobuf.Timestamp delivered_at = 12;
+
+  repeated ShipmentContainer containers = 13;
+}
+
+// La coppia spedizione-contenitore con il suo carico utile. Il sigillo appartiene
+// all'accoppiamento, non al contenitore né alla spedizione: lo stesso contenitore ne porta uno
+// diverso a ogni viaggio.
+message ShipmentContainer {
+  string container_id = 1;
+
+  // Validato contro OF_FREIGHT_SEAL_FORMAT_REGEX prima di essere scritto.
+  string seal_number = 2;
+
+  int64 gross_kg = 3;
+  google.protobuf.Timestamp loaded_at = 4;
+  google.protobuf.Timestamp unloaded_at = 5;
+}
+
+message Container {
+  string container_id = 1;
+
+  // Codice BIC di undici caratteri, per esempio 'MSCU3948571'.
+  string iso_code = 2;
+
+  // Quattro caratteri ISO 6346, per esempio '45R1' = 40 piedi high-cube reefer.
+  string iso_size_type = 3;
+
+  // car_<ULID>. È una delle poche chiavi esterne dichiarate che attraversano uno schema:
+  // freight.containers.owner_carrier_id punta a fleet.carriers.
+  string owner_carrier_id = 4;
+
+  int64 tare_weight_kg = 5;
+  int64 max_gross_kg = 6;
+  bool is_reefer = 7;
+
+  // Significativo solo quando is_reefer è true; il vincolo
+  // containers_setpoint_only_for_reefer lo impone a livello di tabella.
+  common.v1.Decimal setpoint_c = 8;
+
+  // rdg_<ULID> dell'ultima lettura vista. Tenuto caldo da container-registry consumando
+  // telemetry.reading.recorded, che è campionato a una lettura su
+  // OF_TELEMETRY_PUBLISH_SAMPLE_RATE: questi due campi sono quindi approssimati per costruzione e
+  // non vanno usati per calcoli, solo per mostrare «vista l'ultima volta».
+  string last_reading_id = 9;
+  google.protobuf.Timestamp last_reading_at = 10;
+
+  repeated HazardClass hazard_classes = 11;
+  google.protobuf.Timestamp retired_at = 12;
+}
+
+// Da freight.container_hazard_classes unita a freight.hazard_classes. Un container cisterna porta
+// regolarmente una classe di residuo accanto a quella principale, e una sola può essere primaria.
+message HazardClass {
+  // '3', '6.1', '8'.
+  string hazard_class_code = 1;
+  string un_division = 2;
+  string placard_label = 3;
+  string segregation_group = 4;
+  bool is_primary = 5;
+}
+
+message ScanEvent {
+  string scan_id = 1;
+  string shipment_id = 2;
+  string container_id = 3;
+  ScanType scan_type = 4;
+  string scanned_by_user_id = 5;
+  string facility_id = 6;
+
+  // Quando è successo secondo l'orologio del terminale.
+  google.protobuf.Timestamp occurred_at = 7;
+
+  // Quando container-registry lo ha ricevuto. I due valori divergono quando l'app
+  // inspector-android ha lavorato offline; oltre
+  // OF_FREIGHT_SCAN_CLOCK_SKEW_TOLERANCE_S la scansione viene segnalata anziché rifiutata.
+  google.protobuf.Timestamp recorded_at = 8;
+
+  common.v1.GeoPoint position = 9;
+
+  // Seriale del terminale che ha scansionato; corrisponde a telemetry.device_gateways.serial
+  // quando la scansione arriva da un varco di deposito.
+  string device_serial = 10;
+
+  string notes = 11;
+}

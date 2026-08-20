@@ -1,0 +1,29 @@
+<!--
+  Ustawienia wspólne dla wszystkich projektów warehouse-service. Plik istnieje po to, żeby wersja
+  języka, poziom ostrzeżeń i generowanie pliku dokumentacji XML były identyczne w każdym projekcie —
+  rozjazd tych trzech rzeczy sprawiał, że komentarze <summary> znikały z pakietu Api, a przegląd
+  kodu tego nie wychwytywał.
+-->
+<Project>
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <LangVersion>12.0</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <InvariantGlobalization>true</InvariantGlobalization>
+
+    <!-- Dokumentacja XML jest obowiązkowa: to z niej powstaje dokument OpenAPI w contracts/. -->
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+
+    <!-- Ostrzeżenie jako błąd, bo brakujący komentarz na publicznym API zauważa się dopiero
+         wtedy, gdy ktoś obok próbuje z tego API skorzystać. -->
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <WarningsAsErrors />
+    <AnalysisLevel>latest-recommended</AnalysisLevel>
+
+    <!-- Skrót rewizji wstrzykiwany przez potok wdrożeniowy; zwracany przez GET /version. -->
+    <CommitSha Condition="'$(CommitSha)' == ''">0000000000000000000000000000000000000000</CommitSha>
+  </PropertyGroup>
+
+</Project>

@@ -1,0 +1,34 @@
+<!--
+  Proces usługi: powierzchnia HTTP z §3, potok nagłówków z §0.3 i korzeń kompozycji. Ten projekt
+  jako jedyny buduje się do obrazu kontenera — pozostałe są bibliotekami i nie mają punktu wejścia.
+-->
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <RootNamespace>OrbitalFreight.Warehouse.Api</RootNamespace>
+    <AssemblyName>OrbitalFreight.Warehouse.Api</AssemblyName>
+    <UserSecretsId>orbitalfreight-warehouse-service</UserSecretsId>
+
+    <!-- Konfiguracja pochodzi wyłącznie ze zmiennych OF_* (§5), więc pliku appsettings.json nie ma. -->
+    <GenerateAssemblyInfo>true</GenerateAssemblyInfo>
+    <Version>1.6.2</Version>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\OrbitalFreight.Warehouse.Application\OrbitalFreight.Warehouse.Application.csproj" />
+    <ProjectReference Include="..\OrbitalFreight.Warehouse.Infrastructure\OrbitalFreight.Warehouse.Infrastructure.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.Logging.Console" Version="8.0.0" />
+    <PackageReference Include="OpenTelemetry.Extensions.Hosting" Version="1.8.1" />
+    <PackageReference Include="OpenTelemetry.Exporter.OpenTelemetryProtocol" Version="1.8.1" />
+    <PackageReference Include="OpenTelemetry.Instrumentation.AspNetCore" Version="1.8.1" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Punkt wejścia jest testowany przez WebApplicationFactory<Program> w projekcie testów. -->
+    <InternalsVisibleTo Include="OrbitalFreight.Warehouse.Tests" />
+  </ItemGroup>
+
+</Project>

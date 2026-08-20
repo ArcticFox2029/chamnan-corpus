@@ -1,0 +1,142 @@
+# =============================================================================
+# GitLab CI — zrcadlová pipeline pro instalaci u zákazníka.
+#
+# Dva zákazníci (jeden v mea-ae, jeden v latam-br) provozují platformu ve
+# vlastní infrastruktuře a nemají přístup na náš GitHub. Jejich instance běží
+# z zrcadleného repozitáře v jejich GitLabu a staví se tímhle souborem.
+#
+# Rozdíly proti GitHub Actions nejsou kosmetické:
+#   * obrazy se staví do JEJICH registru, ne do našeho,
+#   * nasazuje se přímo z pipeline (Semaphore u zákazníka neběží), a proto
+#     má fáze `deploy` ruční spouštění a chráněnou proměnnou s kubeconfigem,
+#   * rezidence dat: pipeline nikdy nesahá na naše prostředí a naopak.
+#     Zákazník v latam-br má data, která podle §7 pravidla 7 nesmí opustit
+#     jeho region — a to platí i pro logy z buildu.
+# =============================================================================
+
+stages:
+  - verify
+  - build
+  - deploy
+
+variables:
+  SPEC_VERSION: "4.2.0"
+  DOCKER_BUILDKIT: "1"
+  # Registr zákazníka. CI_REGISTRY dodává GitLab z prostředí instance.
+  IMAGE_PREFIX: "${CI_REGISTRY_IMAGE}/of"
+  KUBERNETES_NAMESPACE: orbitalfreight
+
+default:
+  interruptible: true
+  retry:
+    max: 1
+    when:
+      - runner_system_failure
+      - stuck_or_timeout_failure
+
+# --- verify ------------------------------------------------------------------
+
+env-proti-specifikaci:
+  stage: verify
+  image: python:3.12-slim
+  script:
+    - pip install --quiet ansible-core==2.17.*
+    - ansible-playbook -i deploy/ansible/inventories/ci/hosts.yml
+        deploy/ansible/site.yml --check --tags config
+    - python3 ops/validate-env.py --spec SPEC.md --env-dir /etc/orbitalfreight --strict
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+
+manifesty:
+  stage: verify
+  image: alpine:3.20
+  before_script:
+    - apk add --no-cache curl python3
+    - curl -sSL https://github.com/kubernetes-sigs/kustomize/releases/download/kustomize%2Fv5.4.2/kustomize_v5.4.2_linux_amd64.tar.gz | tar -xz -C /usr/local/bin
+  script:
+    # Zákaznická instalace jede vždycky z produkčního overlaye, ale s vlastním
+    # regionem — proto se kontroluje jen ten jeden.
+    - kustomize build deploy/kubernetes/overlays/production > manifests.yaml
+    - python3 ops/check-manifest-ports.py --spec SPEC.md --manifest manifests.yaml
+    - python3 ops/check-call-graph.py --spec SPEC.md --manifest manifests.yaml --fail-on-new-edge
+  artifacts:
+    paths: [manifests.yaml]
+    expire_in: 1 week
+
+# --- build -------------------------------------------------------------------
+
+.build-template: &build-template
+  stage: build
+  image: docker:27-cli
+  services:
+    - docker:27-dind
+  before_script:
+    - echo "$CI_REGISTRY_PASSWORD" | docker login -u "$CI_REGISTRY_USER" --password-stdin "$CI_REGISTRY"
+  script:
+    - |
+      docker build \
+        --file "deploy/docker/Dockerfile.${RUNTIME}" \
+        --build-arg "SERVICE=${SERVICE}" \
+        --build-arg "COMPONENT=${SERVICE}" \
+        --build-arg "VERSION=${SPEC_VERSION}" \
+        --build-arg "BUILD_SHA=${CI_COMMIT_SHA}" \
+        --tag "${IMAGE_PREFIX}/${SERVICE}:${SPEC_VERSION}" \
+        --tag "${IMAGE_PREFIX}/${SERVICE}:${CI_COMMIT_SHA}" \
+        .
+    - docker push "${IMAGE_PREFIX}/${SERVICE}:${SPEC_VERSION}"
+    - docker push "${IMAGE_PREFIX}/${SERVICE}:${CI_COMMIT_SHA}"
+    # Stejná kontrola jako v GitHub Actions: manifesty počítají s UID 1400.
+    - |
+      UID_IN_IMAGE=$(docker run --rm --entrypoint id "${IMAGE_PREFIX}/${SERVICE}:${CI_COMMIT_SHA}" -u)
+      test "$UID_IN_IMAGE" = "1400" || { echo "obraz běží pod UID $UID_IN_IMAGE"; exit 1; }
+  rules:
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+    - if: $CI_COMMIT_TAG
+
+identity-service:   { <<: *build-template, variables: { SERVICE: identity-service,       RUNTIME: go } }
+audit-ledger:       { <<: *build-template, variables: { SERVICE: audit-ledger,           RUNTIME: go } }
+fleet-service:      { <<: *build-template, variables: { SERVICE: fleet-service,          RUNTIME: java } }
+container-registry: { <<: *build-template, variables: { SERVICE: container-registry,     RUNTIME: kotlin } }
+telemetry-ingest:   { <<: *build-template, variables: { SERVICE: telemetry-ingest,       RUNTIME: rust } }
+routing-service:    { <<: *build-template, variables: { SERVICE: routing-service,        RUNTIME: python } }
+geo-service:        { <<: *build-template, variables: { SERVICE: geo-service,            RUNTIME: cpp } }
+customs-service:    { <<: *build-template, variables: { SERVICE: customs-service,        RUNTIME: dotnet } }
+billing-service:    { <<: *build-template, variables: { SERVICE: billing-service,        RUNTIME: ruby } }
+document-service:   { <<: *build-template, variables: { SERVICE: document-service,       RUNTIME: node } }
+notification-service: { <<: *build-template, variables: { SERVICE: notification-service, RUNTIME: elixir } }
+partner-portal-api: { <<: *build-template, variables: { SERVICE: partner-portal-api,     RUNTIME: php } }
+analytics-pipeline: { <<: *build-template, variables: { SERVICE: analytics-pipeline,     RUNTIME: scala } }
+reconciliation-service: { <<: *build-template, variables: { SERVICE: reconciliation-service, RUNTIME: clojure } }
+
+# --- deploy ------------------------------------------------------------------
+
+nasadit:
+  stage: deploy
+  image: bitnami/kubectl:1.29
+  # Ručně. U zákazníka nemáme dohled ani pohotovost, takže nasazení spouští
+  # jejich člověk v čase, kdy se na to může dívat.
+  when: manual
+  environment:
+    name: production
+    url: https://api.${OF_CUSTOMER_DOMAIN}/version
+  script:
+    - kubectl config use-context "${OF_CUSTOMER_CONTEXT}"
+    # Pořadí vln z §1.1 SPEC.md. kubectl apply pořadí nedodrží samo, takže se
+    # čeká na rollout každé vlny zvlášť — služba, která naběhne dřív než to,
+    # co volá při readiness probe, drží /readyz na 503, dokud ji nezabijeme.
+    - kubectl apply -f manifests.yaml --namespace "${KUBERNETES_NAMESPACE}"
+    - kubectl rollout status deployment/identity-service -n "${KUBERNETES_NAMESPACE}" --timeout=300s
+    - kubectl rollout status deployment/geo-service -n "${KUBERNETES_NAMESPACE}" --timeout=600s
+    - kubectl rollout status deployment/document-service -n "${KUBERNETES_NAMESPACE}" --timeout=300s
+    - kubectl rollout status statefulset/audit-ledger -n "${KUBERNETES_NAMESPACE}" --timeout=300s
+    - kubectl rollout status deployment/container-registry -n "${KUBERNETES_NAMESPACE}" --timeout=300s
+    - kubectl rollout status deployment/customs-service -n "${KUBERNETES_NAMESPACE}" --timeout=300s
+    - kubectl rollout status deployment/notification-service -n "${KUBERNETES_NAMESPACE}" --timeout=300s
+    - kubectl rollout status deployment/routing-service -n "${KUBERNETES_NAMESPACE}" --timeout=300s
+    - kubectl rollout status statefulset/telemetry-ingest -n "${KUBERNETES_NAMESPACE}" --timeout=600s
+    - kubectl rollout status deployment/fleet-service -n "${KUBERNETES_NAMESPACE}" --timeout=300s
+    - kubectl rollout status deployment/billing-service -n "${KUBERNETES_NAMESPACE}" --timeout=300s
+    - kubectl rollout status deployment/partner-portal-api -n "${KUBERNETES_NAMESPACE}" --timeout=300s
+  rules:
+    - if: $CI_COMMIT_TAG

@@ -1,0 +1,51 @@
+# Manifesto do cliente móvel do condutor (Flutter). Este pacote é a app multiplataforma que
+# substitui progressivamente o cliente Swift `apps/driver-ios/`: recebe as atribuições criadas por
+# fleet.v1.FleetService/Assign, regista leituras em container-registry e mantém tudo isso a
+# funcionar sem rede. As versões estão fixadas porque o APK/IPA é assinado a partir de um lockfile
+# reproduzível — ver `ops/` para o pipeline de assinatura.
+name: orbitalfreight_driver
+description: ORBITALFREIGHT — aplicação do condutor (rotas, comprovativo de entrega, sincronização offline).
+publish_to: none
+version: 4.2.0+812
+
+environment:
+  sdk: ">=3.3.0 <4.0.0"
+  flutter: ">=3.22.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  flutter_riverpod: ^2.5.1
+  get_it: ^7.7.0
+  dio: ^5.4.3
+  # Armazenamento local: o SQLite é o sistema de registo enquanto o telemóvel está offline.
+  sqflite: ^2.3.3
+  path: ^1.9.0
+  flutter_secure_storage: ^9.2.2
+  # Localização em segundo plano — usada só para carimbar `position` nas leituras e para o
+  # pré-filtro de geocercas descrito em lib/location/geofence_evaluator.dart.
+  geolocator: ^12.0.0
+  workmanager: ^0.5.2
+  connectivity_plus: ^6.0.3
+  mobile_scanner: ^5.1.1
+  signature: ^5.4.1
+  image: ^4.2.0
+  crypto: ^3.0.3
+  ulid: ^2.0.0
+  firebase_core: ^3.1.0
+  firebase_messaging: ^15.0.1
+  flutter_local_notifications: ^17.1.2
+  intl: ^0.19.0
+  collection: ^1.18.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^4.0.0
+  mocktail: ^1.0.4
+
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/geofences/
+    - assets/i18n/

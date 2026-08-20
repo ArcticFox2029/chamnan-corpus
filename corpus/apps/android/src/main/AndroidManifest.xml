@@ -1,0 +1,105 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    यह मेनिफ़ेस्ट गोदाम स्कैनर ऐप की घोषणा है: कौन-सी अनुमतियाँ चाहिए, कौन-से घटक
+    सिस्टम को दिखते हैं, और कौन-सी पुरानी Java स्क्रीनें अब भी पंजीकृत हैं।
+
+    ध्यान देने योग्य तीन बातें:
+      • CAMERA और स्थान की अनुमति वैकल्पिक नहीं हैं — हर स्कैन
+        freight.shipment_scan_events की `position` भरता है, और उसके बिना
+        container-registry स्कैन तो ले लेता है पर विश्लेषण में वह लाइन बेकार रहती है।
+      • FOREGROUND_SERVICE_DATA_SYNC इसलिए चाहिए कि सील-जाँच का दौर पूरा होने पर
+        ऑफ़लाइन कतार खाली करने वाला वर्कर स्क्रीन बंद रहते हुए भी चलता है।
+      • legacy/ की तीन क्लासें अब भी यहाँ घोषित हैं; डिपो के पुराने रिंग-स्कैनर
+        उन्हीं intent फ़िल्टरों पर broadcast भेजते हैं।
+-->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.CAMERA" />
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+
+    <!-- कुछ डिपो में केवल हैंडहेल्ड स्कैनर हैं जिनमें ऑटोफ़ोकस कैमरा नहीं है; ऐप
+         उन पर भी चलता है और तब कीबोर्ड-वेज इनपुट पर गिरता है। -->
+    <uses-feature android:name="android.hardware.camera" android:required="false" />
+    <uses-feature android:name="android.hardware.camera.autofocus" android:required="false" />
+
+    <application
+        android:name=".WarehouseScannerApp"
+        android:allowBackup="false"
+        android:dataExtractionRules="@xml/data_extraction_rules"
+        android:icon="@mipmap/ic_launcher"
+        android:label="@string/app_name"
+        android:networkSecurityConfig="@xml/network_security_config"
+        android:supportsRtl="true"
+        android:theme="@style/Theme.OrbitalFreight.Warehouse"
+        tools:targetApi="34">
+
+        <!-- Compose वाली मुख्य स्क्रीन। singleTask इसलिए कि रिंग-स्कैनर का
+             broadcast दोबारा वही उदाहरण जगाए, नया ढेर न बनाए। -->
+        <activity
+            android:name=".ui.scan.ScanActivity"
+            android:exported="true"
+            android:launchMode="singleTask"
+            android:screenOrientation="portrait"
+            android:windowSoftInputMode="adjustResize">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <!-- पुनर्लेखन से पहले की स्क्रीनें। इन्हें हटाने से पहले DE-Hamburg और
+             NL-Rotterdam के रिंग-स्कैनर बदलने होंगे। -->
+        <activity
+            android:name=".legacy.LegacySealCheckActivity"
+            android:exported="true"
+            android:label="@string/legacy_seal_check_title"
+            android:screenOrientation="portrait">
+            <intent-filter>
+                <action android:name="com.orbitalfreight.warehouse.SEAL_CHECK" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </activity>
+
+        <activity
+            android:name=".legacy.LegacyDamageReportActivity"
+            android:exported="false"
+            android:label="@string/legacy_damage_report_title"
+            android:screenOrientation="portrait" />
+
+        <service
+            android:name=".legacy.LegacyScanUploadService"
+            android:exported="false"
+            android:foregroundServiceType="dataSync" />
+
+        <!-- WorkManager को Hilt से जोड़ने के लिए डिफ़ॉल्ट इनिशियलाइज़र हटाया गया है;
+             WarehouseScannerApp खुद Configuration.Provider है। -->
+        <provider
+            android:name="androidx.startup.InitializationProvider"
+            android:authorities="${applicationId}.androidx-startup"
+            android:exported="false"
+            tools:node="merge">
+            <meta-data
+                android:name="androidx.work.WorkManagerInitializer"
+                android:value="androidx.startup"
+                tools:node="remove" />
+        </provider>
+
+        <meta-data
+            android:name="com.google.mlkit.vision.DEPENDENCIES"
+            android:value="barcode" />
+
+        <!-- notification-service का FCM चैनल; OF_NOTIFY_PUSH_FCM_KEY_PATH वाली
+             कुंजी से भेजे गए telemetry.alert.raised संदेश यहीं दिखते हैं। -->
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_channel_id"
+            android:value="@string/alert_channel_id" />
+    </application>
+</manifest>

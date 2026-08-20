@@ -1,0 +1,57 @@
+# =============================================================================
+# Proměnné brokerů Kafky v produkci.
+#
+# Šest témat z §4 SPEC.md, počty oddílů se z tabulky nesmí odchýlit ani nahoru:
+# `partition_key` v obálce (§0.7) garantuje pořadí per shipment_id, a přeřazení
+# oddílů to pořadí rozbije zpětně i pro už zapsané zprávy.
+#
+# of.telemetry.v1 má 96 oddílů, protože telemetry-ingest je podle §2 o tři řády
+# nejvyšší zápisová zátěž na platformě. Retence 7 dní není úspora místa —
+# odpovídá době, po kterou musí konzument držet seen-set na event_id (§4.19).
+# =============================================================================
+
+of_kafka_version: "3.7.0"
+of_kafka_data_dir: /var/lib/kafka/data
+of_kafka_log_dir: /var/log/kafka
+of_kafka_heap_opts: "-Xms6g -Xmx6g"
+of_kafka_listeners: "PLAINTEXT://:9092,CONTROLLER://:9093"
+of_kafka_default_replication_factor: 3
+of_kafka_min_insync_replicas: 2
+of_kafka_num_network_threads: 8
+of_kafka_num_io_threads: 16
+of_kafka_socket_send_buffer_bytes: 1048576
+of_kafka_socket_receive_buffer_bytes: 1048576
+of_kafka_unclean_leader_election: false
+of_kafka_auto_create_topics: false
+
+of_kafka_topics:
+  - name: of.identity.v1
+    partitions: 12
+    retention_hours: 720
+    producers: [identity-service]
+  - name: of.freight.v1
+    partitions: 48
+    retention_hours: 336
+    producers: [container-registry, fleet-service]
+  - name: of.telemetry.v1
+    partitions: 96
+    retention_hours: 168
+    producers: [telemetry-ingest]
+  - name: of.customs.v1
+    partitions: 12
+    retention_hours: 2160
+    producers: [customs-service]
+  - name: of.billing.v1
+    partitions: 12
+    retention_hours: 2160
+    producers: [billing-service]
+  - name: of.platform.v1
+    partitions: 24
+    retention_hours: 720
+    producers: [document-service, notification-service, routing-service, reconciliation-service]
+
+# DLQ podle §4.19 bod 4: osm pokusů, exponenciální backoff od 500 ms, pak sem.
+# Oddílů má DLQ míň — nechceme, aby otrávená zpráva držela 96 vláken.
+of_kafka_dlq_partitions: 6
+of_kafka_dlq_retention_hours: 2160
+of_kafka_dlq_suffix: ".dlq"

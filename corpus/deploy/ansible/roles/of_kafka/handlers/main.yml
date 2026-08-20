@@ -1,0 +1,36 @@
+# =============================================================================
+# Obsluhy role of_kafka.
+#
+# Restart brokeru se nikdy nepouští na víc strojích naráz — of_kafka_topics má
+# min.insync.replicas 2 a druhý současně restartovaný broker znamená, že
+# producenti dostanou NOT_ENOUGH_REPLICAS a relay z platform.outbox_messages
+# začne opakovat. Serializaci zajišťuje `serial: 1` v site.yml, ne obsluha.
+# =============================================================================
+
+- name: Načíst systemd znovu
+  ansible.builtin.systemd:
+    daemon_reload: true
+  listen: Načíst systemd znovu
+
+- name: Restartovat Kafku
+  ansible.builtin.systemd:
+    name: kafka.service
+    state: restarted
+    daemon_reload: true
+  listen: Restartovat Kafku
+
+- name: Počkat na dorovnání replik
+  ansible.builtin.shell:
+    cmd: >-
+      set -o pipefail;
+      {{ of_kafka_install_dir }}/bin/kafka-topics.sh
+      --bootstrap-server 127.0.0.1:9092
+      --describe --under-replicated-partitions | wc -l
+  args:
+    executable: /bin/bash
+  register: of_kafka_urp
+  until: of_kafka_urp.stdout | trim | int == 0
+  retries: 60
+  delay: 10
+  changed_when: false
+  listen: Restartovat Kafku

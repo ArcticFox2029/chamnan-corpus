@@ -1,0 +1,136 @@
+# =============================================================================
+# Oprávnění v Kubernetes API pro služby, které ho skutečně potřebují.
+#
+# Většina ze čtrnácti služeb tu není a to je správně — kdo API nevolá, nemá
+# mít roli. Uvedené tři případy jsou:
+#
+#   * analytics-pipeline spouští Spark executory jako pody,
+#   * audit-ledger a reconciliation-service se domlouvají na tom, kdo je
+#     vedoucí instance, přes Lease v coordination.k8s.io. U ledgeru je to
+#     nutnost: hash řetězec v platform.audit_ledger_entries závisí na úplném
+#     pořadí entry_id, takže zapisovat smí v jednu chvíli jen jeden pod.
+#   * notification-service čte ConfigMapu se šablonami, kterou mění operátoři
+#     za běhu, aby se kvůli textu upomínky nemusela nasazovat nová verze.
+#
+# Žádná role nesmí obsahovat `secrets` s právem `list`. Přečíst konkrétní
+# secret podle jména je v pořádku, vypsat všechny znamená obejít celé
+# oddělení, které SealedSecrets zavádějí.
+# =============================================================================
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: analytics-spark-executors
+  namespace: orbitalfreight
+rules:
+  - apiGroups: [""]
+    resources: [pods]
+    verbs: [get, list, watch, create, delete]
+  - apiGroups: [""]
+    resources: [pods/log]
+    verbs: [get]
+  - apiGroups: [""]
+    resources: [configmaps]
+    verbs: [get, create, delete]
+    resourceNames: [analytics-pipeline-spark-conf]
+  - apiGroups: [""]
+    resources: [services]
+    verbs: [get, create, delete]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: analytics-spark-executors
+  namespace: orbitalfreight
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: analytics-spark-executors
+subjects:
+  - kind: ServiceAccount
+    name: analytics-pipeline
+    namespace: orbitalfreight
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: leader-election
+  namespace: orbitalfreight
+rules:
+  - apiGroups: [coordination.k8s.io]
+    resources: [leases]
+    verbs: [get, list, watch, create, update, patch]
+  - apiGroups: [""]
+    resources: [events]
+    verbs: [create, patch]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: leader-election
+  namespace: orbitalfreight
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: leader-election
+subjects:
+  # Ledger volí vedoucího kvůli pořadí zápisů, rekonciliace kvůli tomu, aby
+  # nočních běhů nad stejným (tenant_id, business_date, engine_version)
+  # neběželo víc — unikátní index v analytics.reconciliation_runs by druhý
+  # zápis odmítl, ale to už by běh proběhl naprázdno.
+  - kind: ServiceAccount
+    name: audit-ledger
+    namespace: orbitalfreight
+  - kind: ServiceAccount
+    name: reconciliation-service
+    namespace: orbitalfreight
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: notification-templates-reader
+  namespace: orbitalfreight
+rules:
+  - apiGroups: [""]
+    resources: [configmaps]
+    verbs: [get, watch]
+    resourceNames: [notification-service-templates]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: notification-templates-reader
+  namespace: orbitalfreight
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: notification-templates-reader
+subjects:
+  - kind: ServiceAccount
+    name: notification-service
+    namespace: orbitalfreight
+---
+# Sběrač metrik z /metrics (§3.15). ClusterRole, protože Prometheus stojí ve
+# vlastním namespace a musí vidět endpointy napříč clusterem. Čtení a nic víc.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: orbitalfreight-metrics-reader
+rules:
+  - apiGroups: [""]
+    resources: [nodes, nodes/metrics, services, endpoints, pods]
+    verbs: [get, list, watch]
+  - nonResourceURLs: ["/metrics"]
+    verbs: [get]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: orbitalfreight-metrics-reader
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: orbitalfreight-metrics-reader
+subjects:
+  - kind: ServiceAccount
+    name: otel-collector
+    namespace: orbitalfreight

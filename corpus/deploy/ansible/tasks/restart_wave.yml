@@ -1,0 +1,58 @@
+# =============================================================================
+# Restart jedné vlny služeb na jednom stroji. Voláno z rolling-restart.yml.
+#
+# Každá služba se restartuje, počká se na /readyz (§3.15 — sonda, která na
+# rozdíl od /healthz sahá na databázi, Kafku i identity-service) a teprve pak
+# jde na řadu další. Když /readyz nenaběhne do stropu, playbook selže a uzel
+# zůstane vyřazený z rotace — to je záměr: rozbitá instance mimo provoz je
+# lepší než rozbitá instance, které chodí provoz.
+# =============================================================================
+---
+- name: Vybrat služby vlny {{ wave }}
+  ansible.builtin.set_fact:
+    of_wave_services: >-
+      {{ of_services
+         | selectattr('restart_wave', 'equalto', wave)
+         | selectattr('name', 'equalto', of_restart_only) | list
+         if of_restart_only | length > 0
+         else of_services | selectattr('restart_wave', 'equalto', wave) | list }}
+
+- name: Restartovat služby vlny {{ wave }}
+  ansible.builtin.systemd:
+    name: "of-{{ item.name }}.service"
+    state: restarted
+  loop: "{{ of_wave_services }}"
+  loop_control:
+    label: "{{ item.name }}"
+
+- name: Počkat na /readyz
+  ansible.builtin.uri:
+    url: "http://127.0.0.1:{{ item.http_port }}/readyz"
+    status_code: [200]
+    timeout: 5
+  register: of_restart_ready
+  retries: "{{ of_service_ready_retries }}"
+  delay: "{{ of_service_ready_delay_seconds }}"
+  until: of_restart_ready is succeeded
+  loop: "{{ of_wave_services }}"
+  loop_control:
+    label: "{{ item.name }}"
+
+- name: Ověřit, že běží očekávaná verze
+  # /version vrací build SHA, semver a číslo migrace schématu, které služba
+  # očekává. Neshoda semveru s of_image_tag znamená, že systemd nastartoval
+  # starou jednotku z cache — tichá varianta selhaného rolloutu.
+  ansible.builtin.uri:
+    url: "http://127.0.0.1:{{ item.http_port }}/version"
+    return_content: true
+  register: of_restart_version
+  failed_when: of_image_tag not in (of_restart_version.content | default(''))
+  loop: "{{ of_wave_services }}"
+  loop_control:
+    label: "{{ item.name }}"
+  when: of_verify_version_after_restart | default(true) | bool
+
+- name: Nechat vlnu {{ wave }} usadit
+  ansible.builtin.pause:
+    seconds: "{{ of_restart_settle_seconds }}"
+  when: of_wave_services | length > 0

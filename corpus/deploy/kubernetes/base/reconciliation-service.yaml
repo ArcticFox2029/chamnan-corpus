@@ -1,0 +1,129 @@
+# =============================================================================
+# reconciliation-service — noční trojcestné párování zásilek, deklarací a
+# faktur; otevírá nesrovnalosti.
+#
+# Dvě repliky, ale běh spouští vždycky jen jedna. Volbu vedoucího řeší Lease
+# (rbac.yaml, role leader-election): unikátní index na
+# analytics.reconciliation_runs (tenant_id, business_date, engine_version) by
+# druhý souběžný běh sice odmítl, ale až po tom, co by hodinu počítal naprázdno
+# a zatížil read-only repliku.
+#
+# Služba volá billing-service, audit-ledger a analytics-pipeline. Zpátky ji
+# nikdo nevolá — billing-service se o nesrovnalosti dozví z události
+# `reconciliation.discrepancy.opened` a musí ji nechat být (§1.2).
+#
+# OF_RECON_ENGINE_VERSION se zapisuje do každého běhu. Změna verze engine je
+# proto vidět v datech, ne jen v nasazení, a starý běh se dá porovnat s novým
+# nad stejným business_date.
+# =============================================================================
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: reconciliation-service
+  namespace: orbitalfreight
+  labels:
+    app.kubernetes.io/name: reconciliation-service
+    app.kubernetes.io/part-of: orbitalfreight
+    app.kubernetes.io/component: backend
+    orbitalfreight.net/language: clojure
+    orbitalfreight.net/restart-wave: "6"
+spec:
+  replicas: 2
+  revisionHistoryLimit: 3
+  strategy:
+    type: RollingUpdate
+    rollingUpdate: { maxUnavailable: 1, maxSurge: 1 }
+  selector:
+    matchLabels: { app.kubernetes.io/name: reconciliation-service }
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: reconciliation-service
+        app.kubernetes.io/part-of: orbitalfreight
+        orbitalfreight.net/restart-wave: "6"
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8094"
+    spec:
+      serviceAccountName: reconciliation-service
+      imagePullSecrets: [{ name: of-registry-pull }]
+      # Rozběhnutý noční běh se nepřerušuje uprostřed — dopočítá tenanta,
+      # zapíše run a teprve pak končí.
+      terminationGracePeriodSeconds: 120
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1400
+        runAsGroup: 1400
+        seccompProfile: { type: RuntimeDefault }
+      containers:
+        - name: reconciliation-service
+          image: registry.orbitalfreight.net/of/reconciliation-service:4.2.0
+          ports:
+            - { name: http, containerPort: 8094 }
+          envFrom:
+            - configMapRef: { name: of-common-config }
+          env:
+            - name: OF_SERVICE_NAME
+              value: reconciliation-service
+            - name: OF_HTTP_PORT
+              value: "8094"
+            - name: OF_KAFKA_CONSUMER_GROUP
+              value: reconciliation-service-v3
+            - name: OF_DB_PASSWORD
+              valueFrom:
+                secretKeyRef: { name: of-database-passwords, key: reconciliation-service }
+            - name: OF_DATABASE_URL
+              value: postgres://reconciliation_svc:$(OF_DB_PASSWORD)@pg-primary.orbitalfreight.svc.cluster.local:5432/orbitalfreight?search_path=analytics&application_name=reconciliation-service&sslmode=verify-full
+            - name: OF_BILLING_BASE_URL
+              valueFrom:
+                configMapKeyRef: { name: of-service-addresses, key: OF_BILLING_BASE_URL }
+            - name: OF_AUDIT_LEDGER_GRPC_ADDR
+              valueFrom:
+                configMapKeyRef: { name: of-service-addresses, key: OF_AUDIT_LEDGER_GRPC_ADDR }
+            - name: OF_ANALYTICS_BASE_URL
+              valueFrom:
+                configMapKeyRef: { name: of-service-addresses, key: OF_ANALYTICS_BASE_URL }
+            - name: OF_RECON_TOLERANCE_MINOR
+              # Padesát minoritních jednotek, tedy padesát centů. Rozdíl pod
+              # tolerancí není nesrovnalost — vzniká zaokrouhlením kurzu při
+              # přepočtu cla a otevírat na něj případ nemá smysl.
+              value: "50"
+            - name: OF_RECON_ENGINE_VERSION
+              value: "4.2.0"
+            - name: OF_RECON_LOOKBACK_DAYS
+              value: "7"
+            - name: JAVA_TOOL_OPTIONS
+              value: "-XX:MaxRAMPercentage=75 -XX:+ExitOnOutOfMemoryError"
+          resources:
+            requests: { cpu: "1", memory: 2Gi }
+            limits: { cpu: "4", memory: 6Gi }
+          livenessProbe:
+            httpGet: { path: /healthz, port: http }
+            periodSeconds: 15
+          readinessProbe:
+            httpGet: { path: /readyz, port: http }
+            periodSeconds: 10
+            failureThreshold: 3
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: ["ALL"] }
+          volumeMounts:
+            - { name: tmp, mountPath: /tmp }
+      volumes:
+        - name: tmp
+          emptyDir: { sizeLimit: 1Gi }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: reconciliation-service
+  namespace: orbitalfreight
+  labels:
+    app.kubernetes.io/name: reconciliation-service
+    app.kubernetes.io/part-of: orbitalfreight
+spec:
+  type: ClusterIP
+  selector: { app.kubernetes.io/name: reconciliation-service }
+  ports:
+    - { name: http, port: 8094, targetPort: http }

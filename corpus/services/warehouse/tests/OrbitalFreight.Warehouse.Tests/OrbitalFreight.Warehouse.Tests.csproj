@@ -1,0 +1,26 @@
+<!--
+  Projekt testów. Obejmuje wyłącznie warstwę domenową i korzeń kompozycji — testy integracyjne
+  z prawdziwym Postgresem i brokerem żyją w ops/ i uruchamiają się na środowisku ci, bo wymagają
+  kontenerów, których nie da się postawić na maszynie dewelopera bez uprawnień.
+-->
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <RootNamespace>OrbitalFreight.Warehouse.Tests</RootNamespace>
+    <IsPackable>false</IsPackable>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\OrbitalFreight.Warehouse.Domain\OrbitalFreight.Warehouse.Domain.csproj" />
+    <ProjectReference Include="..\..\src\OrbitalFreight.Warehouse.Api\OrbitalFreight.Warehouse.Api.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.10.0" />
+    <PackageReference Include="xunit" Version="2.8.1" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="2.8.1" />
+    <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" Version="8.0.6" />
+  </ItemGroup>
+
+</Project>

@@ -1,0 +1,119 @@
+// Payload degli eventi del topic of.freight.v1 (48 partizioni, 14 giorni). Due produttori,
+// container-registry e fleet-service, e la chiave di partizione è sempre shipment_id: è l'unica
+// ragione per cui la piattaforma può promettere che le scansioni di una spedizione arrivino in
+// ordine mentre non promette nulla fra spedizioni diverse.
+
+syntax = "proto3";
+
+package freight.v1;
+
+import "common/v1/identifiers.proto";
+import "common/v1/money.proto";
+import "freight/v1/types.proto";
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/orbitalfreight/contracts/gen/go/freight/v1;freightv1";
+option java_package = "com.orbitalfreight.contracts.freight.v1";
+option java_multiple_files = true;
+
+// event_name: shipment.created — produttore container-registry.
+// Consumatori: routing-service, billing-service, analytics-pipeline, audit-ledger.
+// routing-service reagisce pianificando la versione 1 della rotta; billing-service apre una bozza
+// di fattura ma non la emette, perché l'emissione aspetta la prova di consegna.
+message ShipmentCreated {
+  string shipment_id = 1;
+  string tenant_id = 2;
+  string reference = 3;
+  string origin_facility_id = 4;
+  string destination_facility_id = 5;
+  string incoterm = 6;
+  google.protobuf.Timestamp sla_deadline_at = 7;
+  common.v1.RegionCode region_code = 8;
+  string created_by = 9;
+}
+
+// event_name: shipment.scanned — produttore container-registry.
+// Consumatori: notification-service, analytics-pipeline, billing-service, audit-ledger,
+// reconciliation-service.
+//
+// billing-service filtra su scan_type = SCAN_TYPE_PROOF_OF_DELIVERY e ignora tutto il resto: è
+// quella singola scansione a sbloccare la fatturazione della spedizione.
+message ShipmentScanned {
+  string scan_id = 1;
+  string shipment_id = 2;
+  string container_id = 3;
+  freight.v1.ScanType scan_type = 4;
+  string facility_id = 5;
+  string scanned_by_user_id = 6;
+
+  google.protobuf.Timestamp occurred_at = 7;
+
+  // Diverso da occurred_at quando la app inspector-android ha lavorato offline e ha sincronizzato
+  // dopo. reconciliation-service usa occurred_at, non recorded_at, per collocare la scansione
+  // nella giornata contabile.
+  google.protobuf.Timestamp recorded_at = 8;
+
+  // Nullo quando il terminale non aveva fix GNSS. Non è motivo di rifiuto: un magazzino
+  // interrato non ha copertura satellitare e le scansioni vanno registrate comunque.
+  common.v1.GeoPoint position = 9;
+
+  string device_serial = 10;
+}
+
+// event_name: shipment.status.changed — produttore container-registry.
+// Consumatori: notification-service, routing-service, customs-service, billing-service,
+// analytics-pipeline, audit-ledger.
+message ShipmentStatusChanged {
+  string shipment_id = 1;
+  string tenant_id = 2;
+  freight.v1.ShipmentStatus from_status = 3;
+  freight.v1.ShipmentStatus to_status = 4;
+
+  // Perché. Vocabolario snake_case stabile: 'operator_action', 'telemetry_alert',
+  // 'customs_hold', 'pod_recorded', 'customer_cancellation'.
+  string reason_code = 5;
+
+  // usr_…, oppure 'svc:container-registry' quando la transizione nasce dal consumo di
+  // telemetry.alert.raised.
+  string changed_by = 6;
+
+  google.protobuf.Timestamp changed_at = 7;
+}
+
+// event_name: fleet.assignment.created — produttore fleet-service.
+// Consumatori: notification-service, routing-service, billing-service, audit-ledger.
+message FleetAssignmentCreated {
+  string assignment_id = 1;
+  string shipment_id = 2;
+
+  // leg_<ULID>. Vuoto per un assegnamento senza rotta pianificata.
+  string leg_id = 3;
+
+  string vehicle_id = 4;
+  string driver_id = 5;
+  string carrier_id = 6;
+  google.protobuf.Timestamp assigned_at = 7;
+  string assigned_by = 8;
+}
+
+// event_name: fleet.assignment.released — produttore fleet-service.
+// Consumatori: billing-service, analytics-pipeline, audit-ledger.
+//
+// billing-service ne ricava una riga `linehaul` di billing.invoice_lines con
+// source_kind = 'assignment' e source_id = assignment_id.
+message FleetAssignmentReleased {
+  string assignment_id = 1;
+  string shipment_id = 2;
+  string vehicle_id = 3;
+  string driver_id = 4;
+  google.protobuf.Timestamp released_at = 5;
+
+  // Distanza agganciata alla rete stradale via geo.v1.GeoService/SnapToRoad, non la somma grezza
+  // dei fix GNSS.
+  common.v1.Distance distance_travelled_m = 6;
+
+  // Stesso vocabolario di fleet.v1.ReleaseReason, serializzato come stringa snake_case sul canale
+  // JSON: 'completed', 'leg_replanned', 'driver_unavailable', 'vehicle_breakdown',
+  // 'shipment_cancelled', 'dispatcher_override'.
+  string release_reason = 7;
+}

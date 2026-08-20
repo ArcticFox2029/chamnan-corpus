@@ -1,0 +1,31 @@
+# =============================================================================
+# Primár Postgresu — jediný stroj na platformě, kam se smí zapisovat do
+# schématu `identity`.
+#
+# Podle §2 SPEC.md se `identity` replikuje do všech regionů, ale zapisuje jen
+# v eu-central. Tenhle host proto drží víc replikačních slotů než ostatní a má
+# přísnější checkpointy: každý region odsud táhne logickou replikaci a zpožděný
+# slot znamená, že v ostatních regionech zastarají role a session, tedy že se
+# odvolaná credential (`identity.credential.revoked`) nedozví včas.
+# =============================================================================
+
+of_postgres_role: primary
+of_postgres_shared_buffers: 48GB
+of_postgres_effective_cache_size: 144GB
+of_postgres_max_connections: 1200
+of_postgres_max_wal_senders: 24
+of_postgres_max_replication_slots: 24
+of_postgres_checkpoint_timeout: 5min
+of_postgres_wal_keep_size: 32GB
+of_postgres_synchronous_commit: "remote_write"
+of_postgres_synchronous_standby_names: "ANY 1 (of_pg_eu_west_01, of_pg_na_east_01)"
+
+of_postgres_replication_slots:
+  - { name: of_pg_eu_west_01,  region: eu-west }
+  - { name: of_pg_na_east_01,  region: na-east }
+  - { name: of_pg_apac_sg_01,  region: apac-sg }
+  - { name: of_analytics_cdc,  region: eu-west }
+
+of_postgres_backup_schedule: "0 1 * * *"
+of_postgres_backup_target: s3://of-pgbackup-eu-central/prod
+of_postgres_backup_retention_days: 35

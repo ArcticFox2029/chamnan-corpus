@@ -1,0 +1,147 @@
+# Superficie REST di geo-service (C++20, porta 8086). È la parte piccola del servizio: il lavoro
+# vero — risoluzione recinzioni, punto-in-poligono, matrice delle distanze, aggancio alla strada —
+# è gRPC e sta in proto/geo/v1/geo.proto. Qui c'è soltanto ciò che serve alla mappa della console
+# in web/, dove il GeoJSON è più comodo dei messaggi protobuf.
+
+openapi: 3.1.0
+
+info:
+  title: geo-service
+  version: 4.2.0
+  description: |
+    Possiede lo schema `geo`, dove vive anche l'estensione PostGIS. Insieme a document-service è uno
+    dei due soli servizi foglia — chiama identity-service e nient'altro — ed è per questo che gli è
+    consentito stare sul percorso caldo di più di quattro chiamanti.
+
+    I poligoni restituiti da questa superficie sono semplificati a `OF_GEO_SIMPLIFY_TOLERANCE_M`.
+    Il percorso caldo in gRPC lavora invece sulla geometria piena: una recinzione portuale
+    semplificata sbaglia l'ingresso di qualche decina di metri, che a terra sono un varco intero.
+
+servers:
+  - url: http://geo-service.orbitalfreight.svc.cluster.local:8086
+
+tags: [{ name: geofences }, { name: operations }]
+
+security:
+  - bearerAuth: []
+
+paths:
+
+  /v1/geofences/{geofence_id}:
+    get:
+      operationId: getGeofence
+      tags: [geofences]
+      summary: Recinzione in GeoJSON per la mappa della console
+      parameters:
+        - $ref: './_shared/components.yaml#/components/parameters/TenantHeader'
+        - $ref: './_shared/components.yaml#/components/parameters/TraceHeader'
+        - name: geofence_id
+          in: path
+          required: true
+          schema: { $ref: './_shared/components.yaml#/components/schemas/Ulid' }
+        - name: simplify_tolerance_m
+          in: query
+          schema: { type: integer }
+          description: Sovrascrive `OF_GEO_SIMPLIFY_TOLERANCE_M` per questa risposta.
+      responses:
+        '200':
+          description: Recinzione.
+          content:
+            application/geo+json:
+              schema: { $ref: '#/components/schemas/GeofenceFeature' }
+              examples:
+                porto:
+                  value:
+                    type: Feature
+                    id: gfn_01J7A4HAMBURGCTA000000001
+                    geometry:
+                      type: Polygon
+                      coordinates: [[[9.9210, 53.5240], [9.9480, 53.5240], [9.9480, 53.5390], [9.9210, 53.5390], [9.9210, 53.5240]]]
+                    properties:
+                      name: 'Hamburg CTA — terminal apron'
+                      kind: facility
+                      tenant_id: null
+                      buffer_m: 50
+                      dwell_alert_minutes: 240
+        '404': { $ref: './_shared/components.yaml#/components/responses/NotFound' }
+
+  /v1/geofences:
+    post:
+      operationId: createGeofence
+      tags: [geofences]
+      summary: Crea una recinzione di tenant
+      description: |
+        Le recinzioni condivise — porti, zone di confine — hanno `tenant_id` nullo e non si creano
+        da questo endpoint: arrivano dal caricamento di riferimento in db/. Qui si creano solo
+        quelle di un tenant, tipicamente il sito di un cliente.
+
+        Il poligono deve essere chiuso, semplice e con orientamento antiorario; un anello che si
+        auto-interseca è respinto prima che PostGIS se ne accorga, perché il messaggio del database
+        è illeggibile per chi disegna sulla mappa.
+      parameters:
+        - $ref: './_shared/components.yaml#/components/parameters/TenantHeader'
+        - $ref: './_shared/components.yaml#/components/parameters/IdempotencyHeader'
+      requestBody:
+        required: true
+        content:
+          application/geo+json:
+            schema: { $ref: '#/components/schemas/GeofenceFeature' }
+      responses:
+        '201':
+          description: Creata.
+          content:
+            application/geo+json:
+              schema: { $ref: '#/components/schemas/GeofenceFeature' }
+        '422':
+          description: Poligono non valido, oppure `kind` non ammesso per una recinzione di tenant.
+          content:
+            application/json:
+              schema: { $ref: './_shared/components.yaml#/components/schemas/Error' }
+
+  /healthz:
+    $ref: './_shared/universal-paths.yaml#/paths/~1healthz'
+  /readyz:
+    $ref: './_shared/universal-paths.yaml#/paths/~1readyz'
+  /metrics:
+    $ref: './_shared/universal-paths.yaml#/paths/~1metrics'
+  /version:
+    $ref: './_shared/universal-paths.yaml#/paths/~1version'
+
+components:
+  securitySchemes:
+    bearerAuth:
+      $ref: './_shared/components.yaml#/components/securitySchemes/bearerAuth'
+
+  schemas:
+    GeofenceFeature:
+      type: object
+      description: Feature GeoJSON. `id` è il `gfn_…`; le proprietà rispecchiano le colonne di `geo.geofences`.
+      required: [type, geometry, properties]
+      properties:
+        type: { type: string, const: Feature }
+        id: { $ref: './_shared/components.yaml#/components/schemas/Ulid' }
+        geometry:
+          type: object
+          required: [type, coordinates]
+          properties:
+            type: { type: string, const: Polygon }
+            coordinates:
+              type: array
+              description: Anello esterno chiuso, longitudine prima della latitudine come vuole GeoJSON.
+              items:
+                type: array
+                items:
+                  type: array
+                  items: { type: number }
+        properties:
+          type: object
+          properties:
+            name: { type: string }
+            kind:
+              type: string
+              enum: [facility, depot, border_zone, restricted, customer_site, corridor]
+            tenant_id:
+              type: [string, 'null']
+              description: Nullo per le recinzioni condivise.
+            buffer_m: { type: integer, default: 50 }
+            dwell_alert_minutes: { type: [integer, 'null'] }

@@ -1,0 +1,139 @@
+# =============================================================================
+# Nasazení jedné služby ORBITALFREIGHT na aplikační uzel.
+#
+# Postup je vždycky stejný: vyrenderovat .env, ověřit ho proti §5 SPEC.md,
+# stáhnout image, přepsat jednotku, restartovat a počkat na /readyz. Ověření
+# není formalita — ops/validate-env.py bere neznámou OF_* proměnnou jako chybu,
+# protože služba, která přečte proměnnou neuvedenou v §5, podle specifikace
+# spadne při startu, a to je horší než neprojít deploy.
+#
+# Role sama neřeší pořadí služeb. To dělá site.yml a rolling-restart.yml podle
+# `restart_wave` v katalogu.
+# =============================================================================
+
+- name: Ověřit, že služba je z katalogu §1
+  ansible.builtin.assert:
+    that:
+      - of_service.name is defined
+      - of_service.http_port is defined
+      - of_service.restart_wave is defined
+    fail_msg: >-
+      of_service musí být položka z of_services; služba mimo katalog v §1
+      SPEC.md neexistuje a nasadit ji nelze.
+    quiet: true
+  tags: [service]
+
+- name: Vyrenderovat prostředí služby
+  ansible.builtin.template:
+    src: of-service.env.j2
+    dest: "{{ of_service_env_file }}"
+    owner: root
+    group: "{{ of_common_group }}"
+    mode: "0640"
+  register: of_service_env_render
+  notify: Restartovat službu ORBITALFREIGHT
+  tags: [service, config]
+
+- name: Zkontrolovat prostředí proti specifikaci
+  # Skript je v ops/ a čte §5 SPEC.md jako zdroj pravdy. Pouštíme ho i v
+  # --check běhu, protože překlep v názvu proměnné je jediná chyba tohohle
+  # nasazení, která se projeví až za běhu a na všech podech naráz.
+  ansible.builtin.command:
+    cmd: >-
+      /usr/local/bin/validate-env.py
+      --service {{ of_service.name }}
+      --env-file {{ of_service_env_file }}
+      --spec /usr/share/orbitalfreight/SPEC.md
+  changed_when: false
+  check_mode: false
+  tags: [service, config]
+
+- name: Přihlásit se do registru
+  containers.podman.podman_login:
+    registry: "{{ of_registry }}"
+    username: "{{ vault_registry_username }}"
+    password: "{{ vault_registry_password }}"
+  no_log: true
+  when: of_registry != "localhost:5000"
+  tags: [service, image]
+
+- name: Stáhnout image služby
+  containers.podman.podman_image:
+    name: "{{ of_service_image }}"
+    pull: true
+    force: "{{ of_service_pull_policy == 'always' }}"
+  register: of_service_image_pull
+  retries: 3
+  delay: 15
+  until: of_service_image_pull is succeeded
+  notify: Restartovat službu ORBITALFREIGHT
+  tags: [service, image]
+
+- name: Připravit datový adresář služby
+  ansible.builtin.file:
+    path: "{{ of_common_state_dir }}/{{ of_service.name }}"
+    state: directory
+    owner: "{{ of_common_user }}"
+    group: "{{ of_common_group }}"
+    mode: "0750"
+  tags: [service]
+
+- name: Nasadit jednotku systemd
+  ansible.builtin.template:
+    src: of-service.service.j2
+    dest: "/etc/systemd/system/{{ of_service_unit_name }}"
+    owner: root
+    group: root
+    mode: "0644"
+  notify:
+    - Načíst systemd znovu
+    - Restartovat službu ORBITALFREIGHT
+  tags: [service]
+
+- name: Zapnout a spustit službu
+  ansible.builtin.systemd:
+    name: "{{ of_service_unit_name }}"
+    enabled: true
+    state: started
+    daemon_reload: true
+  tags: [service]
+
+- name: Vyprázdnit obsluhy před kontrolou připravenosti
+  # Bez tohohle by se čekalo na /readyz staré instance, která ještě běží,
+  # a nasazení by prošlo, i kdyby nová verze nenaběhla vůbec.
+  ansible.builtin.meta: flush_handlers
+
+- name: Počkat na /readyz
+  ansible.builtin.uri:
+    url: "http://127.0.0.1:{{ of_service.http_port }}{{ of_service_ready_path }}"
+    status_code: 200
+    timeout: "{{ of_service_health_timeout_seconds }}"
+  register: of_service_ready
+  retries: "{{ of_service_ready_retries }}"
+  delay: "{{ of_service_ready_delay_seconds }}"
+  until: of_service_ready is succeeded
+  when: of_service_wait_for_ready | bool
+  changed_when: false
+  tags: [service, health]
+
+- name: Přečíst nasazenou verzi
+  # /version vrací build SHA, semver a číslo migrace, kterou služba očekává.
+  # Nesoulad čísla migrace proti databázi je nejčastější příčina toho, že
+  # /readyz odpovídá 200 a služba přesto padá na prvním zápisu.
+  ansible.builtin.uri:
+    url: "http://127.0.0.1:{{ of_service.http_port }}{{ of_service_version_path }}"
+    return_content: true
+    timeout: "{{ of_service_health_timeout_seconds }}"
+  register: of_service_version
+  changed_when: false
+  when: of_service_wait_for_ready | bool
+  tags: [service, health]
+
+- name: Vypsat nasazenou verzi
+  ansible.builtin.debug:
+    msg: >-
+      {{ of_service.name }} na {{ inventory_hostname }} ({{ of_region }}):
+      {{ of_service_version.json.version | default('neznámá') }}
+      / migrace {{ of_service_version.json.schema_migration | default('?') }}
+  when: of_service_wait_for_ready | bool
+  tags: [service, health]

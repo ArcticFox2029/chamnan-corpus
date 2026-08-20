@@ -1,0 +1,149 @@
+// Contratto gRPC di identity-service, la dipendenza universale della piattaforma: gli altri
+// tredici servizi chiamano identity.v1.TokenIntrospection/Introspect (o BatchIntrospect) prima di
+// agire su qualsiasi richiesta, e identity-service non chiama sincronamente nessuno. Se questo
+// file cambia in modo incompatibile, si ferma tutto insieme — motivo per cui i campi qui dentro si
+// deprecano e non si rimuovono mai.
+
+syntax = "proto3";
+
+package identity.v1;
+
+import "common/v1/identifiers.proto";
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/orbitalfreight/contracts/gen/go/identity/v1;identityv1";
+option java_package = "com.orbitalfreight.contracts.identity.v1";
+option java_multiple_files = true;
+option csharp_namespace = "OrbitalFreight.Contracts.Identity.V1";
+
+// In ascolto su identity-service:9081, cioè il valore di OF_IDENTITY_GRPC_ADDR che ogni servizio
+// legge. Quando è irraggiungibile i chiamanti ripiegano sulla verifica locale della firma RS256
+// contro il JWKS in cache per al massimo OF_IDENTITY_JWKS_GRACE_SECONDS, e rifiutano del tutto le
+// chiamate a credenziale (non utente): un token utente scaduto fa poco danno, una credenziale
+// revocata usata durante un guasto ne fa parecchio.
+service TokenIntrospection {
+  // La chiamata singola, sul percorso caldo di ogni richiesta HTTP entrante.
+  rpc Introspect(IntrospectRequest) returns (IntrospectResponse);
+
+  // Fino a 128 token per chiamata. Esiste per telemetry-ingest, che riceve un batch firmato da un
+  // gateway per volta ma deve validare la credenziale di ogni contenitore citato dentro il batch:
+  // farlo con 128 Introspect separati raddoppiava la latenza di POST /v1/ingest/batch.
+  rpc BatchIntrospect(BatchIntrospectRequest) returns (BatchIntrospectResponse);
+}
+
+message IntrospectRequest {
+  // Il bearer così com'è arrivato, senza il prefisso "Bearer ".
+  string token = 1;
+
+  // Il valore di X-OF-Tenant che il chiamante ha ricevuto. identity-service confronta con la
+  // claim `tid`: divergenza significa `active = false` e nessun dettaglio, non un errore
+  // esplicativo — la differenza fra i due è un canale laterale per enumerare i tenant.
+  string expected_tenant_id = 2;
+
+  // Quando è true la sessione deve esistere ancora e non essere revocata in identity.sessions;
+  // quando è false basta che la firma e la scadenza siano valide. I servizi che scrivono
+  // (container-registry su PATCH /v1/shipments/{shipment_id}/status, billing-service su
+  // POST /v1/invoices/{invoice_id}/issue) mettono true.
+  bool require_active_session = 3;
+
+  // Scope minimo richiesto per l'operazione in corso. Se il token non lo possiede la risposta è
+  // attiva ma con `authorised = false`, così il chiamante distingue «non autenticato» da
+  // «autenticato ma non autorizzato» senza una seconda chiamata.
+  repeated string required_scopes = 4;
+}
+
+message IntrospectResponse {
+  bool active = 1;
+
+  // usr_<ULID> per un token utente, cred_<ULID> per una credenziale macchina.
+  string subject_id = 2;
+
+  string tenant_id = 3;
+
+  common.v1.ActorKind actor_kind = 4;
+
+  // ses_<ULID>. Vuoto per i token a credenziale, che non aprono sessione.
+  string session_id = 5;
+
+  // Le dodici cifre di identity.api_credentials.key_prefix, valorizzate solo per actor_kind
+  // ACTOR_KIND_SERVICE e ACTOR_KIND_PARTNER. È la chiave su cui partner-portal-api applica
+  // OF_PARTNER_RATE_LIMIT_PER_MINUTE, e quella che i consumatori di identity.credential.revoked
+  // devono sfrattare dalla propria cache entro cinque secondi.
+  string key_prefix = 6;
+
+  repeated string scopes = 7;
+
+  bool authorised = 8;
+
+  // Ruoli già appiattiti lungo la gerarchia di identity.org_units: è lo stesso insieme che
+  // GET /v1/users/{user_id}/effective-roles restituisce in HTTP, calcolato una volta sola qui
+  // perché i chiamanti non hanno modo di risalire l'albero senza leggere lo schema identity, cosa
+  // che §7 regola 2 vieta.
+  repeated EffectiveRole effective_roles = 9;
+
+  google.protobuf.Timestamp expires_at = 10;
+
+  // Regione di residenza del tenant (identity.tenants.home_region_code). Un servizio che riceve
+  // una regione diversa dalla propria OF_REGION_CODE per un tenant a residenza vincolata rifiuta
+  // la richiesta invece di servirla fuori regione.
+  common.v1.RegionCode home_region_code = 11;
+
+  // DEPRECATO in schema_version 3: era l'unità organizzativa primaria dell'utente, ma un
+  // dispatcher opera legittimamente su più unità e il campo singolo induceva i chiamanti a
+  // decisioni di autorizzazione sbagliate. Usare `effective_roles[].org_unit_id`.
+  string org_unit_id = 12 [deprecated = true];
+
+  // DEPRECATO: il livello di scope si legge da EffectiveRole.scope_level.
+  string scope_level = 13 [deprecated = true];
+}
+
+// Una concessione appiattita: chi, quale ruolo, dove. La terna è la stessa di
+// identity.user_role_grants, con in più il percorso materializzato dell'unità, che permette al
+// chiamante di decidere «questa unità sta sotto quella» con un confronto di prefisso invece di
+// una CTE ricorsiva.
+message EffectiveRole {
+  string role_id = 1;
+
+  // Codice stabile del ruolo: `dispatcher`, `customs_broker`, `auditor`.
+  string code = 2;
+
+  ScopeLevel scope_level = 3;
+
+  string org_unit_id = 4;
+
+  // '/org_root/org_emea/org_de'. Rispecchia identity.org_units.materialised_path.
+  string materialised_path = 5;
+
+  // Nullo per le concessioni permanenti.
+  google.protobuf.Timestamp expires_at = 6;
+
+  // I ruoli di sistema non sono modificabili dal tenant; il pannello in web/ li mostra in sola
+  // lettura.
+  bool is_system = 7;
+}
+
+enum ScopeLevel {
+  SCOPE_LEVEL_UNSPECIFIED = 0;
+  SCOPE_LEVEL_TENANT = 1;
+  SCOPE_LEVEL_ORG_UNIT = 2;
+  SCOPE_LEVEL_SHIPMENT = 3;
+}
+
+message BatchIntrospectRequest {
+  // Massimo 128 elementi; oltre, la chiamata fallisce con `batch_too_large` e non viene troncata.
+  repeated IntrospectRequest items = 1;
+
+  // Tutte le voci del batch devono appartenere a questo tenant. Un batch misto è un errore di
+  // programmazione del chiamante, non un caso da gestire.
+  string tenant_id = 2;
+}
+
+message BatchIntrospectResponse {
+  // Stesso ordine e stessa cardinalità di `items` nella richiesta. Una voce non valida produce
+  // una IntrospectResponse con `active = false`, non un buco nella lista.
+  repeated IntrospectResponse items = 1;
+
+  // Quante voci sono state servite dalla cache interna invece che dal database. Esposto perché
+  // ops/ lo usa per capire se un picco di latenza dipende da identity-service o dal chiamante.
+  uint32 cache_hits = 2;
+}

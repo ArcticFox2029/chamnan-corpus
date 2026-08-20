@@ -1,0 +1,189 @@
+# =============================================================================
+# Automatické škálování.
+#
+# Škáluje se jen to, co má proměnlivou zátěž a zvládne přibrat repliku bez
+# koordinace. Vědomě tu chybí:
+#
+#   * identity-service — pevných šest replik. Škálovat kořen grafu podle
+#     zátěže znamená, že se v okamžiku špičky rozjíždí právě ta služba, na
+#     kterou v tu chvíli čeká všech třináct ostatních.
+#   * audit-ledger — zapisuje jen vedoucí instance kvůli pořadí entry_id;
+#     další repliky by přidaly jen čtenáře, ne propustnost zápisu.
+#   * geo-service — silniční graf se mapuje minutu; nová replika dorazí pozdě
+#     na to, aby špičku zachytila, a odchází dřív, než se zahřeje.
+#   * analytics-pipeline — zátěž je dávková a plánovaná, ne reaktivní.
+#
+# Kde se škáluje podle lagu konzumenta (billing-service,
+# notification-service), je to proto, že CPU u těchhle služeb neroste s
+# nedoručenou prací — zpráva čeká v tématu a procesor se nudí.
+# =============================================================================
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: container-registry
+  namespace: orbitalfreight
+  labels: { app.kubernetes.io/name: container-registry }
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: container-registry
+  minReplicas: 6
+  maxReplicas: 20
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target: { type: Utilization, averageUtilization: 65 }
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 60
+      policies:
+        - { type: Pods, value: 4, periodSeconds: 60 }
+    scaleDown:
+      # Pomalu dolů: každý odcházející pod znamená zahozený stav konzumenta a
+      # přebalancování skupiny of.freight.v1 přes 48 partition.
+      stabilizationWindowSeconds: 600
+      policies:
+        - { type: Pods, value: 1, periodSeconds: 180 }
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: telemetry-ingest
+  namespace: orbitalfreight
+  labels: { app.kubernetes.io/name: telemetry-ingest }
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: StatefulSet
+    name: telemetry-ingest
+  minReplicas: 12
+  maxReplicas: 32
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target: { type: Utilization, averageUtilization: 70 }
+    - type: Pods
+      pods:
+        # Dávky čekající na zápis. Roste dřív než CPU, protože úzké hrdlo je
+        # zápis do partition, ne ověřování podpisů.
+        metric: { name: of_ingest_pending_batches }
+        target: { type: AverageValue, averageValue: "40" }
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 30
+      policies:
+        - { type: Percent, value: 50, periodSeconds: 60 }
+    scaleDown:
+      # StatefulSet odebírá pody odzadu a s nimi i jejich PVC se spoolem.
+      # Půl hodiny je minimum, aby se rozpracované dávky stihly odeslat.
+      stabilizationWindowSeconds: 1800
+      policies:
+        - { type: Pods, value: 1, periodSeconds: 300 }
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: billing-service
+  namespace: orbitalfreight
+  labels: { app.kubernetes.io/name: billing-service }
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: billing-service
+  minReplicas: 4
+  maxReplicas: 12
+  metrics:
+    - type: External
+      external:
+        # Lag skupiny billing-service-v7 přes obě témata, ze kterých čte.
+        # Nedoručený `shipment.scanned` s proof_of_delivery drží fakturaci.
+        metric:
+          name: kafka_consumergroup_lag
+          selector:
+            matchLabels: { consumergroup: billing-service-v7 }
+        target: { type: AverageValue, averageValue: "2000" }
+    - type: Resource
+      resource:
+        name: cpu
+        target: { type: Utilization, averageUtilization: 70 }
+  behavior:
+    scaleDown:
+      stabilizationWindowSeconds: 900
+      policies:
+        - { type: Pods, value: 1, periodSeconds: 300 }
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: notification-service
+  namespace: orbitalfreight
+  labels: { app.kubernetes.io/name: notification-service }
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: notification-service
+  minReplicas: 4
+  maxReplicas: 16
+  metrics:
+    - type: External
+      external:
+        metric:
+          name: kafka_consumergroup_lag
+          selector:
+            matchLabels: { consumergroup: notification-service-v6 }
+        target: { type: AverageValue, averageValue: "5000" }
+  behavior:
+    scaleUp:
+      # Rozeslání zpráv je nárazové: jedno `shipment.status.changed` u velkého
+      # nájemce vygeneruje tisíce upozornění během vteřin.
+      stabilizationWindowSeconds: 15
+      policies:
+        - { type: Percent, value: 100, periodSeconds: 30 }
+    scaleDown:
+      stabilizationWindowSeconds: 600
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: routing-service
+  namespace: orbitalfreight
+  labels: { app.kubernetes.io/name: routing-service }
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: routing-service
+  minReplicas: 4
+  maxReplicas: 14
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target: { type: Utilization, averageUtilization: 75 }
+  behavior:
+    scaleDown:
+      stabilizationWindowSeconds: 600
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: partner-portal-api
+  namespace: orbitalfreight
+  labels: { app.kubernetes.io/name: partner-portal-api }
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: partner-portal-api
+  minReplicas: 3
+  maxReplicas: 12
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target: { type: Utilization, averageUtilization: 70 }

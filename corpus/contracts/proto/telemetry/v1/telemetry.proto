@@ -1,0 +1,165 @@
+syntax = "proto3";
+
+package telemetry.v1;
+
+import "common/v1/identifiers.proto";
+import "common/v1/money.proto";
+import "google/protobuf/timestamp.proto";
+
+// Superficie gRPC di telemetry-ingest (telemetry-ingest:9084). Variante in streaming di
+// POST /v1/ingest/batch, riservata ai gateway in edge/ che hanno un collegamento stabile e
+// possono tenere aperta una connessione invece di ripagare la stretta di mano TLS a ogni batch.
+//
+// Il servizio risolve la spedizione di ciascun contenitore chiamando
+// freight.v1.ContainerLookup/ResolveShipmentForContainer, e verifica le geofence attraversate con
+// geo.v1.GeoService/PointInFence. Non chiama mai container-registry per cambiare uno stato: la
+// spedizione passa a `at_risk` perché container-registry consuma telemetry.alert.raised.
+
+option go_package = "github.com/orbitalfreight/contracts/gen/go/telemetry/v1;telemetryv1";
+option java_package = "com.orbitalfreight.contracts.telemetry.v1";
+option java_multiple_files = true;
+
+service TelemetryIngest {
+  // Streaming lato client: il gateway invia un ReadingBatch dopo l'altro e riceve un solo
+  // IngestSummary alla chiusura dello stream. Ogni batch è firmato singolarmente — la firma copre
+  // il batch, non lo stream, perché un collegamento che cade a metà non deve invalidare i batch
+  // già accettati.
+  rpc StreamReadings(stream ReadingBatch) returns (IngestSummary);
+}
+
+// Un batch firmato così come lo produce l'agente di deposito in edge/. La deduplica avviene su
+// (region_code, ingest_batch_id, container_id, recorded_at): un gateway che ritrasmette l'intero
+// batch dopo un buco di connettività produce zero righe nuove, non duplicati.
+message ReadingBatch {
+  // gwy_<ULID> del gateway che invia.
+  string gateway_id = 1;
+
+  // Chiave di deduplica, generata dal gateway e stabile fra le ritrasmissioni dello stesso batch.
+  string ingest_batch_id = 2;
+
+  // Deve comparire in OF_TELEMETRY_ALLOWED_REGIONS del pod che riceve. Un batch di un'altra
+  // regione viene rifiutato con 403 e non reinstradato: la residenza del dato non ammette
+  // inoltri di cortesia (§7 regola 7).
+  common.v1.RegionCode region_code = 3;
+
+  // Al massimo OF_TELEMETRY_BATCH_MAX_READINGS elementi.
+  repeated Reading readings = 4;
+
+  // Firma Ed25519 sul contenuto canonico del batch, verificata contro
+  // telemetry.device_gateways.public_key. Obbligatoria ovunque tranne che con
+  // OF_TELEMETRY_SIGNATURE_REQUIRED a false, cioè solo in locale.
+  bytes signature = 5;
+
+  // Versione firmware del gateway, semver di firmware/sensor-node. Viaggia nel batch e non solo
+  // nella tabella perché serve a spiegare le anomalie di un lotto di dispositivi senza dover
+  // incrociare due sorgenti.
+  string firmware_version = 6;
+}
+
+// Una singola lettura di sensore. I campi decimali sono stringhe (common.v1.Decimal) e non
+// double: le soglie di telemetry.telemetry_alerts.threshold_value si confrontano per uguaglianza
+// esatta, e un arrotondamento in virgola mobile faceva scattare un `temp_excursion_high` a
+// 8,000000001 gradi contro una soglia di 8.
+message Reading {
+  // rdg_<ULID>, generato dal gateway. Globalmente unico, ma la chiave primaria di
+  // telemetry.telemetry_readings resta composta (region_code, reading_id) perché la tabella è
+  // partizionata per LIST(region_code).
+  string reading_id = 1;
+
+  string container_id = 2;
+
+  // Orologio del sensore. Può essere indietro di ore rispetto a received_at.
+  google.protobuf.Timestamp recorded_at = 3;
+
+  common.v1.Decimal temperature_c = 4;
+  common.v1.Decimal humidity_pct = 5;
+  common.v1.Decimal shock_g = 6;
+  bool door_open = 7;
+
+  // 0..100. Sotto la soglia configurata in OF_TELEMETRY_RULES_PATH nasce un allarme
+  // `battery_critical`.
+  uint32 battery_pct = 8;
+
+  common.v1.GeoPoint position = 9;
+}
+
+// Riepilogo restituito alla chiusura dello stream.
+message IngestSummary {
+  uint32 batches_received = 1;
+  uint32 readings_accepted = 2;
+
+  // Letture scartate perché già presenti secondo readings_dedupe_idx. Un numero alto è normale
+  // dopo una riconnessione e non è un errore.
+  uint32 readings_deduplicated = 3;
+
+  uint32 readings_rejected = 4;
+
+  // Allarmi nati durante l'elaborazione dello stream. Ognuno ha già prodotto la sua riga di
+  // platform.outbox_messages per telemetry.alert.raised.
+  repeated AlertSummary alerts_raised = 5;
+
+  google.protobuf.Timestamp received_at = 6;
+}
+
+message AlertSummary {
+  // alr_<ULID>.
+  string alert_id = 1;
+  string container_id = 2;
+
+  // Risolto tramite freight.v1.ContainerLookup/ResolveShipmentForContainer al momento in cui
+  // l'allarme nasce, e congelato: se il contenitore cambia spedizione dopo, l'allarme resta
+  // attribuito a quella di allora.
+  string shipment_id = 3;
+
+  AlertRuleCode rule_code = 4;
+
+  // 1..5. container-registry porta la spedizione in `at_risk` a partire da
+  // OF_FREIGHT_AUTO_AT_RISK_SEVERITY.
+  uint32 severity = 5;
+
+  common.v1.Decimal threshold_value = 6;
+  common.v1.Decimal peak_value = 7;
+  string first_reading_id = 8;
+  google.protobuf.Timestamp opened_at = 9;
+}
+
+// Rispecchia il CHECK su telemetry.telemetry_alerts.rule_code. Le soglie non sono qui: stanno nel
+// file YAML puntato da OF_TELEMETRY_RULES_PATH, perché cambiano per tenant e per corridoio e non
+// vogliamo un rilascio di contratto per un grado in più.
+enum AlertRuleCode {
+  ALERT_RULE_CODE_UNSPECIFIED = 0;
+  ALERT_RULE_CODE_TEMP_EXCURSION_HIGH = 1;
+  ALERT_RULE_CODE_TEMP_EXCURSION_LOW = 2;
+  ALERT_RULE_CODE_HUMIDITY_HIGH = 3;
+  ALERT_RULE_CODE_SHOCK_IMPACT = 4;
+  ALERT_RULE_CODE_DOOR_OPEN_IN_TRANSIT = 5;
+  ALERT_RULE_CODE_BATTERY_CRITICAL = 6;
+
+  // Non nasce da una lettura ma dalla loro assenza: silenzio oltre
+  // OF_TELEMETRY_HEARTBEAT_TIMEOUT_MINUTES su POST /v1/gateways/{gateway_id}/heartbeat.
+  ALERT_RULE_CODE_GATEWAY_SILENT = 7;
+
+  // Prodotto confrontando la posizione con geo.v1.GeoService/PointInFence.
+  ALERT_RULE_CODE_GEOFENCE_BREACH = 8;
+}
+
+// Rappresentazione di telemetry.device_gateways per i client che elencano i dispositivi di un
+// deposito. Non ha una RPC dedicata: la espone GET /v1/gateways/{gateway_id}/heartbeat come eco
+// della registrazione, ed è qui perché anche il pannello in web/ la genera da questo file.
+message DeviceGateway {
+  string gateway_id = 1;
+  string serial = 2;
+
+  // dep_<ULID>, FK logica verso fleet.depots. Nullo per i gateway mobili montati sul veicolo.
+  string depot_id = 3;
+
+  common.v1.RegionCode region_code = 4;
+  string firmware_version = 5;
+  google.protobuf.Timestamp last_heartbeat_at = 6;
+  google.protobuf.Timestamp provisioned_at = 7;
+  google.protobuf.Timestamp decommissioned_at = 8;
+
+  // DEPRECATO: la chiave pubblica Ed25519 non viene più restituita a nessun client. Era comoda per
+  // il debug in campo e si è rivelata un modo elegante per farsi copiare l'identità di un gateway.
+  string public_key = 9 [deprecated = true];
+}

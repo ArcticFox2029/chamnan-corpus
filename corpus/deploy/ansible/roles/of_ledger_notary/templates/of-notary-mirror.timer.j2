@@ -1,0 +1,19 @@
+# =============================================================================
+# Časovač zrcadla. Perioda kopíruje OF_LEDGER_CHECKPOINT_INTERVAL_MINUTES.
+#
+# RandomizedDelaySec rozhazuje běhy mezi stroji, aby všechna zrcadla nebušila
+# na notáře v tutéž vteřinu; Persistent=true dožene běh zameškaný restartem
+# stroje, protože vynechaná hodina je díra v důkazním řetězci.
+# =============================================================================
+[Unit]
+Description=Hodinové zrcadlení checkpointů audit-ledgeru
+
+[Timer]
+OnCalendar=*:0/{{ of_notary_interval_minutes }}
+RandomizedDelaySec={{ of_notary_jitter_seconds }}
+Persistent=true
+AccuracySec=30s
+Unit={{ of_notary_unit }}
+
+[Install]
+WantedBy=timers.target

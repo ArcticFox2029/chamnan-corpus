@@ -1,0 +1,78 @@
+# مساحة الأسماء التي تعيش فيها الخدمات الأربع عشرة، وحصصها، وصنف الأولوية الذي يفصل ما لا
+# يجوز إخلاؤه عمّا يجوز. النشر نفسه (Deployment وService لكل خدمة) يأتي من
+# ops/terraform/modules/service-workload؛ ما هنا هو الإطار الذي تسكنه ولا يملكه أحد بمفرده.
+
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: orbitalfreight
+  labels:
+    of.orbitalfreight/managed-by: ops
+    # التسمية تفعّل قيود الأمان على مستوى الجرابات. لا خدمة من §1 تحتاج امتيازاً: كلها
+    # عمليات مستمعة على منفذ فوق 1024 ولا واحدة منها تلمس الشبكة المضيفة.
+    pod-security.kubernetes.io/enforce: restricted
+    pod-security.kubernetes.io/audit: restricted
+---
+# الحصّة تحمي الإقليم من نفسه. telemetry-ingest وحدها قادرة على ابتلاع العنقود حين ترتفع
+# دفعات المستشعرات، وسقف على مستوى مساحة الأسماء أرحم من مجدول يوقف identity-service كي
+# يفسح لها مكاناً — وسقوط identity-service يوقف كل تحقّق من الرموز في الإقليم.
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: orbitalfreight-quota
+  namespace: orbitalfreight
+spec:
+  hard:
+    requests.cpu: "120"
+    requests.memory: 240Gi
+    limits.cpu: "260"
+    limits.memory: 480Gi
+    persistentvolumeclaims: "24"
+    count/deployments.apps: "20"
+    count/cronjobs.batch: "12"
+---
+# الحدّ الافتراضي لجراب لم يعلن موارده. القيمة صغيرة عمداً: من ينسى الإعلان يجب أن يلاحظ
+# البطء فوراً، لا أن يحصل بصمت على حصّة سخيّة من العنقود.
+apiVersion: v1
+kind: LimitRange
+metadata:
+  name: orbitalfreight-defaults
+  namespace: orbitalfreight
+spec:
+  limits:
+    - type: Container
+      default:
+        cpu: 500m
+        memory: 512Mi
+      defaultRequest:
+        cpu: 100m
+        memory: 128Mi
+---
+# identity-service جذر الرسم في §1.2: الثلاث عشرة الأخرى تناديها قبل أن تتصرّف بأي طلب.
+# صنف أولوية أعلى يعني أنها آخر ما يُخلى عند ضغط العقد، لا أول ما يقع.
+apiVersion: scheduling.k8s.io/v1
+kind: PriorityClass
+metadata:
+  name: of-platform-root
+value: 1000000
+globalDefault: false
+description: "identity-service وaudit-ledger — سقوطهما يوقف كل ما عداهما أو يقطع سلسلة التدقيق"
+---
+apiVersion: scheduling.k8s.io/v1
+kind: PriorityClass
+metadata:
+  name: of-hot-path
+value: 500000
+globalDefault: true
+description: "الخدمات في مسار الطلب: container-registry وgeo-service وdocument-service وtelemetry-ingest"
+---
+# analytics-pipeline وreconciliation-service دفعيّتان. إخلاؤهما وسط ذروة مقبول تماماً:
+# التسوية تُعاد من أوّلها في تشغيل لاحق، وmv_lane_performance_daily تُنعش في موعدها من
+# OF_ANALYTICS_MV_REFRESH_CRON ولا أحد ينتظرها لحظياً.
+apiVersion: scheduling.k8s.io/v1
+kind: PriorityClass
+metadata:
+  name: of-batch
+value: 100000
+globalDefault: false
+description: "الأحمال الدفعية — قابلة للإخلاء وإعادة التشغيل"

@@ -1,0 +1,706 @@
+# I tipi di dominio esposti dal gateway. Ogni tipo appartiene a un solo servizio, indicato con
+# @servedBy: il gateway non fa join fra schemi del database — quella regola vale anche per lui —
+# ma compone chiamando i servizi proprietari uno dopo l'altro.
+#
+# I campi che il portale partner non deve vedere sono marcati @internalOnly e vengono rimossi
+# dallo schema ridotto a tempo di build.
+
+"""
+Una spedizione. Sistema di riferimento: `freight.shipments`, di proprietà di container-registry.
+"""
+type Shipment @servedBy(service: "container-registry") {
+  id: ULID!
+  tenantId: ULID!
+
+  "Riferimento di prenotazione del cliente, unico per tenant e non globalmente."
+  reference: String!
+
+  originFacility: Facility!
+  destinationFacility: Facility!
+
+  "Incoterm a tre lettere. Determina chi paga il dazio e quindi se compare una riga `duty_disbursement`."
+  incoterm: String!
+
+  status: ShipmentStatus!
+  slaDeadlineAt: DateTime
+
+  "Valore dichiarato del carico. Non esiste nello schema ridotto del portale partner."
+  declaredValue: Money @internalOnly
+
+  regionCode: RegionCode!
+  createdAt: DateTime!
+  deliveredAt: DateTime
+
+  containers: [ShipmentContainer!]!
+
+  "Il percorso scansioni, dal più recente. Serve GET /v1/shipments/{shipment_id}/scans."
+  scans(first: Int = 50, after: String): ScanEventConnection!
+
+  "La rotta corrente, cioè `routing.routes` con `is_current`. Nulla finché routing-service non ha pianificato."
+  route: Route @servedBy(service: "routing-service")
+
+  "Le dichiarazioni doganali della spedizione, in ordine di deposito."
+  declarations: [CustomsDeclaration!]! @servedBy(service: "customs-service")
+
+  "Le fatture emesse per la spedizione. Vuoto finché non c'è una prova di consegna."
+  invoices: [Invoice!]! @servedBy(service: "billing-service") @requiresScope(scope: "billing:read")
+
+  "Allarmi telemetrici ancora aperti sui contenitori della spedizione."
+  openAlerts: [TelemetryAlert!]! @servedBy(service: "telemetry-ingest")
+}
+
+enum ShipmentStatus {
+  DRAFT
+  BOOKED
+  SEALED
+  IN_TRANSIT
+  AT_RISK
+  HELD_AT_CUSTOMS
+  DELIVERED
+  CANCELLED
+}
+
+"""
+L'accoppiamento fra una spedizione e un contenitore, con il sigillo che appartiene alla coppia e
+non a nessuno dei due lati. Corrisponde a `freight.shipment_containers`.
+"""
+type ShipmentContainer @servedBy(service: "container-registry") {
+  container: Container!
+
+  "Validato contro OF_FREIGHT_SEAL_FORMAT_REGEX al momento dell'attacco."
+  sealNumber: String!
+
+  grossKg: Long!
+  loadedAt: DateTime
+  unloadedAt: DateTime
+}
+
+type Container @servedBy(service: "container-registry") {
+  id: ULID!
+
+  "Codice BIC di undici caratteri, per esempio 'MSCU3948571'."
+  isoCode: String!
+
+  "Quattro caratteri ISO 6346: '45R1' è un 40 piedi high-cube reefer."
+  isoSizeType: String!
+
+  ownerCarrier: Carrier @servedBy(service: "fleet-service")
+  tareWeightKg: Long!
+  maxGrossKg: Long!
+  isReefer: Boolean!
+
+  "Temperatura di consegna impostata. Significativa solo per i reefer."
+  setpointC: Float
+
+  """
+  Ultima lettura vista. Approssimata per costruzione: container-registry la aggiorna consumando
+  `telemetry.reading.recorded`, che è campionato una su OF_TELEMETRY_PUBLISH_SAMPLE_RATE. Va bene
+  per mostrare «visto l'ultima volta», non per fare conti.
+  """
+  lastReadingAt: DateTime
+
+  hazardClasses: [HazardClass!]!
+
+  "Serie completa delle letture nella finestra richiesta, servita dalla partizione di regione."
+  readings(from: DateTime!, to: DateTime!, first: Int = 200, after: String): TelemetryReadingConnection!
+    @servedBy(service: "telemetry-ingest")
+
+  retiredAt: DateTime
+}
+
+type HazardClass {
+  "Codice di classe: '3', '6.1', '8'."
+  code: String!
+  unDivision: String!
+  placardLabel: String!
+  segregationGroup: String
+  isPrimary: Boolean!
+}
+
+type Facility @servedBy(service: "container-registry") {
+  id: ULID!
+  kind: FacilityKind!
+  name: String!
+  countryCode: CountryCode!
+  unlocode: UnLocode
+  regionCode: RegionCode!
+
+  "La recinzione che delimita la struttura, risolta via geo.v1.GeoService/ResolveGeofence."
+  geofence: Geofence! @servedBy(service: "geo-service")
+}
+
+enum FacilityKind {
+  SEAPORT
+  AIRPORT
+  RAIL_TERMINAL
+  WAREHOUSE
+  CUSTOMER_SITE
+  BONDED_STORE
+}
+
+type ScanEvent @servedBy(service: "container-registry") {
+  id: ULID!
+  scanType: ScanType!
+  container: Container
+  facility: Facility
+  scannedByUserId: ULID!
+
+  "Quando è avvenuta secondo l'orologio del terminale."
+  occurredAt: DateTime!
+
+  "Quando container-registry l'ha ricevuta. Divergono quando l'app inspector-android era offline."
+  recordedAt: DateTime!
+
+  position: GeoPoint
+  deviceSerial: String
+  notes: String
+
+  "Documenti allegati alla scansione: firma di consegna, foto del danno."
+  documents: [Document!]! @servedBy(service: "document-service")
+}
+
+enum ScanType {
+  GATE_IN
+  GATE_OUT
+  LOAD
+  UNLOAD
+  SEAL_CHECK
+  CUSTOMS_INSPECTION
+  DAMAGE_REPORT
+  PROOF_OF_DELIVERY
+}
+
+type Route @servedBy(service: "routing-service") {
+  id: ULID!
+  shipmentId: ULID!
+
+  "Monotona per spedizione: ogni ripianificazione la incrementa."
+  version: Int!
+
+  isCurrent: Boolean!
+
+  "usr_… oppure 'svc:routing-service' quando la rotta nasce da una ripianificazione automatica."
+  plannedBy: String!
+
+  strategy: RouteStrategy!
+  totalDistanceM: Long!
+  totalDurationS: Int!
+  legs: [RouteLeg!]!
+  computedAt: DateTime!
+  supersededAt: DateTime
+}
+
+enum RouteStrategy {
+  CHEAPEST
+  FASTEST
+  LOWEST_CARBON
+  CUSTOMS_OPTIMISED
+  MANUAL
+}
+
+type RouteLeg @servedBy(service: "routing-service") {
+  id: ULID!
+  seqNo: Int!
+  mode: TransportMode!
+  fromFacility: Facility!
+  toFacility: Facility!
+
+  "Il valico scelto per la tratta, quando ne attraversa uno."
+  crossing: BorderCrossing @servedBy(service: "geo-service")
+
+  plannedDepartAt: DateTime!
+  plannedArriveAt: DateTime!
+  actualDepartAt: DateTime
+  actualArriveAt: DateTime
+  distanceM: Long!
+
+  "L'assegnamento veicolo+conducente attivo sulla tratta, se ce n'è uno."
+  assignment: VehicleAssignment @servedBy(service: "fleet-service")
+}
+
+enum TransportMode {
+  ROAD
+  RAIL
+  SEA
+  AIR
+  BARGE
+}
+
+type Geofence @servedBy(service: "geo-service") {
+  id: ULID!
+
+  "Nullo per le recinzioni condivise: un porto o una zona di confine non appartengono a un tenant."
+  tenantId: ULID
+
+  name: String!
+  kind: GeofenceKind!
+
+  "Anello esterno chiuso in WGS84, semplificato secondo OF_GEO_SIMPLIFY_TOLERANCE_M."
+  boundary: [GeoPoint!]!
+
+  "Tolleranza allo scarto GPS in ingresso e in uscita, predefinita 50 metri."
+  bufferM: Int!
+
+  dwellAlertMinutes: Int
+}
+
+enum GeofenceKind {
+  FACILITY
+  DEPOT
+  BORDER_ZONE
+  RESTRICTED
+  CUSTOMER_SITE
+  CORRIDOR
+}
+
+type BorderCrossing @servedBy(service: "geo-service") {
+  id: ULID!
+  fromCountry: CountryCode!
+  toCountry: CountryCode!
+  unlocode: UnLocode!
+
+  "Citato su ogni `customs.customs_declarations` depositata a questo valico."
+  customsOfficeCode: String!
+
+  modesAllowed: [TransportMode!]!
+
+  "Ricalcolato ogni notte da analytics-pipeline; routing-service lo usa come stima a priori."
+  avgDwellMinutes: Int!
+
+  open24h: Boolean!
+  geofence: Geofence!
+}
+
+type Carrier @servedBy(service: "fleet-service") {
+  id: ULID!
+  name: String!
+  countryCode: CountryCode!
+
+  "Codice SCAC di quattro lettere. Nullo per i vettori non statunitensi."
+  scacCode: String
+
+  insuranceExpiresOn: Date!
+  isSubcontractor: Boolean!
+  vehicles(first: Int = 50, after: String): VehicleConnection!
+}
+
+type Vehicle @servedBy(service: "fleet-service") {
+  id: ULID!
+  plate: String!
+  plateCountry: CountryCode!
+  vehicleClass: VehicleClass!
+  maxPayloadKg: Long!
+
+  "Seriale del telematico di bordo; coincide con `telemetry.device_gateways.serial`."
+  telematicsUnitId: String
+
+  adrCertified: Boolean!
+  decommissionedAt: DateTime
+}
+
+enum VehicleClass {
+  VAN
+  RIGID
+  TRACTOR
+  CHASSIS
+  REEFER_TRACTOR
+  RAIL_WAGON
+  BARGE
+}
+
+type Driver @servedBy(service: "fleet-service") {
+  id: ULID!
+  fullName: String!
+
+  "Numero e paese di patente non sono esposti al portale partner."
+  licenceNumber: String! @internalOnly
+  licenceCountry: CountryCode!
+  licenceExpiresOn: Date!
+  adrExpiresOn: Date
+  phoneE164: String! @internalOnly
+
+  "Secondi di guida residui nella finestra corrente, secondo OF_FLEET_HOS_RULESET."
+  remainingDriveSeconds: Int!
+}
+
+type VehicleAssignment @servedBy(service: "fleet-service") {
+  id: ULID!
+  vehicle: Vehicle!
+  driver: Driver!
+  shipmentId: ULID!
+  legId: ULID
+  assignedAt: DateTime!
+  releasedAt: DateTime
+  assignedBy: String!
+}
+
+type TelemetryReading @servedBy(service: "telemetry-ingest") {
+  id: ULID!
+  containerId: ULID!
+  gatewayId: ULID!
+  regionCode: RegionCode!
+
+  "Orologio del sensore."
+  recordedAt: DateTime!
+
+  "Orologio di telemetry-ingest. Può essere ore dopo, se il gateway era senza collegamento."
+  receivedAt: DateTime!
+
+  temperatureC: Float
+  humidityPct: Float
+  shockG: Float
+  doorOpen: Boolean
+  batteryPct: Int
+  position: GeoPoint
+}
+
+type TelemetryAlert @servedBy(service: "telemetry-ingest") {
+  id: ULID!
+  container: Container!
+
+  "Congelato al momento in cui l'allarme è nato: se il contenitore cambia spedizione dopo, resta questo."
+  shipmentId: ULID
+
+  ruleCode: AlertRuleCode!
+
+  "Da 1 a 5. Da OF_FREIGHT_AUTO_AT_RISK_SEVERITY in su, container-registry porta la spedizione in AT_RISK."
+  severity: Int!
+
+  thresholdValue: Float!
+  peakValue: Float
+  openedAt: DateTime!
+  closedAt: DateTime
+  acknowledgedBy: ULID
+  acknowledgedAt: DateTime
+}
+
+enum AlertRuleCode {
+  TEMP_EXCURSION_HIGH
+  TEMP_EXCURSION_LOW
+  HUMIDITY_HIGH
+  SHOCK_IMPACT
+  DOOR_OPEN_IN_TRANSIT
+  BATTERY_CRITICAL
+  GATEWAY_SILENT
+  GEOFENCE_BREACH
+}
+
+type CustomsDeclaration @servedBy(service: "customs-service") {
+  id: ULID!
+  shipmentId: ULID!
+  crossing: BorderCrossing!
+  customsOfficeCode: String!
+  direction: DeclarationDirection!
+  status: DeclarationStatus!
+
+  "Assegnato dall'autorità all'accettazione. Nullo finché la dichiarazione non è stata accettata."
+  mrn: String
+
+  lines: [DeclarationLine!]!
+  assessedDuty: Money
+  assessedVat: Money
+
+  """
+  Vero solo dopo che billing-service ha pubblicato `billing.invoice.settled`. È l'unica cosa che
+  valorizza questo campo: customs-service non chiama mai billing-service per chiederlo.
+  """
+  dutyPaid: Boolean!
+
+  filedAt: DateTime
+  clearedAt: DateTime
+  documents: [Document!]! @servedBy(service: "document-service")
+}
+
+enum DeclarationDirection {
+  IMPORT
+  EXPORT
+  TRANSIT
+}
+
+enum DeclarationStatus {
+  DRAFT
+  SUBMITTED
+  UNDER_REVIEW
+  HELD
+  CLEARED
+  REJECTED
+  AMENDED
+}
+
+type DeclarationLine @servedBy(service: "customs-service") {
+  id: ULID!
+  seqNo: Int!
+
+  "Voce doganale a dieci cifre."
+  hsCode: String!
+
+  description: String!
+  originCountry: CountryCode!
+  quantity: Float!
+
+  "Unità UN/ECE Rec 20: 'KGM', 'PCE', 'LTR'."
+  unit: String!
+
+  netWeightKg: Float!
+  customsValue: Money!
+
+  "La riga di tariffa usata al momento della valutazione, congelata perché una modifica successiva non riscriva la storia."
+  tariff: TariffScheduleRow
+  duty: Money
+}
+
+type TariffScheduleRow @servedBy(service: "customs-service") {
+  id: ULID!
+  hsCode: String!
+  destinationCountry: CountryCode!
+
+  "Nullo quando la riga vale per qualsiasi origine."
+  originCountry: CountryCode
+
+  "Aliquote in punti base: 1250 = 12,50 %."
+  dutyRateBp: Int!
+  vatRateBp: Int!
+
+  preferentialScheme: String
+  validFrom: DateTime!
+  validTo: DateTime
+}
+
+type Invoice @servedBy(service: "billing-service") {
+  id: ULID!
+  shipmentId: ULID!
+
+  "Senza salti per tenant e per anno. Nullo finché la fattura non è emessa."
+  invoiceNumber: String
+
+  status: InvoiceStatus!
+  subtotal: Money!
+  duty: Money!
+  tax: Money!
+  total: Money!
+
+  "Valorizzato quando reconciliation-service ha aperto una discrepanza di un tipo che blocca."
+  holdReason: String
+
+  issuedAt: DateTime
+  dueOn: Date
+  settledAt: DateTime
+  lines: [InvoiceLine!]!
+  payments: [Payment!]!
+
+  "Il PDF prodotto all'emissione, depositato su document-service con kind `rendered_invoice`."
+  renderedDocument: Document @servedBy(service: "document-service")
+}
+
+enum InvoiceStatus {
+  DRAFT
+  ISSUED
+  PART_PAID
+  SETTLED
+  ON_HOLD
+  VOID
+  WRITTEN_OFF
+}
+
+type InvoiceLine {
+  id: ULID!
+  seqNo: Int!
+  chargeCode: ChargeCode!
+  description: String!
+  quantity: Float!
+  unitPrice: Money!
+  amount: Money!
+
+  "Da quale fatto nasce la riga: 'leg', 'alert', 'declaration', 'assignment', 'manual'."
+  sourceKind: String
+  sourceId: ULID
+}
+
+enum ChargeCode {
+  LINEHAUL
+  FUEL_SURCHARGE
+  DEMURRAGE
+  DETENTION
+  REEFER_POWER
+  CUSTOMS_CLEARANCE
+  DUTY_DISBURSEMENT
+  HAZMAT_HANDLING
+  WAITING_TIME
+}
+
+type Payment {
+  id: ULID!
+  method: PaymentMethod!
+  amount: Money!
+  receivedAt: DateTime!
+
+  "Riferimento del PSP o dell'estratto conto. Insieme al metodo è la chiave di idempotenza contro la reimportazione dei file bancari."
+  externalRef: String
+
+  reversedAt: DateTime
+}
+
+enum PaymentMethod {
+  SEPA_DD
+  SWIFT
+  CARD
+  CREDIT_NOTE
+  CASH
+}
+
+type Document @servedBy(service: "document-service") {
+  id: ULID!
+  ownerType: DocumentOwnerType!
+  ownerId: ULID!
+  kind: DocumentKind!
+  mimeType: String!
+  byteSize: Long!
+
+  "Impronta esadecimale minuscola. Due caricamenti con la stessa impronta condividono un solo blob."
+  sha256: String!
+
+  regionCode: RegionCode!
+  uploadedBy: ULID!
+  uploadedAt: DateTime!
+
+  "Finché è nel futuro, la cancellazione è rifiutata."
+  retainedUntil: Date
+}
+
+enum DocumentOwnerType {
+  SHIPMENT
+  CONTAINER
+  SCAN
+  DECLARATION
+  INVOICE
+  CARRIER
+}
+
+enum DocumentKind {
+  BILL_OF_LADING
+  COMMERCIAL_INVOICE
+  PACKING_LIST
+  CERTIFICATE_OF_ORIGIN
+  PROOF_OF_DELIVERY
+  DAMAGE_PHOTO
+  INSURANCE_CERTIFICATE
+  CUSTOMS_DECISION
+  RENDERED_INVOICE
+  CREDIT_NOTE
+}
+
+type ReconciliationDiscrepancy @servedBy(service: "reconciliation-service") {
+  id: ULID!
+  runId: ULID!
+  shipmentId: ULID!
+  declarationId: ULID
+  invoiceId: ULID
+  kind: DiscrepancyKind!
+
+  "Nulli per le discrepanze non monetarie."
+  expected: Money
+  observed: Money
+
+  state: DiscrepancyState!
+  openedAt: DateTime!
+  resolvedAt: DateTime
+  resolvedBy: ULID
+  resolutionNote: String
+}
+
+enum DiscrepancyKind {
+  MISSING_DECLARATION
+  MISSING_INVOICE
+  DUTY_MISMATCH
+  WEIGHT_MISMATCH
+  ORPHAN_PAYMENT
+  UNBILLED_ACCESSORIAL
+  CLEARED_WITHOUT_PAYMENT
+}
+
+enum DiscrepancyState {
+  OPEN
+  ACKNOWLEDGED
+  RESOLVED
+  WAIVED
+}
+
+"""
+Una riga di `analytics.mv_lane_performance_daily`. Vista materializzata, rinfrescata alle 03:15
+UTC: i dati di oggi non ci sono ancora, e chiederli non è un errore ma restituisce lista vuota.
+"""
+type LanePerformance @servedBy(service: "analytics-pipeline") {
+  businessDate: Date!
+  originUnlocode: UnLocode!
+  destinationUnlocode: UnLocode!
+  primaryMode: TransportMode!
+  shipmentCount: Int!
+  onTimeCount: Int!
+  avgTransitSeconds: Long!
+  p95TransitSeconds: Long!
+  excursionAlerts: Int!
+}
+
+"""
+Una riga di `analytics.mv_container_utilisation_weekly`, che alimenta il rapporto «box fermo»
+della console.
+"""
+type ContainerUtilisation @servedBy(service: "analytics-pipeline") {
+  containerId: ULID!
+  isoSizeType: String!
+  weekStart: Date!
+  trips: Int!
+  totalGrossKg: Long!
+  maxGrossKg: Long!
+  fillRatePct: Float
+}
+
+type ScanEventConnection {
+  edges: [ScanEventEdge!]!
+  pageInfo: PageInfo!
+}
+
+type ScanEventEdge {
+  node: ScanEvent!
+  cursor: String!
+}
+
+type ShipmentConnection {
+  edges: [ShipmentEdge!]!
+  pageInfo: PageInfo!
+}
+
+type ShipmentEdge {
+  node: Shipment!
+  cursor: String!
+}
+
+type VehicleConnection {
+  edges: [VehicleEdge!]!
+  pageInfo: PageInfo!
+}
+
+type VehicleEdge {
+  node: Vehicle!
+  cursor: String!
+}
+
+type TelemetryReadingConnection {
+  edges: [TelemetryReadingEdge!]!
+  pageInfo: PageInfo!
+}
+
+type TelemetryReadingEdge {
+  node: TelemetryReading!
+  cursor: String!
+}
+
+type InvoiceConnection {
+  edges: [InvoiceEdge!]!
+  pageInfo: PageInfo!
+}
+
+type InvoiceEdge {
+  node: Invoice!
+  cursor: String!
+}

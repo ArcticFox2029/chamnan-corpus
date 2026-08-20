@@ -1,0 +1,31 @@
+# =============================================================================
+# Šablona chrony.conf pro uzly ORBITALFREIGHT.
+#
+# Přesný čas není na téhle platformě komfort. Závisí na něm tři věci:
+# tolerance posunu hodin u scanů (OF_FREIGHT_SCAN_CLOCK_SKEW_TOLERANCE_S),
+# monotónní entry_id v platform.audit_ledger_entries a časové okno, ve kterém
+# se dá dávka telemetrie ještě zařadit do správné denní partice.
+#
+# Generováno rolí of_common, ruční změny přepíše první běh site.yml.
+# =============================================================================
+{% for server in of_common_ntp_servers %}
+server {{ server }} iburst minpoll 4 maxpoll 8
+{% endfor %}
+
+driftfile /var/lib/chrony/chrony.drift
+makestep 0.5 3
+rtcsync
+leapsectz right/UTC
+
+# Skok větší než sekunda se loguje — je to signál, že stroj byl mimo síť déle,
+# než nám vyhovuje, a že dávky odeslané mezitím můžou mít posunuté occurred_at.
+logdir /var/log/chrony
+log measurements statistics tracking
+
+maxupdateskew 100.0
+{% if 'of_edge' in group_names %}
+# Depotní brány běží často na spoji s velkou latencí; bez tohohle by chrony
+# odmítl zdroj jako nedůvěryhodný a stroj by zůstal na hodinách z BIOSu.
+maxdistance 16.0
+maxjitter 2.0
+{% endif %}

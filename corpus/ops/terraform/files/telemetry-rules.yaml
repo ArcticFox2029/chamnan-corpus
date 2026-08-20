@@ -1,0 +1,88 @@
+# عتبات القواعد الثماني في CHECK على telemetry.telemetry_alerts.rule_code. يُركَّب هذا الملف
+# على جرابات telemetry-ingest عند المسار الذي يشير إليه OF_TELEMETRY_RULES_PATH، ويُقرأ عند
+# الإقلاع فقط — تعديله يحتاج دورة جرابات كاملة، وهو ما تعتمد عليه incident/telemetry-alert-storm.sh
+# حين تتراجع عن نشر عتبات خاطئة.
+#
+# الخطورة من 1 إلى 5. القيمة التي تقلب الشحنة إلى at_risk ليست هنا: تلك عتبة
+# container-registry واسمها OF_FREIGHT_AUTO_AT_RISK_SEVERITY، وتُطبَّق عند استهلاك
+# telemetry.alert.raised لا عند رفعه.
+
+version: 3
+
+rules:
+  - rule_code: temp_excursion_high
+    # الحمولة المبرّدة القياسية: انحراف لدقائق مقبول، ومتوسط عشر دقائق فوق العتبة ليس كذلك.
+    # نقيس على متوسط النافذة لا على قراءة مفردة، لأن فتح باب واحداً يرفع المستشعر لثوانٍ.
+    field: temperature_c
+    comparison: greater_than
+    threshold: 8.00
+    window_minutes: 10
+    aggregate: mean
+    severity: 4
+
+  - rule_code: temp_excursion_low
+    field: temperature_c
+    comparison: less_than
+    threshold: -0.50
+    window_minutes: 10
+    aggregate: mean
+    severity: 4
+
+  - rule_code: humidity_high
+    field: humidity_pct
+    comparison: greater_than
+    threshold: 85.00
+    window_minutes: 30
+    aggregate: mean
+    severity: 2
+
+  - rule_code: shock_impact
+    # صدمة واحدة تكفي: لا متوسط ولا نافذة. أربعة جي على حاوية تعني سقوطاً أو اصطداماً،
+    # وتوسيطها على نافذة يخفيها تماماً.
+    field: shock_g
+    comparison: greater_than
+    threshold: 4.000
+    window_minutes: 0
+    aggregate: peak
+    severity: 5
+
+  - rule_code: door_open_in_transit
+    # مشروطة بحالة الشحنة: الباب المفتوح في مستودع أمر يومي، والباب المفتوح وهي in_transit
+    # ليس كذلك. الحالة تأتي من container-registry عبر
+    # freight.v1.ContainerLookup/ResolveShipmentForContainer عند رفع التنبيه.
+    field: door_open
+    comparison: equals
+    threshold: 1
+    window_minutes: 2
+    aggregate: any
+    requires_shipment_status: in_transit
+    severity: 5
+
+  - rule_code: battery_critical
+    field: battery_pct
+    comparison: less_than
+    threshold: 10
+    window_minutes: 60
+    aggregate: mean
+    severity: 3
+
+  - rule_code: gateway_silent
+    # هذه القاعدة لا تُقيَّم على قراءة بل على غيابها، ومهلتها من
+    # OF_TELEMETRY_HEARTBEAT_TIMEOUT_MINUTES. تُنتج gateway.heartbeat.missed أيضاً، وهو حدث
+    # مستقلّ يذهب إلى notification-service وanalytics-pipeline.
+    field: last_heartbeat_at
+    comparison: older_than_minutes
+    threshold: 15
+    window_minutes: 0
+    aggregate: none
+    severity: 3
+
+  - rule_code: geofence_breach
+    # النقطة تُطابَق مقابل السياج عبر geo.v1.GeoService/PointInFence مع buffer_m مطبَّقاً.
+    # الهامش خمسون متراً لأن قراءة GPS داخل ميناء تنحرف بذلك القدر بلا أي عطل حقيقي.
+    field: position
+    comparison: outside_fence
+    buffer_m: 50
+    window_minutes: 5
+    aggregate: majority
+    severity: 4

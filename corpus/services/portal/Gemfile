@@ -1,0 +1,30 @@
+# frozen_string_literal: true
+#
+# Dépendances du portail d'exploitation. La liste est courte à dessein : le portail ne détient
+# aucune donnée, ne consomme aucun topic et n'ouvre aucune connexion à PostgreSQL — il n'a donc
+# ni ORM, ni client Kafka, ni pilote de base. Toute demande d'ajout dans ces trois familles
+# signifie qu'un écran est en train de contourner l'API d'un service de §1.
+
+source 'https://rubygems.org'
+
+ruby '3.3.0'
+
+gem 'puma', '~> 6.4'
+gem 'rack', '~> 3.0'
+gem 'sinatra', '~> 4.0'
+
+# Le portail vérifie les jetons RS256 hors ligne contre le JWKS d'identity-service
+# (OF_IDENTITY_JWKS_URL) : c'est le mode dégradé décrit en §1.2, et pour ce portail c'est le
+# mode normal, faute de pile gRPC pour appeler identity.v1.TokenIntrospection/Introspect.
+gem 'jwt', '~> 2.8'
+
+# Net::HTTP de la bibliothèque standard suffit pour les huit clients amont. Une pile HTTP tierce
+# a été essayée puis retirée : elle réécrivait les en-têtes en casse canonique, et X-OF-Tenant
+# comme X-OF-Trace-Id (§0.3) traversaient l'ingress sous une forme que le WAF ne reconnaissait pas.
+
+group :development, :test do
+  gem 'minitest', '~> 5.22'
+  gem 'rack-test', '~> 2.1'
+  gem 'rubocop', '~> 1.62', require: false
+  gem 'webmock', '~> 3.23'
+end

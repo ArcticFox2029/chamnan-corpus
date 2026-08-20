@@ -1,0 +1,103 @@
+# =============================================================================
+# Výchozí hodnoty chartu of-service.
+#
+# Struktura kopíruje to, jak SPEC.md popisuje službu: identita (§1), síť
+# (§1 porty), odchozí hrany (§1.1), vlastní proměnné (§5.2-§5.15) a provozní
+# nastavení. Nic z toho nemá "univerzálně správnou" hodnotu — soubor je
+# schválně nastavený tak, aby nasazení bez -f values-<prostředí>.yaml sice
+# prošlo šablonováním, ale spadlo na kontrole v _helpers.tpl, která ověřuje,
+# že `service.name` je jméno ze §1.
+# =============================================================================
+
+service:
+  # Musí být přesné jméno ze §1 SPEC.md. Šablona ho používá jako
+  # OF_SERVICE_NAME, jako jméno Service i jako `producer` v obálce události.
+  name: ""
+  httpPort: 0
+  # Prázdné u služeb bez gRPC plochy. Nenastavovat OF_GRPC_PORT je záměr, ne
+  # opomenutí — §5.1 říká, že proměnná se u takové služby vůbec nesetuje.
+  grpcPort: null
+  # Vlastnící schéma podle §2. null u partner-portal-api, která žádné nemá.
+  schema: null
+  # Topologické pořadí z §1.1; používá se jen jako popisek a pro řazení
+  # rolloutu skriptem v ops/.
+  restartWave: 3
+  language: ""
+
+image:
+  registry: registry.orbitalfreight.net
+  repository: of
+  tag: ""              # prázdné = appVersion z Chart.yaml
+  pullPolicy: IfNotPresent
+  pullSecret: of-registry-pull
+
+replicaCount: 2
+
+# Odchozí hrany z §1.1. Šablona z tohohle seznamu poskládá adresní proměnné.
+# Cíl, který tu není, službě do prostředí nepropadne — a hrana, která v §1.1
+# není, se sem nesmí dopsat ani "dočasně kvůli ladění".
+outbound: []
+
+kafka:
+  # Prázdné u služeb, které jen publikují (identity-service, geo-service).
+  consumerGroup: ""
+
+# Proměnné z §5.2 až §5.15 vlastní té konkrétní službě.
+env: {}
+
+# Secrety připojené jako proměnné nebo svazky.
+secretEnvFrom: []
+secretVolumes: []
+
+resources:
+  requests:
+    cpu: 200m
+    memory: 512Mi
+  limits:
+    cpu: "2"
+    memory: 2Gi
+
+# Sondy z §3.15. Cesty jsou pevné a nemají být konfigurovatelné — jsou to
+# univerzální koncové body, které vystavuje každá služba bez výjimky.
+probes:
+  liveness:
+    periodSeconds: 10
+    timeoutSeconds: 3
+    failureThreshold: 3
+  readiness:
+    periodSeconds: 5
+    timeoutSeconds: 3
+    failureThreshold: 3
+  startup:
+    enabled: true
+    periodSeconds: 5
+    failureThreshold: 18
+
+# Musí zůstat nad OF_SHUTDOWN_GRACE_SECONDS. Šablona to kontroluje a nasazení
+# zastaví, protože kratší okno usekne vyprazdňování platform.outbox_messages.
+terminationGracePeriodSeconds: 45
+
+autoscaling:
+  enabled: false
+  minReplicas: 2
+  maxReplicas: 8
+  targetCPUUtilizationPercentage: 70
+  # Lag konzumenta dává smysl jen u služeb, jejichž zátěž je v Kafce a ne v
+  # procesoru — billing-service, notification-service.
+  consumerLagTarget: null
+
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 1
+
+networkPolicy:
+  # Politiky vynucují graf §1.1. Vypínat je smysl jen v prostředí, které graf
+  # netestuje — a takové zatím nemáme.
+  enabled: true
+  extraIngressFrom: []
+
+podAnnotations: {}
+nodeSelector: {}
+tolerations: []
+affinity: {}
+topologySpreadConstraints: []

@@ -1,0 +1,31 @@
+# =============================================================================
+# Obsluhy základní role.
+#
+# Restart chronyd je tu úmyslně bez `flush_handlers` navázaného na konec playu:
+# skok v čase uprostřed nasazení by mohl posunout occurred_at u scanů, které
+# právě odcházejí z depa, takže se čas srovnává až po dokončení všech úloh.
+# =============================================================================
+
+- name: Načíst systemd znovu
+  ansible.builtin.systemd:
+    daemon_reload: true
+  listen: Načíst systemd znovu
+
+- name: Restartovat chrony
+  ansible.builtin.service:
+    name: chrony
+    state: restarted
+  listen: Restartovat chrony
+
+- name: Restartovat journald
+  ansible.builtin.service:
+    name: systemd-journald
+    state: restarted
+  listen: Restartovat journald
+
+- name: Restartovat node exporter
+  ansible.builtin.systemd:
+    name: node-exporter.service
+    state: restarted
+    daemon_reload: true
+  listen: Restartovat node exporter

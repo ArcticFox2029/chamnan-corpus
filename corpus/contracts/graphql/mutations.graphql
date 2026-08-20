@@ -1,0 +1,346 @@
+# Il tipo Mutation. Ogni campo qui dentro è una scrittura, quindi ogni campo qui dentro pretende
+# una chiave di idempotenza: il gateway la inoltra come X-OF-Idempotency-Key e il servizio a valle
+# la conserva 24 ore (§7 regola 5).
+#
+# Nessuna mutazione scrive su più di un servizio. Quando un'operazione sembra richiederlo — sigillare
+# una spedizione e liberare gli assegnamenti, per dire — la seconda metà avviene consumando un
+# evento, non dentro la stessa richiesta: è la regola che tiene aciclico il grafo di §1.1.
+
+type Mutation {
+  # ---- container-registry -------------------------------------------------------------------
+
+  "Crea una spedizione in stato DRAFT e pubblica `shipment.created`."
+  createShipment(input: CreateShipmentInput!): ShipmentPayload!
+    @servedBy(service: "container-registry")
+    @requiresScope(scope: "freight:write")
+
+  """
+  L'unica strada legale per cambiare `freight.shipments.status`; pubblica `shipment.status.changed`.
+  Le transizioni non ammesse falliscono con `invalid_status_transition`, non silenziosamente.
+  """
+  changeShipmentStatus(input: ChangeShipmentStatusInput!): ShipmentPayload!
+    @servedBy(service: "container-registry")
+    @requiresScope(scope: "freight:write")
+
+  """
+  Attacca un contenitore e il suo sigillo. Rifiutata con `shipment_already_sealed` da SEALED in poi:
+  il sigillo è immutabile una volta apposto, e correggerlo significa annullare e rifare.
+  """
+  attachContainer(input: AttachContainerInput!): ShipmentPayload!
+    @servedBy(service: "container-registry")
+    @requiresScope(scope: "freight:write")
+
+  "Stacca un contenitore prima della sigillatura."
+  detachContainer(shipmentId: ULID!, containerId: ULID!, idempotencyKey: String!): ShipmentPayload!
+    @servedBy(service: "container-registry")
+    @requiresScope(scope: "freight:write")
+
+  registerContainer(input: RegisterContainerInput!): ContainerPayload!
+    @servedBy(service: "container-registry")
+    @requiresScope(scope: "freight:write")
+
+  """
+  Registra una scansione e pubblica `shipment.scanned`. Una scansione PROOF_OF_DELIVERY è quella
+  che sblocca la fatturazione: billing-service consuma l'evento e ignora tutti gli altri tipi.
+  """
+  recordScan(input: RecordScanInput!): ScanEventPayload!
+    @servedBy(service: "container-registry")
+    @requiresScope(scope: "freight:write")
+
+  # ---- routing-service ----------------------------------------------------------------------
+
+  "Pianifica la versione 1 di una rotta e scrive `routing.routes` con le sue `routing.route_legs`."
+  planRoute(input: PlanRouteInput!): RoutePayload!
+    @servedBy(service: "routing-service")
+    @requiresScope(scope: "routing:write")
+
+  """
+  Nuova versione della rotta: sposta `is_current` e pubblica `route.replanned`. fleet-service
+  consuma quell'evento e rilascia da sé gli assegnamenti sulle tratte sparite — questa mutazione
+  non tocca fleet-service.
+  Le raffiche sono contenute da OF_ROUTING_REPLAN_COOLDOWN_SECONDS: una richiesta troppo ravvicinata
+  restituisce la rotta corrente invariata con `cooldownActive`.
+  """
+  replanRoute(input: ReplanRouteInput!): RoutePayload!
+    @servedBy(service: "routing-service")
+    @requiresScope(scope: "routing:write")
+
+  # ---- fleet-service ------------------------------------------------------------------------
+
+  """
+  Riserva veicolo e conducente. Attende sul vincolo di esclusione di `fleet.vehicle_assignments`
+  al massimo OF_FLEET_ASSIGNMENT_LOCK_TIMEOUT_MS; scaduto, restituisce `assignment_conflict` con
+  retryable vero.
+  """
+  assignVehicle(input: AssignVehicleInput!): AssignmentPayload!
+    @servedBy(service: "fleet-service")
+    @requiresScope(scope: "fleet:write")
+
+  "Chiude un assegnamento e pubblica `fleet.assignment.released`. Idempotente su un assegnamento già chiuso."
+  releaseAssignment(input: ReleaseAssignmentInput!): AssignmentPayload!
+    @servedBy(service: "fleet-service")
+    @requiresScope(scope: "fleet:write")
+
+  """
+  Registra un cambio di stato di servizio dalla app driver-ios. Append-only: correggere una voce
+  significa aggiungerne un'altra, mai riscrivere quella sbagliata.
+  """
+  recordHoursOfService(
+    driverId: ULID!
+    dutyStatus: DutyStatus!
+    occurredAt: DateTime!
+    idempotencyKey: String!
+  ): DriverAvailability!
+    @servedBy(service: "fleet-service")
+    @requiresScope(scope: "fleet:write")
+
+  # ---- customs-service ----------------------------------------------------------------------
+
+  createDeclaration(input: CreateDeclarationInput!): DeclarationPayload!
+    @servedBy(service: "customs-service")
+    @requiresScope(scope: "customs:write")
+
+  "Sostituisce integralmente le righe di una dichiarazione ancora in bozza."
+  replaceDeclarationLines(declarationId: ULID!, lines: [DeclarationLineInput!]!, idempotencyKey: String!): DeclarationPayload!
+    @servedBy(service: "customs-service")
+    @requiresScope(scope: "customs:write")
+
+  """
+  Deposita presso l'autorità e pubblica `customs.declaration.filed`. Da qui in avanti la
+  dichiarazione è immutabile.
+  """
+  fileDeclaration(input: FileDeclarationInput!): DeclarationPayload!
+    @servedBy(service: "customs-service")
+    @requiresScope(scope: "customs:file")
+
+  "Emendamento post-sdoganamento. Tiene lo stesso `mrn` e produce una riga nuova, non una modifica."
+  amendDeclaration(declarationId: ULID!, reason: String!, lines: [DeclarationLineInput!]!, idempotencyKey: String!): DeclarationPayload!
+    @servedBy(service: "customs-service")
+    @requiresScope(scope: "customs:file")
+
+  # ---- billing-service ----------------------------------------------------------------------
+
+  createInvoice(input: CreateInvoiceInput!): InvoicePayload!
+    @servedBy(service: "billing-service")
+    @requiresScope(scope: "billing:write")
+
+  addInvoiceLine(input: AddInvoiceLineInput!): InvoicePayload!
+    @servedBy(service: "billing-service")
+    @requiresScope(scope: "billing:write")
+
+  """
+  Assegna il numero di fattura e pubblica `billing.invoice.issued`. Il cambio valuta viene
+  congelato qui, preso da OF_BILLING_FX_RATE_SOURCE: dopo l'emissione non si rivaluta più nulla.
+  """
+  issueInvoice(invoiceId: ULID!, idempotencyKey: String!): InvoicePayload!
+    @servedBy(service: "billing-service")
+    @requiresScope(scope: "billing:issue")
+
+  """
+  Registra un pagamento. Quando il saldo arriva a zero la fattura passa a SETTLED e viene
+  pubblicato `billing.invoice.settled` — l'unico modo in cui customs-service viene a sapere che il
+  dazio è stato pagato.
+  """
+  recordPayment(input: RecordPaymentInput!): InvoicePayload!
+    @servedBy(service: "billing-service")
+    @requiresScope(scope: "billing:write")
+
+  "Annulla una fattura emessa. Richiede la nota di credito già caricata su document-service."
+  voidInvoice(invoiceId: ULID!, creditNoteDocumentId: ULID!, reason: String!, idempotencyKey: String!): InvoicePayload!
+    @servedBy(service: "billing-service")
+    @requiresScope(scope: "billing:issue")
+
+  # ---- document-service ---------------------------------------------------------------------
+
+  """
+  Prenota un caricamento e restituisce l'URL su cui il client deposita i byte. Il gateway non
+  trasporta mai file: quando l'impronta coincide con un documento già presente per lo stesso
+  proprietario, la risposta punta al documento esistente e `alreadyExists` è vero (Diamante B).
+  """
+  prepareDocumentUpload(input: UploadDocumentInput!): DocumentUploadPayload!
+    @servedBy(service: "document-service")
+    @requiresScope(scope: "documents:write")
+
+  "Cancellazione logica. Rifiutata finché `retainedUntil` è nel futuro."
+  deleteDocument(documentId: ULID!, idempotencyKey: String!): DocumentPayload!
+    @servedBy(service: "document-service")
+    @requiresScope(scope: "documents:write")
+
+  # ---- notification-service -----------------------------------------------------------------
+
+  "Sostituisce l'intero insieme di preferenze di un utente. Non è un merge: ciò che non mandi viene rimosso."
+  replaceNotificationPreferences(userId: ULID!, preferences: [NotificationPreferenceInput!]!): [NotificationPreference!]!
+    @servedBy(service: "notification-service")
+    @requiresScope(scope: "notifications:write")
+
+  # ---- reconciliation-service ---------------------------------------------------------------
+
+  "Avvia il confronto a tre per un tenant e una giornata contabile."
+  startReconciliationRun(businessDate: Date!, idempotencyKey: String!): ReconciliationRun!
+    @servedBy(service: "reconciliation-service")
+    @requiresScope(scope: "reconciliation:write")
+
+  "Chiude una discrepanza con una nota, oppure la deroga. Gesto umano: nessun servizio lo fa da sé."
+  resolveDiscrepancy(
+    discrepancyId: ULID!
+    state: DiscrepancyState!
+    note: String!
+    idempotencyKey: String!
+  ): ReconciliationDiscrepancy!
+    @servedBy(service: "reconciliation-service")
+    @requiresScope(scope: "reconciliation:write")
+
+  # ---- telemetry-ingest ---------------------------------------------------------------------
+
+  acknowledgeAlert(alertId: ULID!, idempotencyKey: String!): TelemetryAlert!
+    @servedBy(service: "telemetry-ingest")
+    @requiresScope(scope: "telemetry:write")
+
+  "Chiude un allarme quando l'escursione è rientrata sul campo. Non chiude gli allarmi ancora attivi in lettura."
+  closeAlert(alertId: ULID!, note: String, idempotencyKey: String!): TelemetryAlert!
+    @servedBy(service: "telemetry-ingest")
+    @requiresScope(scope: "telemetry:write")
+
+  # ---- identity-service ---------------------------------------------------------------------
+
+  """
+  Conia una credenziale API. Il segreto viene restituito una volta sola e mai più: in
+  `identity.api_credentials` finisce solo il suo hash argon2id.
+  """
+  createApiCredential(label: String!, scopes: [String!]!, idempotencyKey: String!): ApiCredentialPayload!
+    @servedBy(service: "identity-service")
+    @requiresScope(scope: "identity:admin")
+
+  "Revoca una credenziale e pubblica `identity.credential.revoked`; i consumatori sfrattano la cache entro cinque secondi."
+  revokeApiCredential(credentialId: ULID!, reason: String!, idempotencyKey: String!): ApiCredentialPayload!
+    @servedBy(service: "identity-service")
+    @requiresScope(scope: "identity:admin")
+}
+
+enum DutyStatus {
+  DRIVING
+  ON_DUTY_NOT_DRIVING
+  REST
+  OFF_DUTY
+}
+
+"""
+Forma comune dei risultati di mutazione: l'oggetto aggiornato, gli errori applicativi e l'id
+dell'evento che la scrittura ha depositato in `platform.outbox_messages`. Restituire
+`outboxEventId` permette al client di riconoscere sulla sottoscrizione l'evento provocato da sé.
+"""
+interface MutationPayload {
+  errors: [Error!]!
+  outboxEventId: ULID
+}
+
+type ShipmentPayload implements MutationPayload {
+  shipment: Shipment
+  errors: [Error!]!
+  outboxEventId: ULID
+}
+
+type ContainerPayload implements MutationPayload {
+  container: Container
+  errors: [Error!]!
+  outboxEventId: ULID
+}
+
+type ScanEventPayload implements MutationPayload {
+  scan: ScanEvent
+  errors: [Error!]!
+  outboxEventId: ULID
+}
+
+type RoutePayload implements MutationPayload {
+  route: Route
+
+  "Vero quando la ripianificazione è stata rifiutata perché il periodo di raffreddamento non è ancora trascorso."
+  cooldownActive: Boolean!
+
+  errors: [Error!]!
+  outboxEventId: ULID
+}
+
+type AssignmentPayload implements MutationPayload {
+  assignment: VehicleAssignment
+
+  "Compilato quando `enforceEligibility` era vero: dice cosa è stato verificato e cosa scade presto."
+  eligibility: DriverAvailability
+
+  errors: [Error!]!
+  outboxEventId: ULID
+}
+
+type DeclarationPayload implements MutationPayload {
+  declaration: CustomsDeclaration
+  errors: [Error!]!
+  outboxEventId: ULID
+}
+
+type InvoicePayload implements MutationPayload {
+  invoice: Invoice
+  errors: [Error!]!
+  outboxEventId: ULID
+}
+
+type DocumentPayload implements MutationPayload {
+  document: Document
+  errors: [Error!]!
+  outboxEventId: ULID
+}
+
+type DocumentUploadPayload implements MutationPayload {
+  document: Document
+
+  "URL su cui depositare i byte. Nullo quando `alreadyExists` è vero: non c'è nulla da caricare."
+  uploadUrl: String
+
+  "Vero quando l'impronta coincideva con un documento già presente per lo stesso proprietario."
+  alreadyExists: Boolean!
+
+  errors: [Error!]!
+  outboxEventId: ULID
+}
+
+type ApiCredentialPayload implements MutationPayload {
+  credentialId: ULID
+
+  "Le dodici cifre mostrate nella console; è anche la chiave su cui il portale partner applica il limite di frequenza."
+  keyPrefix: String
+
+  "Il segreto in chiaro. Presente solo nella risposta di createApiCredential e mai recuperabile dopo."
+  secret: String
+
+  errors: [Error!]!
+  outboxEventId: ULID
+}
+
+type NotificationPreference {
+  channel: NotificationChannel!
+  eventName: String!
+  enabled: Boolean!
+  quietHoursStart: String
+  quietHoursEnd: String
+  timezone: String!
+}
+
+type ReconciliationRun @servedBy(service: "reconciliation-service") {
+  id: ULID!
+  businessDate: Date!
+  state: ReconciliationRunState!
+  startedAt: DateTime!
+  finishedAt: DateTime
+  shipmentsExamined: Int!
+  discrepanciesOpened: Int!
+
+  "Copia di OF_RECON_ENGINE_VERSION: due esecuzioni con motori diversi sulla stessa data convivono."
+  engineVersion: String!
+}
+
+enum ReconciliationRunState {
+  RUNNING
+  SUCCEEDED
+  FAILED
+  PARTIAL
+}

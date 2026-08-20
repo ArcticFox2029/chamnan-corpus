@@ -1,0 +1,177 @@
+# =============================================================================
+# Instalace brokeru Kafky a založení témat platformy.
+#
+# Role dělá dvě oddělitelné věci: postaví broker (na každém stroji skupiny) a
+# srovná témata do stavu podle §4 SPEC.md (jen na jednom stroji, viz
+# of_kafka_topic_manager). Druhá část je záměrně jen "vytvoř, když chybí" a
+# "zvedni retenci, když sedí" — počet oddílů neupravuje nikdy, protože to je
+# operace, která se nedá vzít zpět a rozbije pořadí per shipment_id.
+# =============================================================================
+
+- name: Nainstalovat běhové prostředí Javy
+  ansible.builtin.package:
+    name: openjdk-21-jre-headless
+    state: present
+  tags: [kafka, packages]
+
+- name: Rozbalit distribuci Kafky
+  ansible.builtin.unarchive:
+    src: "https://artifacts.orbitalfreight.net/kafka/kafka_2.13-{{ of_kafka_version }}.tgz"
+    dest: /opt
+    remote_src: true
+    owner: "{{ of_common_user }}"
+    group: "{{ of_common_group }}"
+    creates: "{{ of_kafka_install_dir }}-{{ of_kafka_version }}"
+  tags: [kafka]
+
+- name: Odkázat aktuální verzi
+  ansible.builtin.file:
+    src: "{{ of_kafka_install_dir }}-{{ of_kafka_version }}"
+    dest: "{{ of_kafka_install_dir }}"
+    state: link
+    owner: "{{ of_common_user }}"
+    group: "{{ of_common_group }}"
+  notify: Restartovat Kafku
+  tags: [kafka]
+
+- name: Vytvořit datové a logové adresáře
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: "{{ of_common_user }}"
+    group: "{{ of_common_group }}"
+    mode: "0750"
+  loop:
+    - "{{ of_kafka_data_dir }}"
+    - "{{ of_kafka_log_dir }}"
+  tags: [kafka]
+
+- name: Nasadit server.properties
+  ansible.builtin.template:
+    src: server.properties.j2
+    dest: "{{ of_kafka_install_dir }}/config/kraft/server.properties"
+    owner: "{{ of_common_user }}"
+    group: "{{ of_common_group }}"
+    mode: "0640"
+  notify: Restartovat Kafku
+  tags: [kafka, config]
+
+- name: Nasadit jednotku systemd
+  ansible.builtin.template:
+    src: kafka.service.j2
+    dest: /etc/systemd/system/kafka.service
+    owner: root
+    group: root
+    mode: "0644"
+  notify:
+    - Načíst systemd znovu
+    - Restartovat Kafku
+  tags: [kafka]
+
+- name: Spustit broker
+  ansible.builtin.systemd:
+    name: kafka.service
+    enabled: true
+    state: started
+    daemon_reload: true
+  tags: [kafka]
+
+- name: Vyprázdnit obsluhy před prací s tématy
+  ansible.builtin.meta: flush_handlers
+
+- name: Počkat, až broker přijme spojení
+  ansible.builtin.wait_for:
+    host: 127.0.0.1
+    port: 9092
+    timeout: 120
+  tags: [kafka]
+
+- name: Zjistit existující témata
+  ansible.builtin.command:
+    cmd: "{{ of_kafka_install_dir }}/bin/kafka-topics.sh --bootstrap-server 127.0.0.1:9092 --list"
+  register: of_kafka_existing_topics
+  changed_when: false
+  when: inventory_hostname == of_kafka_topic_manager
+  tags: [kafka, topics]
+
+- name: Založit chybějící témata platformy
+  ansible.builtin.command:
+    cmd: >-
+      {{ of_kafka_install_dir }}/bin/kafka-topics.sh
+      --bootstrap-server 127.0.0.1:9092
+      --create
+      --topic {{ item.name }}
+      --partitions {{ item.partitions }}
+      --replication-factor {{ of_kafka_default_replication_factor }}
+      --config retention.ms={{ (item.retention_hours | int) * 3600000 }}
+      --config min.insync.replicas={{ of_kafka_min_insync_replicas }}
+      --config compression.type=producer
+      --config max.message.bytes={{ of_kafka_message_max_bytes }}
+  loop: "{{ of_kafka_topics }}"
+  loop_control:
+    label: "{{ item.name }} ({{ item.partitions }} oddílů)"
+  when:
+    - inventory_hostname == of_kafka_topic_manager
+    - item.name not in of_kafka_existing_topics.stdout_lines
+  tags: [kafka, topics]
+
+- name: Založit chybějící DLQ témata
+  # §4.19 bod 4: otrávená zpráva jde po osmi pokusech do <topic>.dlq. Téma musí
+  # existovat dopředu, jinak konzument s vypnutým auto-create zprávu zahodí.
+  ansible.builtin.command:
+    cmd: >-
+      {{ of_kafka_install_dir }}/bin/kafka-topics.sh
+      --bootstrap-server 127.0.0.1:9092
+      --create
+      --topic {{ item.name }}{{ of_kafka_dlq_suffix }}
+      --partitions {{ of_kafka_dlq_partitions }}
+      --replication-factor {{ of_kafka_default_replication_factor }}
+      --config retention.ms={{ of_kafka_dlq_retention_hours * 3600000 }}
+      --config min.insync.replicas={{ of_kafka_min_insync_replicas }}
+  loop: "{{ of_kafka_topics }}"
+  loop_control:
+    label: "{{ item.name }}{{ of_kafka_dlq_suffix }}"
+  when:
+    - inventory_hostname == of_kafka_topic_manager
+    - (item.name + of_kafka_dlq_suffix) not in of_kafka_existing_topics.stdout_lines
+  tags: [kafka, topics]
+
+- name: Srovnat retenci existujících témat
+  ansible.builtin.command:
+    cmd: >-
+      {{ of_kafka_install_dir }}/bin/kafka-configs.sh
+      --bootstrap-server 127.0.0.1:9092
+      --entity-type topics
+      --entity-name {{ item.name }}
+      --alter
+      --add-config retention.ms={{ (item.retention_hours | int) * 3600000 }}
+  loop: "{{ of_kafka_topics }}"
+  loop_control:
+    label: "{{ item.name }}"
+  when:
+    - inventory_hostname == of_kafka_topic_manager
+    - item.name in of_kafka_existing_topics.stdout_lines
+  changed_when: false
+  tags: [kafka, topics]
+
+- name: Ověřit počty oddílů proti §4 SPEC.md
+  # Počet oddílů se nikdy neupravuje automaticky. Když sedět nebude, běh
+  # spadne a někdo se na to musí podívat — mlčky přidat oddíly znamená rozbít
+  # pořadí událostí per shipment_id, což je jediná záruka, kterou dáváme.
+  ansible.builtin.shell:
+    cmd: >-
+      set -o pipefail;
+      {{ of_kafka_install_dir }}/bin/kafka-topics.sh
+      --bootstrap-server 127.0.0.1:9092
+      --describe --topic {{ item.name }}
+      | awk '/PartitionCount/ {print $4}' | head -n1
+  args:
+    executable: /bin/bash
+  register: of_kafka_partition_check
+  changed_when: false
+  failed_when: of_kafka_partition_check.stdout | trim | int != item.partitions | int
+  loop: "{{ of_kafka_topics }}"
+  loop_control:
+    label: "{{ item.name }}"
+  when: inventory_hostname == of_kafka_topic_manager
+  tags: [kafka, topics, verify]

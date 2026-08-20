@@ -1,0 +1,255 @@
+// Copyright (c) 2026 ORBITALFREIGHT Holding B.V.
+// SPDX-License-Identifier: LicenseRef-ORBITALFREIGHT-Internal
+
+syntax = "proto3";
+
+package geo.v1;
+
+import "common/v1/identifiers.proto";
+import "common/v1/money.proto";
+import "google/protobuf/timestamp.proto";
+
+// Percorso caldo della geometria (geo-service:9086). Insieme a document-service è uno dei due
+// soli servizi foglia: chiama esclusivamente identity-service e nient'altro, ed è per questo che
+// gli è concesso di stare sul percorso di più di quattro chiamanti.
+//
+// Il Diamante A di §1.2 nasce qui: fleet-service chiama sia container-registry sia
+// routing-service, ed entrambi chiamano geo-service. La cache per trace di ResolveGeofence
+// (OF_GEO_FENCE_CACHE_TTL_SECONDS, 30 s) è ciò che impedisce a un singolo assegnamento di
+// risolvere due volte la stessa recinzione — ma funziona solo se il chiamante propaga
+// RequestContext.trace_id.
+
+option go_package = "github.com/orbitalfreight/contracts/gen/go/geo/v1;geov1";
+option java_package = "com.orbitalfreight.contracts.geo.v1";
+option java_multiple_files = true;
+
+service GeoService {
+  // Legge una recinzione da geo.geofences. La risposta è memorizzata per trace_id: due chiamate
+  // con lo stesso trace e lo stesso gfn_… entro la finestra di cache restituiscono lo stesso
+  // oggetto senza toccare PostGIS.
+  rpc ResolveGeofence(ResolveGeofenceRequest) returns (ResolveGeofenceResponse);
+
+  // Punto-in-poligono in blocco, con buffer_m già applicato. telemetry-ingest la chiama per
+  // decidere se una lettura ha prodotto un `geofence_breach`; container-registry per capire se una
+  // scansione è avvenuta davvero dentro la struttura che dichiara.
+  rpc PointInFence(PointInFenceRequest) returns (PointInFenceResponse);
+
+  // Distanze sulla rete stradale, fino a OF_GEO_MATRIX_MAX_POINTS × OF_GEO_MATRIX_MAX_POINTS
+  // (64×64). Oltre, la chiamata fallisce con `matrix_too_large` invece di essere spezzata in
+  // sottomatrici: chi sa spezzare la richiesta sa anche ricomporla, il servizio no.
+  rpc DistanceMatrix(DistanceMatrixRequest) returns (DistanceMatrixResponse);
+
+  // Aggancia una traccia GPS grezza alla rete stradale. È il passaggio che ripulisce le tracce
+  // prima che analytics-pipeline le aggreghi in analytics.mv_lane_performance_daily: senza,
+  // il rumore GNSS nei porti gonfiava le distanze percorse del quattro per cento.
+  rpc SnapToRoad(SnapToRoadRequest) returns (SnapToRoadResponse);
+}
+
+message ResolveGeofenceRequest {
+  common.v1.RequestContext context = 1;
+
+  // gfn_<ULID>.
+  string geofence_id = 2;
+
+  // Se true la risposta include il poligono. Il chiamante che deve solo sapere nome e buffer
+  // lascia false e risparmia qualche decina di kilobyte per recinzione portuale.
+  bool include_boundary = 3;
+
+  // Semplificazione del poligono prima della restituzione, in metri. Se 0 vale
+  // OF_GEO_SIMPLIFY_TOLERANCE_M. Solo la console in web/ ne ha bisogno; il percorso caldo lavora
+  // sulla geometria piena lato server.
+  uint32 simplify_tolerance_m = 4;
+}
+
+message ResolveGeofenceResponse {
+  Geofence geofence = 1;
+
+  // true quando la risposta viene dalla cache per trace. Esposto perché ops/ possa verificare che
+  // il Diamante A stia effettivamente collassando invece di dover dedurlo dai contatori.
+  bool served_from_trace_cache = 2;
+}
+
+message Geofence {
+  string geofence_id = 1;
+
+  // Nullo per le recinzioni condivise: un porto o una zona di confine non appartengono a nessun
+  // tenant.
+  string tenant_id = 2;
+
+  string name = 3;
+  GeofenceKind kind = 4;
+
+  // Poligono WGS84 come anello esterno di punti, chiuso (primo punto uguale all'ultimo).
+  // Corrisponde a geography(Polygon, 4326).
+  repeated common.v1.GeoPoint boundary = 5;
+
+  // Tolleranza allo scarto GPS in ingresso e in uscita, predefinita 50 m.
+  uint32 buffer_m = 6;
+
+  // Minuti di sosta oltre i quali nasce un avviso di giacenza. Nullo se la recinzione non
+  // sorveglia la sosta.
+  uint32 dwell_alert_minutes = 7;
+
+  google.protobuf.Timestamp created_at = 8;
+  google.protobuf.Timestamp retired_at = 9;
+}
+
+// Rispecchia il CHECK su geo.geofences.kind.
+enum GeofenceKind {
+  GEOFENCE_KIND_UNSPECIFIED = 0;
+  GEOFENCE_KIND_FACILITY = 1;
+  GEOFENCE_KIND_DEPOT = 2;
+  GEOFENCE_KIND_BORDER_ZONE = 3;
+  GEOFENCE_KIND_RESTRICTED = 4;
+  GEOFENCE_KIND_CUSTOMER_SITE = 5;
+  GEOFENCE_KIND_CORRIDOR = 6;
+}
+
+message PointInFenceRequest {
+  common.v1.RequestContext context = 1;
+
+  // Punti da verificare, nell'ordine. La risposta conserva l'ordine.
+  repeated common.v1.GeoPoint points = 2;
+
+  // Recinzioni contro cui verificare. Se vuoto, il servizio verifica contro tutte le recinzioni
+  // condivise (tenant_id nullo) più quelle del tenant nel contesto — comodo, ma molto più caro:
+  // il percorso caldo passa sempre una lista esplicita.
+  repeated string geofence_ids = 3;
+
+  // Se true, l'accuratezza dichiarata dal ricevitore (GeoPoint.accuracy_m) viene sommata a
+  // buffer_m. telemetry-ingest la usa perché un fix a 200 m di incertezza dentro un porto
+  // altrimenti produce un `geofence_breach` a ogni lettura.
+  bool apply_reported_accuracy = 4;
+}
+
+message PointInFenceResponse {
+  repeated PointVerdict verdicts = 1;
+}
+
+message PointVerdict {
+  // Indice del punto nella richiesta.
+  uint32 point_index = 1;
+
+  // Le recinzioni che contengono il punto, dalla più piccola alla più grande per area. L'ordine
+  // conta: chi vuole «la struttura in cui mi trovo» prende la prima, non una qualsiasi.
+  repeated string inside_geofence_ids = 2;
+
+  // Distanza dal bordo della prima recinzione: negativa se dentro, positiva se fuori. Permette al
+  // chiamante di applicare una isteresi propria senza rifare il calcolo.
+  common.v1.Distance signed_distance_to_edge = 3;
+}
+
+message DistanceMatrixRequest {
+  common.v1.RequestContext context = 1;
+  repeated common.v1.GeoPoint origins = 2;
+  repeated common.v1.GeoPoint destinations = 3;
+
+  // Modo di trasporto per cui calcolare. Le distanze su rete stradale hanno senso solo per
+  // `road`; per gli altri modi il servizio restituisce la distanza ortodromica e lo dichiara in
+  // `great_circle_fallback`.
+  TravelMode mode = 4;
+
+  // Esclude i valichi non aperti 24 ore quando l'orario pianificato cade fuori apertura.
+  google.protobuf.Timestamp depart_at = 5;
+}
+
+message DistanceMatrixResponse {
+  // Righe = origini, colonne = destinazioni, in ordine di richiesta.
+  repeated MatrixRow rows = 1;
+
+  bool great_circle_fallback = 2;
+
+  // Versione del grafo stradale caricato da OF_GEO_ROAD_GRAPH_PATH. routing-service la registra
+  // insieme alla rotta, così che una ripianificazione su un grafo diverso sia riconoscibile a
+  // posteriori.
+  string road_graph_version = 3;
+}
+
+message MatrixRow {
+  repeated MatrixCell cells = 1;
+}
+
+message MatrixCell {
+  common.v1.Distance distance = 1;
+  uint32 duration_s = 2;
+
+  // true quando i due punti non sono connessi sulla rete per il modo richiesto (un'isola senza
+  // traghetto nel grafo, per esempio). distance e duration_s vanno ignorati.
+  bool unreachable = 3;
+}
+
+enum TravelMode {
+  TRAVEL_MODE_UNSPECIFIED = 0;
+  TRAVEL_MODE_ROAD = 1;
+  TRAVEL_MODE_RAIL = 2;
+  TRAVEL_MODE_SEA = 3;
+  TRAVEL_MODE_AIR = 4;
+  TRAVEL_MODE_BARGE = 5;
+}
+
+message SnapToRoadRequest {
+  common.v1.RequestContext context = 1;
+
+  // Traccia grezza in ordine cronologico. Punti fuori ordine vengono riordinati per timestamp
+  // prima dell'aggancio, non scartati: i gateway in edge/ ritrasmettono a lotti e l'ordine di
+  // arrivo non è quello di rilevazione.
+  repeated TracePoint trace = 2;
+
+  TravelMode mode = 3;
+
+  // Distanza massima entro cui cercare un arco a cui agganciare. Un punto più lontano di così
+  // resta non agganciato invece di essere spostato su una strada sbagliata.
+  uint32 max_snap_distance_m = 4;
+}
+
+message TracePoint {
+  common.v1.GeoPoint position = 1;
+  google.protobuf.Timestamp recorded_at = 2;
+}
+
+message SnapToRoadResponse {
+  repeated SnappedPoint points = 1;
+
+  // Lunghezza della traccia agganciata. È il numero che finisce in
+  // fleet.assignment.released.distance_travelled_m quando l'assegnamento si chiude.
+  common.v1.Distance matched_distance = 2;
+}
+
+message SnappedPoint {
+  uint32 trace_index = 1;
+  common.v1.GeoPoint position = 2;
+
+  // Falso quando nessun arco cadeva entro max_snap_distance_m; in quel caso `position` è il punto
+  // originale, non spostato.
+  bool matched = 3;
+
+  common.v1.Distance offset_from_original = 4;
+}
+
+// Da geo.border_crossings. Non ha una RPC propria — routing-service li ottiene via
+// GET /v1/crossings/recommend — ma il messaggio vive qui perché è geo-service a possedere la
+// tabella e a garantirne la forma.
+message BorderCrossing {
+  // bxg_<ULID>.
+  string crossing_id = 1;
+
+  string from_country = 2;
+  string to_country = 3;
+
+  // UN/LOCODE di cinque caratteri.
+  string unlocode = 4;
+
+  // Codice dell'ufficio doganale, citato su customs.customs_declarations.customs_office_code.
+  string customs_office_code = 5;
+
+  string geofence_id = 6;
+
+  // Sottoinsieme di TravelMode ammesso al valico.
+  repeated TravelMode modes_allowed = 7;
+
+  // Ricalcolato ogni notte da analytics-pipeline. routing-service lo usa come stima a priori per
+  // gli ETA delle tratte che attraversano il valico.
+  uint32 avg_dwell_minutes = 8;
+
+  bool open_24h = 9;
+}

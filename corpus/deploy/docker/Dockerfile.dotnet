@@ -1,0 +1,59 @@
+# =============================================================================
+# Obraz customs-service (C# / .NET 8).
+#
+# Publikuje se jako framework-dependent na chiseled runtime obraz. Čistě
+# samostatná (self-contained) varianta se zkoušela a zamítla: obraz byl o
+# 40 MB větší a bezpečnostní aktualizace runtime by znamenala přebuildovat
+# aplikaci místo výměny základního obrazu.
+#
+# Klientský certifikát pro OF_CUSTOMS_AUTHORITY_ENDPOINT se do obrazu nedává a
+# nikdy dávat nebude — přichází ze zapečetěného secretu a montuje se do
+# /etc/orbitalfreight/keys.
+# =============================================================================
+
+FROM mcr.microsoft.com/dotnet/sdk:8.0-jammy AS build
+
+ARG VERSION=4.2.0
+ARG BUILD_SHA=unknown
+
+WORKDIR /src
+COPY services/customs/*.sln ./
+COPY services/customs/src/OrbitalFreight.Customs/*.csproj ./src/OrbitalFreight.Customs/
+RUN --mount=type=cache,target=/root/.nuget/packages \
+    dotnet restore
+
+COPY libs/ /src/libs/
+COPY services/customs/src ./src
+
+RUN --mount=type=cache,target=/root/.nuget/packages \
+    dotnet publish src/OrbitalFreight.Customs/OrbitalFreight.Customs.csproj \
+      -c Release \
+      -o /out \
+      --no-restore \
+      -p:Version=${VERSION} \
+      -p:SourceRevisionId=${BUILD_SHA} \
+      -p:PublishReadyToRun=true
+
+FROM mcr.microsoft.com/dotnet/aspnet:8.0-jammy-chiseled AS runtime
+
+ARG VERSION=4.2.0
+ARG BUILD_SHA=unknown
+LABEL org.opencontainers.image.title="customs-service" \
+      org.opencontainers.image.version="${VERSION}" \
+      org.opencontainers.image.revision="${BUILD_SHA}" \
+      org.opencontainers.image.vendor="ORBITALFREIGHT"
+
+WORKDIR /app
+COPY --from=build --chown=1400:1400 /out ./
+
+# Chiseled obraz nemá shell ani balíčkovač; uživatel 1400 je v něm předdefinovaný
+# jako `app`. Sondy proto v Kubernetes běží přes httpGet, ne přes exec — v
+# tomhle obrazu není curl a nikdy tu být nemá.
+USER 1400:1400
+EXPOSE 8087
+
+ENV DOTNET_gcServer=1 \
+    DOTNET_EnableDiagnostics=0 \
+    ASPNETCORE_URLS=http://+:8087
+
+ENTRYPOINT ["dotnet", "OrbitalFreight.Customs.dll"]

@@ -1,0 +1,427 @@
+# Superficie REST di telemetry-ingest (Rust 1.77, axum, porta 8084). Riceve i batch firmati dagli
+# agenti di deposito in edge/, li deduplica, li scrive nella partizione della regione giusta e fa
+# nascere gli allarmi di soglia. È il servizio con il volume di scrittura più alto della
+# piattaforma di tre ordini di grandezza, e ogni scelta qui dentro discende da quel fatto.
+#
+# La variante in streaming di POST /v1/ingest/batch sta in proto/telemetry/v1/telemetry.proto.
+
+openapi: 3.1.0
+
+info:
+  title: telemetry-ingest
+  version: 4.2.0
+  description: |
+    Possiede lo schema `telemetry`. `telemetry.telemetry_readings` è partizionata per
+    LIST(region_code) per residenza del dato e non per dimensione: una lettura brasiliana non può
+    stare su storage europeo, e questo servizio rifiuta con 403 un batch destinato a una regione
+    che non compare in `OF_TELEMETRY_ALLOWED_REGIONS` invece di reinstradarlo.
+
+    Chiama identity-service (in batch, fino a 128 token per volta), container-registry per
+    risolvere la spedizione di un contenitore, e geo-service per le violazioni di recinzione.
+
+servers:
+  - url: http://telemetry-ingest.orbitalfreight.svc.cluster.local:8084
+
+tags:
+  - name: ingest
+  - name: gateways
+  - name: readings
+  - name: alerts
+  - name: operations
+
+security:
+  - bearerAuth: []
+
+paths:
+
+  /v1/ingest/batch:
+    post:
+      operationId: ingestBatch
+      tags: [ingest]
+      summary: Batch di letture firmato da un gateway
+      description: |
+        La deduplica avviene sull'indice unico
+        `(region_code, ingest_batch_id, container_id, recorded_at)`: un gateway che ritrasmette
+        l'intero batch dopo un buco di connettività produce zero righe nuove, e la risposta lo dice
+        esplicitamente in `deduplicated`. Non è una condizione di errore ed è anzi il caso normale
+        dopo una riconnessione.
+
+        La firma Ed25519 copre il corpo canonico ed è verificata contro
+        `telemetry.device_gateways.public_key`. `OF_TELEMETRY_SIGNATURE_REQUIRED` è vero ovunque
+        tranne che in `local`.
+
+        Il numero di letture per batch è limitato da `OF_TELEMETRY_BATCH_MAX_READINGS`; superarlo
+        è un 413, non un troncamento silenzioso.
+      parameters:
+        - $ref: './_shared/components.yaml#/components/parameters/TenantHeader'
+        - $ref: './_shared/components.yaml#/components/parameters/TraceHeader'
+        - $ref: './_shared/components.yaml#/components/parameters/IdempotencyHeader'
+        - name: X-OF-Gateway-Signature
+          in: header
+          required: true
+          description: Firma Ed25519 in base64 sul corpo canonico del batch.
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ReadingBatch' }
+            examples:
+              reefer_in_escursione:
+                summary: Due letture, la seconda oltre soglia
+                value:
+                  gateway_id: gwy_01J7D1HAMBURGGW0100000000
+                  ingest_batch_id: bat-2026-03-14T09-20-00Z-0117
+                  region_code: eu-west
+                  firmware_version: 2.7.1
+                  readings:
+                    - reading_id: rdg_01J8ZM10000000000000000001
+                      container_id: cnt_01J7C9MSCU3948571000000AB
+                      recorded_at: '2026-03-14T09:19:30Z'
+                      temperature_c: '-17.80'
+                      humidity_pct: '61.20'
+                      shock_g: '0.412'
+                      door_open: false
+                      battery_pct: 78
+                      position: { lat: 53.5297, lon: 9.9354, accuracy_m: 8 }
+                    - reading_id: rdg_01J8ZM10000000000000000002
+                      container_id: cnt_01J7C9MSCU3948571000000AB
+                      recorded_at: '2026-03-14T09:19:50Z'
+                      temperature_c: '-11.40'
+                      humidity_pct: '62.00'
+                      shock_g: '0.388'
+                      door_open: true
+                      battery_pct: 78
+                      position: { lat: 53.5297, lon: 9.9355, accuracy_m: 9 }
+      responses:
+        '202':
+          description: |
+            Accettato. La scrittura è sincrona ma la pubblicazione degli eventi passa dal relay di
+            outbox, quindi 202 e non 201: al ritorno le righe ci sono, gli eventi non ancora.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/IngestSummary' }
+              examples:
+                con_allarme:
+                  value:
+                    ingest_batch_id: bat-2026-03-14T09-20-00Z-0117
+                    accepted: 2
+                    deduplicated: 0
+                    rejected: 0
+                    alerts_raised:
+                      - alert_id: alr_01J8ZM2TEMPHIGH0000000001
+                        container_id: cnt_01J7C9MSCU3948571000000AB
+                        shipment_id: shp_01J8ZK4T9QW3RM7XN2VB6HD5PC
+                        rule_code: temp_excursion_high
+                        severity: 4
+                        threshold_value: '-15.00'
+                        peak_value: '-11.40'
+                        first_reading_id: rdg_01J8ZM10000000000000000002
+                        opened_at: '2026-03-14T09:20:02Z'
+                    received_at: '2026-03-14T09:20:02Z'
+        '401':
+          description: Firma non verificabile contro la chiave registrata del gateway.
+          content:
+            application/json:
+              schema: { $ref: './_shared/components.yaml#/components/schemas/Error' }
+        '403':
+          description: |
+            Regione non ammessa su questa istanza. Non viene reinstradata: la residenza del dato
+            non ammette inoltri di cortesia (§7 regola 7).
+          content:
+            application/json:
+              schema: { $ref: './_shared/components.yaml#/components/schemas/Error' }
+              examples:
+                fuori_regione:
+                  value:
+                    error:
+                      code: region_not_allowed
+                      http_status: 403
+                      message: 'batch region latam-br is not in OF_TELEMETRY_ALLOWED_REGIONS for this instance'
+                      trace_id: 1a2b3c4d5e6f708192a3b4c5d6e7f809
+                      retryable: false
+        '413':
+          description: Oltre `OF_TELEMETRY_BATCH_MAX_READINGS`.
+          content:
+            application/json:
+              schema: { $ref: './_shared/components.yaml#/components/schemas/Error' }
+
+  /v1/gateways/{gateway_id}/heartbeat:
+    post:
+      operationId: gatewayHeartbeat
+      tags: [gateways]
+      summary: Segnale di vita di un gateway
+      description: |
+        Aggiorna `telemetry.device_gateways.last_heartbeat_at`. Il silenzio oltre
+        `OF_TELEMETRY_HEARTBEAT_TIMEOUT_MINUTES` fa nascere `gateway.heartbeat.missed`, che è un
+        evento generato dall'assenza di messaggi e non da un messaggio: lo produce un lavoro
+        periodico, non questo endpoint.
+      parameters:
+        - $ref: './_shared/components.yaml#/components/parameters/TenantHeader'
+        - name: gateway_id
+          in: path
+          required: true
+          schema: { $ref: './_shared/components.yaml#/components/schemas/Ulid' }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                firmware_version:
+                  type: string
+                  description: |
+                    Semver di `firmware/sensor-node`. Se differisce da quello registrato, la riga
+                    viene aggiornata: è così che si accorge un aggiornamento andato a buon fine sul
+                    campo.
+                uptime_s: { type: integer }
+                queued_batches:
+                  type: integer
+                  description: Batch ancora in coda locale sul gateway. Un numero che cresce significa banda insufficiente, non un guasto.
+      responses:
+        '204':
+          description: Registrato.
+        '404': { $ref: './_shared/components.yaml#/components/responses/NotFound' }
+
+  /v1/containers/{container_id}/readings:
+    get:
+      operationId: listContainerReadings
+      tags: [readings]
+      summary: Letture di un contenitore in una finestra temporale
+      description: |
+        Serve dalla partizione della regione del contenitore usando
+        `readings_container_time_idx`. La finestra è obbligatoria e limitata: una scansione senza
+        estremi su questa tabella blocca l'ingest, che è l'unica cosa che questo servizio non può
+        permettersi.
+      parameters:
+        - $ref: './_shared/components.yaml#/components/parameters/TenantHeader'
+        - $ref: './_shared/components.yaml#/components/parameters/LimitParam'
+        - $ref: './_shared/components.yaml#/components/parameters/CursorParam'
+        - name: container_id
+          in: path
+          required: true
+          schema: { $ref: './_shared/components.yaml#/components/schemas/Ulid' }
+        - name: from
+          in: query
+          required: true
+          schema: { $ref: './_shared/components.yaml#/components/schemas/Timestamp' }
+        - name: to
+          in: query
+          required: true
+          schema: { $ref: './_shared/components.yaml#/components/schemas/Timestamp' }
+      responses:
+        '200':
+          description: Pagina di letture, dalla più recente.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: '#/components/schemas/Reading' }
+                  next_cursor: { type: [string, 'null'] }
+        '422':
+          description: Finestra più ampia di trenta giorni.
+          content:
+            application/json:
+              schema: { $ref: './_shared/components.yaml#/components/schemas/Error' }
+
+  /v1/alerts:
+    get:
+      operationId: listAlerts
+      tags: [alerts]
+      summary: Elenca gli allarmi
+      parameters:
+        - $ref: './_shared/components.yaml#/components/parameters/TenantHeader'
+        - $ref: './_shared/components.yaml#/components/parameters/LimitParam'
+        - $ref: './_shared/components.yaml#/components/parameters/CursorParam'
+        - name: state
+          in: query
+          schema: { type: string, enum: [open, closed] }
+          description: Predefinito `open`, che usa l'indice parziale `alerts_open_idx`.
+        - name: rule_code
+          in: query
+          schema: { $ref: '#/components/schemas/AlertRuleCode' }
+        - name: container_id
+          in: query
+          schema: { $ref: './_shared/components.yaml#/components/schemas/Ulid' }
+        - name: severity_min
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 5 }
+      responses:
+        '200':
+          description: Pagina di allarmi.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: '#/components/schemas/Alert' }
+                  next_cursor: { type: [string, 'null'] }
+
+  /v1/alerts/{alert_id}/acknowledge:
+    post:
+      operationId: acknowledgeAlert
+      tags: [alerts]
+      summary: Prende in carico un allarme
+      description: |
+        Timbra `acknowledged_by` e `acknowledged_at`. Non chiude l'allarme e non ferma le notifiche
+        successive per la stessa regola: serve a dire «qualcuno se ne sta occupando», non «è
+        rientrato».
+      parameters:
+        - $ref: './_shared/components.yaml#/components/parameters/TenantHeader'
+        - $ref: './_shared/components.yaml#/components/parameters/IdempotencyHeader'
+        - name: alert_id
+          in: path
+          required: true
+          schema: { $ref: './_shared/components.yaml#/components/schemas/Ulid' }
+      responses:
+        '200':
+          description: Preso in carico.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Alert' }
+
+  /v1/alerts/{alert_id}/close:
+    post:
+      operationId: closeAlert
+      tags: [alerts]
+      summary: Chiude un allarme rientrato sul campo
+      parameters:
+        - $ref: './_shared/components.yaml#/components/parameters/TenantHeader'
+        - $ref: './_shared/components.yaml#/components/parameters/IdempotencyHeader'
+        - name: alert_id
+          in: path
+          required: true
+          schema: { $ref: './_shared/components.yaml#/components/schemas/Ulid' }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                note: { type: string }
+      responses:
+        '200':
+          description: Chiuso.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Alert' }
+        '409':
+          description: Già chiuso.
+          content:
+            application/json:
+              schema: { $ref: './_shared/components.yaml#/components/schemas/Error' }
+
+  /healthz:
+    $ref: './_shared/universal-paths.yaml#/paths/~1healthz'
+  /readyz:
+    $ref: './_shared/universal-paths.yaml#/paths/~1readyz'
+  /metrics:
+    $ref: './_shared/universal-paths.yaml#/paths/~1metrics'
+  /version:
+    $ref: './_shared/universal-paths.yaml#/paths/~1version'
+
+components:
+  securitySchemes:
+    bearerAuth:
+      $ref: './_shared/components.yaml#/components/securitySchemes/bearerAuth'
+
+  schemas:
+    DecimalString:
+      type: string
+      description: |
+        Decimale esatto come stringa. Le soglie si confrontano per uguaglianza, e in virgola mobile
+        un `temp_excursion_high` scattava a 8,000000001 gradi contro una soglia di 8.
+      pattern: '^-?[0-9]+(\.[0-9]+)?$'
+
+    AlertRuleCode:
+      type: string
+      enum:
+        - temp_excursion_high
+        - temp_excursion_low
+        - humidity_high
+        - shock_impact
+        - door_open_in_transit
+        - battery_critical
+        - gateway_silent
+        - geofence_breach
+
+    ReadingBatch:
+      type: object
+      required: [gateway_id, ingest_batch_id, region_code, readings]
+      properties:
+        gateway_id: { $ref: './_shared/components.yaml#/components/schemas/Ulid' }
+        ingest_batch_id:
+          type: string
+          description: Generato dal gateway e stabile fra le ritrasmissioni dello stesso batch.
+        region_code: { $ref: './_shared/components.yaml#/components/schemas/RegionCode' }
+        firmware_version: { type: string }
+        readings:
+          type: array
+          minItems: 1
+          items: { $ref: '#/components/schemas/ReadingInput' }
+
+    ReadingInput:
+      type: object
+      required: [reading_id, container_id, recorded_at]
+      properties:
+        reading_id: { $ref: './_shared/components.yaml#/components/schemas/Ulid' }
+        container_id: { $ref: './_shared/components.yaml#/components/schemas/Ulid' }
+        recorded_at:
+          $ref: './_shared/components.yaml#/components/schemas/Timestamp'
+        temperature_c: { $ref: '#/components/schemas/DecimalString' }
+        humidity_pct: { $ref: '#/components/schemas/DecimalString' }
+        shock_g: { $ref: '#/components/schemas/DecimalString' }
+        door_open: { type: boolean }
+        battery_pct: { type: integer, minimum: 0, maximum: 100 }
+        position: { $ref: './_shared/components.yaml#/components/schemas/GeoPoint' }
+
+    Reading:
+      allOf:
+        - $ref: '#/components/schemas/ReadingInput'
+        - type: object
+          properties:
+            region_code: { $ref: './_shared/components.yaml#/components/schemas/RegionCode' }
+            gateway_id: { $ref: './_shared/components.yaml#/components/schemas/Ulid' }
+            received_at:
+              $ref: './_shared/components.yaml#/components/schemas/Timestamp'
+            ingest_batch_id: { type: string }
+
+    IngestSummary:
+      type: object
+      properties:
+        ingest_batch_id: { type: string }
+        accepted: { type: integer }
+        deduplicated:
+          type: integer
+          description: Righe già presenti. Alto dopo una riconnessione, e non è un errore.
+        rejected: { type: integer }
+        alerts_raised:
+          type: array
+          items: { $ref: '#/components/schemas/Alert' }
+        received_at: { $ref: './_shared/components.yaml#/components/schemas/Timestamp' }
+
+    Alert:
+      type: object
+      properties:
+        alert_id: { $ref: './_shared/components.yaml#/components/schemas/Ulid' }
+        container_id: { $ref: './_shared/components.yaml#/components/schemas/Ulid' }
+        shipment_id:
+          $ref: './_shared/components.yaml#/components/schemas/Ulid'
+        rule_code: { $ref: '#/components/schemas/AlertRuleCode' }
+        severity:
+          type: integer
+          minimum: 1
+          maximum: 5
+          description: Da `OF_FREIGHT_AUTO_AT_RISK_SEVERITY` in su, container-registry porta la spedizione in `at_risk`.
+        threshold_value: { $ref: '#/components/schemas/DecimalString' }
+        peak_value: { $ref: '#/components/schemas/DecimalString' }
+        first_reading_id: { $ref: './_shared/components.yaml#/components/schemas/Ulid' }
+        opened_at: { $ref: './_shared/components.yaml#/components/schemas/Timestamp' }
+        closed_at: { $ref: './_shared/components.yaml#/components/schemas/Timestamp' }
+        acknowledged_by: { $ref: './_shared/components.yaml#/components/schemas/Ulid' }
+        acknowledged_at: { $ref: './_shared/components.yaml#/components/schemas/Timestamp' }

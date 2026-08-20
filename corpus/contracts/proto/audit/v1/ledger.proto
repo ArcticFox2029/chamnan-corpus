@@ -1,0 +1,111 @@
+syntax = "proto3";
+
+package audit.v1;
+
+import "common/v1/identifiers.proto";
+import "google/protobuf/struct.proto";
+import "google/protobuf/timestamp.proto";
+
+// L'unica via di scrittura in platform.audit_ledger_entries (audit-ledger:9092, cioè
+// OF_AUDIT_LEDGER_GRPC_ADDR). Il ruolo che possiede la connessione ha INSERT e SELECT e nulla
+// più, e un trigger BEFORE UPDATE OR DELETE solleva comunque: la tabella è concatenata per hash,
+// quindi togliere o correggere una voce rompe la verifica di tutte quelle che vengono dopo.
+//
+// Chi ha bisogno di correggere non aggiorna, appende una voce compensativa (§7 regola 6).
+// customs-service e reconciliation-service sono i chiamanti sincroni dichiarati; tutti gli altri
+// finiscono qui indirettamente, perché audit-ledger consuma tutti e sei i topic di §4.
+
+option go_package = "github.com/orbitalfreight/contracts/gen/go/audit/v1;auditv1";
+option java_package = "com.orbitalfreight.contracts.audit.v1";
+option java_multiple_files = true;
+option csharp_namespace = "OrbitalFreight.Contracts.Audit.V1";
+
+service LedgerService {
+  // Appende una voce e restituisce la sua posizione nella catena. La chiamata è idempotente su
+  // RequestContext.idempotency_key: riprovare dopo un timeout di rete non produce una seconda
+  // voce, perché una catena con un duplicato è indistinguibile da una catena manomessa.
+  rpc Append(AppendRequest) returns (AppendResponse);
+}
+
+message AppendRequest {
+  common.v1.RequestContext context = 1;
+
+  string tenant_id = 2;
+
+  common.v1.ActorKind actor_kind = 3;
+
+  // Chi ha agito: usr_…, cred_…, gwy_…, oppure il nome del servizio per le azioni di sistema.
+  string actor_id = 4;
+
+  // Che cosa è successo, nello stesso vocabolario puntato degli eventi: 'shipment.sealed',
+  // 'credential.revoked', 'declaration.amended'.
+  string action = 5;
+
+  // Su che cosa. Il vocabolario è quello di platform.document_owner_types più i soggetti che non
+  // portano documenti: 'shipment', 'container', 'scan', 'declaration', 'invoice', 'carrier',
+  // 'credential', 'session', 'discrepancy'.
+  string subject_type = 6;
+
+  string subject_id = 7;
+
+  // Dettaglio libero. Entra nell'hash della voce, quindi tutto ciò che finisce qui è congelato:
+  // non scriverci segreti e non scriverci valori che il chiamante potrebbe voler cambiare dopo.
+  google.protobuf.Struct payload = 8;
+
+  // 32 esadecimali. Nullo solo per le voci generate dai job notturni, che non nascono da una
+  // richiesta.
+  string trace_id = 9;
+}
+
+message AppendResponse {
+  // BIGINT monotono, l'unica chiave della piattaforma che non è un ULID prefissato: la catena di
+  // hash dipende dall'ordine totale, e un ULID non lo garantisce fra scrittori concorrenti.
+  int64 entry_id = 1;
+
+  // sha256(prev_entry_hash || canonical_json(row)), 32 byte.
+  bytes entry_hash = 2;
+
+  // 32 byte a zero per entry_id = 1.
+  bytes prev_entry_hash = 3;
+
+  // clock_timestamp(), non now(): due voci scritte nella stessa transazione devono avere istanti
+  // distinti, altrimenti l'ordine registrato non corrisponde a quello della catena.
+  google.protobuf.Timestamp recorded_at = 4;
+
+  // Valorizzato solo quando la voce è già stata ripiegata dentro un checkpoint Merkle; il
+  // ripiegamento avviene ogni OF_LEDGER_CHECKPOINT_INTERVAL_MINUTES.
+  int64 checkpoint_id = 5;
+
+  // true quando la chiave di idempotenza aveva già prodotto questa voce e non se n'è creata
+  // un'altra.
+  bool deduplicated = 6;
+}
+
+// Prova di inclusione servita da GET /v1/entries/{entry_id}/proof. Descritta qui perché la
+// verifica offline usa gli stessi tipi generati del client gRPC — è il verificatore in tools/ a
+// consumarla, non un browser.
+message InclusionProof {
+  int64 entry_id = 1;
+  bytes entry_hash = 2;
+
+  // Cammino da foglia a radice, dal basso verso l'alto.
+  repeated ProofNode path = 3;
+
+  int64 checkpoint_id = 4;
+  bytes checkpoint_root = 5;
+
+  // Firma della testa del checkpoint, rispecchiata ogni ora su OF_LEDGER_NOTARY_ENDPOINT. È
+  // l'ancoraggio esterno: senza, la catena dimostra solo la coerenza con sé stessa.
+  bytes checkpoint_signature = 6;
+
+  // Sempre 'sha256' oggi. Cambiarlo apre una catena nuova, non riscrive quella esistente
+  // (OF_LEDGER_HASH_ALGORITHM).
+  string hash_algorithm = 7;
+}
+
+message ProofNode {
+  bytes hash = 1;
+
+  // true se il fratello sta a destra del nodo corrente.
+  bool is_right_sibling = 2;
+}

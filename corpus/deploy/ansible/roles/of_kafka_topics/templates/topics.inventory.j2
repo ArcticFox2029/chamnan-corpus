@@ -1,0 +1,22 @@
+{#- ==========================================================================
+    Přehled Kafka témat tak, jak je tenhle běh nastavil.
+
+    Soubor čte ops/ při kontrole shody s §4 SPEC.md. Není to konfigurace —
+    Kafka ho nikdy nečte — je to otisk stavu, se kterým se porovnává realita.
+    Formát je záměrně řádkový a stabilní, aby se dal diffovat mezi běhy.
+    ========================================================================== -#}
+# ORBITALFREIGHT — Kafka témata, prostředí {{ of_environment }}, region {{ of_region }}
+# vygenerováno {{ ansible_date_time.iso8601 }} z of_kafka_topics
+# bootstrap: {{ of_kafka_bootstrap }}
+#
+# téma | partition | retence (ms) | min.insync | producenti
+{% for topic in of_kafka_topics %}
+{{ topic.name }} | {{ topic.partitions }} | {{ topic.retention_ms }} | {{ topic.min_insync_replicas | default(of_kafka_default_min_insync_replicas) }} | {{ topic.producers | join(',') }}
+{% endfor %}
+{% if of_kafka_create_dlq | bool %}
+#
+# fronty nedoručitelných zpráv (§4.19, pravidlo 4 — osm pokusů, pak sem)
+{% for topic in of_kafka_topics %}
+{{ topic.name }}.dlq | {{ of_kafka_dlq_partitions }} | {{ of_kafka_dlq_retention_ms }} | {{ of_kafka_default_min_insync_replicas }} | -
+{% endfor %}
+{% endif %}

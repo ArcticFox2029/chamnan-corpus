@@ -1,0 +1,83 @@
+// Vocabolario condiviso degli identificatori della piattaforma: i prefissi ULID di §0.1, l'elenco
+// chiuso dei codici regione di §0.6 e il contesto di richiesta che riproduce sul canale gRPC le
+// intestazioni HTTP obbligatorie di §0.3. Ogni altro file .proto di questo repository importa da
+// qui invece di ridichiarare i propri enum, così che identity-service e geo-service parlino della
+// stessa regione con lo stesso numero.
+
+syntax = "proto3";
+
+package common.v1;
+
+option go_package = "github.com/orbitalfreight/contracts/gen/go/common/v1;commonv1";
+option java_package = "com.orbitalfreight.contracts.common.v1";
+option java_multiple_files = true;
+option csharp_namespace = "OrbitalFreight.Contracts.Common.V1";
+
+// Elenco chiuso di §0.6. Serve a tre cose contemporaneamente — residenza del dato, partizionamento
+// di telemetry.telemetry_readings e affinità di partizione su Kafka — quindi non è mai un free
+// text: un batch destinato a una regione non consentita viene rifiutato con 403, mai reinstradato.
+enum RegionCode {
+  REGION_CODE_UNSPECIFIED = 0;
+  REGION_CODE_EU_WEST = 1;      // eu-west
+  REGION_CODE_EU_CENTRAL = 2;   // eu-central, unica regione in scrittura per lo schema identity
+  REGION_CODE_NA_EAST = 3;      // na-east
+  REGION_CODE_NA_WEST = 4;      // na-west
+  REGION_CODE_APAC_SG = 5;      // apac-sg
+  REGION_CODE_APAC_JP = 6;      // apac-jp
+  REGION_CODE_LATAM_BR = 7;     // latam-br
+  REGION_CODE_MEA_AE = 8;       // mea-ae
+}
+
+// Valore di X-OF-Actor-Kind. `ACTOR_KIND_SYSTEM` non esiste come intestazione HTTP: compare solo
+// in platform.audit_ledger_entries.actor_kind, dove il ledger registra le proprie voci di
+// checkpoint. Vedi audit.v1.LedgerService/Append.
+enum ActorKind {
+  ACTOR_KIND_UNSPECIFIED = 0;
+  ACTOR_KIND_USER = 1;
+  ACTOR_KIND_SERVICE = 2;
+  ACTOR_KIND_DEVICE = 3;
+  ACTOR_KIND_PARTNER = 4;
+  ACTOR_KIND_SYSTEM = 5;
+}
+
+// Contesto propagato su ogni chiamata gRPC. In HTTP gli stessi valori viaggiano come
+// Authorization / X-OF-Tenant / X-OF-Trace-Id / X-OF-Idempotency-Key; sul canale gRPC li mettiamo
+// nel corpo del messaggio invece che nei metadata perché i metadata non entrano nella firma del
+// payload che telemetry-ingest verifica per ogni batch.
+message RequestContext {
+  // tnt_<ULID>. Deve coincidere con la claim `tid` del token, altrimenti la chiamata è rifiutata.
+  string tenant_id = 1;
+
+  // Trace-id W3C, 32 caratteri esadecimali. Propagarlo non è opzionale: la cache per trace di
+  // geo.v1.GeoService/ResolveGeofence (30 s, §1.2 Diamante A) è chiavata proprio su questo campo,
+  // e senza propagazione un singolo assegnamento di fleet-service risolve la stessa geofence due
+  // volte.
+  string trace_id = 2;
+
+  common.v1.ActorKind actor_kind = 3;
+
+  // usr_… , cred_… oppure gwy_… a seconda di actor_kind.
+  string actor_id = 4;
+
+  // Obbligatoria su ogni RPC che crea o addebita; conservata 24 ore (§7 regola 5).
+  string idempotency_key = 5;
+
+  // Regione di origine della richiesta. Il servizio chiamato la confronta con la propria
+  // OF_REGION_CODE e rifiuta se il dato non può attraversare il confine (§7 regola 7).
+  common.v1.RegionCode region_code = 6;
+
+  // DEPRECATO dalla v3 dell'envelope: il nome del servizio chiamante si legge ora dal certificato
+  // mTLS, non da un campo che il chiamante può scrivere a piacere.
+  string caller_service_name = 7 [deprecated = true];
+}
+
+// Punto WGS84. Corrisponde a geography(Point, 4326) nel database. Latitudine e longitudine restano
+// double perché sono coordinate, non denaro: la regola «mai float» di §7 riguarda gli importi.
+message GeoPoint {
+  double lat = 1;
+  double lon = 2;
+
+  // Accuratezza dichiarata dal ricevitore GNSS, in metri. Usata da geo.v1.GeoService/PointInFence
+  // insieme a geo.geofences.buffer_m per decidere se un punto incerto sta dentro o fuori.
+  uint32 accuracy_m = 3;
+}

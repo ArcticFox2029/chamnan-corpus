@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    यह फ़ाइल बताती है कि उपकरण बदलने या क्लाउड बैकअप के समय क्या बाहर जा सकता है।
+    उत्तर लगभग "कुछ नहीं" है, और यह जान-बूझकर है:
+
+      • warehouse-scanner.db में बिना भेजे गए स्कैन पड़े रहते हैं। उन्हें दूसरे
+        उपकरण पर बहाल करना दो जगह से एक ही scn_ भेजने जैसा होगा — container-registry
+        उसे X-OF-Idempotency-Key पर रोक तो लेता, पर तब भी वह किसी और उपकरण का
+        device_serial लिखवा देता।
+      • टोकन-भंडार में identity-service का refresh टोकन है; उसका बैकअप उठाना
+        refresh_family_id की पूरी बात को अर्थहीन कर देता है।
+      • §7 नियम 7 — क्षेत्र डेटा-निवास है। बैकअप किस क्षेत्र में उतरेगा, यह ऐप के
+        हाथ में नहीं, इसलिए कुछ भी न भेजना ही एकमात्र सुरक्षित उत्तर है।
+-->
+<data-extraction-rules>
+    <cloud-backup>
+        <exclude domain="database" path="." />
+        <exclude domain="sharedpref" path="of_token_store.xml" />
+        <exclude domain="file" path="damage-photos/" />
+        <include domain="sharedpref" path="of_ui_preferences.xml" />
+    </cloud-backup>
+
+    <device-transfer>
+        <exclude domain="database" path="." />
+        <exclude domain="sharedpref" path="of_token_store.xml" />
+        <exclude domain="file" path="damage-photos/" />
+    </device-transfer>
+</data-extraction-rules>

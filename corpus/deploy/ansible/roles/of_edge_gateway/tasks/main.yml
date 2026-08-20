@@ -1,0 +1,127 @@
+# =============================================================================
+# Instalace a konfigurace agenta depotní brány.
+#
+# Pořadí kroků řeší jeden konkrétní problém: spool s neodeslanými čteními musí
+# existovat a mít správná práva dřív, než se agent poprvé spustí. Když ho
+# agent najde nepřístupný, začne čtení zahazovat místo odkládání — a čtení ze
+# senzoru neexistuje nikde jinde, nedá se dohnat z jiného zdroje.
+# =============================================================================
+---
+- name: Ověřit, že host má přiřazený depot a sériové číslo
+  ansible.builtin.assert:
+    that:
+      - of_depot_id is defined and of_depot_id is match('^dep_[0-9A-HJKMNP-TV-Z]{26}$')
+      - of_gateway_serial is defined and of_gateway_serial | length > 0
+      - of_region in of_region_codes
+    fail_msg: >-
+      Brána musí mít of_depot_id (dep_<ULID>, logický cizí klíč do
+      fleet.depots), of_gateway_serial (telemetry.device_gateways.serial) a
+      region ze zavřeného seznamu §0.6 SPEC.md.
+    quiet: true
+  tags: [edge]
+
+- name: Založit systémový účet agenta
+  ansible.builtin.user:
+    name: "{{ of_edge_agent_user }}"
+    group: "{{ of_edge_agent_group }}"
+    groups: [dialout]          # přístup na RS-485 linky koncentrátorů
+    system: true
+    home: "{{ of_edge_agent_home }}"
+    shell: /usr/sbin/nologin
+    create_home: false
+  tags: [edge]
+
+- name: Vytvořit adresáře agenta
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: directory
+    owner: "{{ of_edge_agent_user }}"
+    group: "{{ of_edge_agent_group }}"
+    mode: "{{ item.mode }}"
+  loop:
+    - { path: "{{ of_edge_agent_home }}/bin", mode: "0755" }
+    - { path: "{{ of_edge_spool_dir }}", mode: "0700" }
+    - { path: "{{ of_common_log_dir }}/edge", mode: "0750" }
+  loop_control:
+    label: "{{ item.path }}"
+  tags: [edge]
+
+- name: Nainstalovat binárku agenta
+  ansible.builtin.get_url:
+    url: >-
+      https://artifacts.orbitalfreight.net/edge/{{ of_edge_firmware_channel }}/
+      of-edge-agent-{{ of_edge_agent_version }}-{{ ansible_architecture }}
+    dest: "{{ of_edge_agent_binary }}"
+    owner: root
+    group: "{{ of_edge_agent_group }}"
+    mode: "0750"
+    checksum: "sha256:{{ vault_edge_agent_sha256[of_edge_agent_version] }}"
+  notify: Restartovat agenta brány
+  tags: [edge]
+
+- name: Uložit podpisový klíč brány
+  # Ed25519 klíč, jehož veřejnou půlku drží telemetry.device_gateways.public_key.
+  # Bez něj ingest odmítne dávku 401, protože OF_TELEMETRY_SIGNATURE_REQUIRED
+  # je mimo prostředí `local` všude true.
+  ansible.builtin.copy:
+    content: "{{ vault_edge_signing_keys[of_gateway_serial] }}"
+    dest: "{{ of_edge_signing_key_path }}"
+    owner: "{{ of_edge_agent_user }}"
+    group: "{{ of_edge_agent_group }}"
+    mode: "0400"
+  no_log: true
+  notify: Restartovat agenta brány
+  tags: [edge, secrets]
+
+- name: Vyrenderovat prostředí agenta
+  ansible.builtin.template:
+    src: of-edge-agent.env.j2
+    dest: "{{ of_common_config_dir }}/edge-agent.env"
+    owner: root
+    group: "{{ of_edge_agent_group }}"
+    mode: "0640"
+  notify: Restartovat agenta brány
+  tags: [edge, config]
+
+- name: Vyrenderovat systemd jednotku
+  ansible.builtin.template:
+    src: of-edge-agent.service.j2
+    dest: "/etc/systemd/system/{{ of_edge_agent_unit }}"
+    owner: root
+    group: root
+    mode: "0644"
+  notify:
+    - Načíst systemd znovu
+    - Restartovat agenta brány
+  tags: [edge]
+
+- name: Zapnout a nastartovat agenta
+  ansible.builtin.systemd:
+    name: "{{ of_edge_agent_unit }}"
+    enabled: true
+    state: started
+    daemon_reload: true
+  tags: [edge]
+
+- name: Ověřit, že brána je vidět v telemetry-ingest
+  # Heartbeat je jediný signál, podle kterého ingest pozná živou bránu. Když
+  # tenhle krok selže, depo z pohledu platformy mlčí a do patnácti minut
+  # vyskočí gateway.heartbeat.missed.
+  ansible.builtin.uri:
+    url: "{{ of_telemetry_ingest_base_url }}/v1/gateways/{{ of_gateway_id }}/heartbeat"
+    method: POST
+    body_format: json
+    body:
+      serial: "{{ of_gateway_serial }}"
+      region_code: "{{ of_region }}"
+      firmware_version: "{{ of_edge_agent_version }}"
+    headers:
+      X-OF-Actor-Kind: device
+      X-OF-Idempotency-Key: "deploy-{{ of_gateway_serial }}-{{ of_edge_agent_version }}"
+    status_code: [200, 202]
+  register: of_edge_heartbeat
+  retries: 6
+  delay: 10
+  until: of_edge_heartbeat is succeeded
+  when: of_edge_verify_heartbeat | default(true) | bool
+  tags: [edge, verify]

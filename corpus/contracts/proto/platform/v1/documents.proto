@@ -1,0 +1,103 @@
+syntax = "proto3";
+
+package platform.v1;
+
+import "common/v1/identifiers.proto";
+import "google/protobuf/timestamp.proto";
+
+// Forme condivise dello schema platform per la parte documentale. document-service non espone
+// gRPC — la sua superficie è REST, descritta in openapi/document-service.yaml — ma questi tipi
+// servono comunque a chi genera stub: customs-service, billing-service e container-registry
+// consumano document.uploaded e devono deserializzare gli stessi enum senza ridichiararli.
+//
+// L'associazione documento-proprietario è polimorfa per costruzione: un documento pende da una
+// spedizione, una dichiarazione, una fattura, un contenitore, una scansione o un vettore, e quelle
+// vivono in sei schemi diversi. Nessuna chiave esterna è quindi possibile, ed è
+// platform.document_owner_types a impedire che `owner_type` diventi testo libero.
+
+option go_package = "github.com/orbitalfreight/contracts/gen/go/platform/v1;platformv1";
+option java_package = "com.orbitalfreight.contracts.platform.v1";
+option java_multiple_files = true;
+
+// Vocabolario di platform.document_owner_types, con accanto il servizio che possiede la riga
+// puntata. document-service chiama quel servizio per confermare che l'id esista prima di
+// accettare il caricamento.
+enum DocumentOwnerType {
+  DOCUMENT_OWNER_TYPE_UNSPECIFIED = 0;
+  DOCUMENT_OWNER_TYPE_SHIPMENT = 1;     // freight.shipments — container-registry
+  DOCUMENT_OWNER_TYPE_CONTAINER = 2;    // freight.containers — container-registry
+  DOCUMENT_OWNER_TYPE_SCAN = 3;         // freight.shipment_scan_events — container-registry
+  DOCUMENT_OWNER_TYPE_DECLARATION = 4;  // customs.customs_declarations — customs-service
+  DOCUMENT_OWNER_TYPE_INVOICE = 5;      // billing.invoices — billing-service
+  DOCUMENT_OWNER_TYPE_CARRIER = 6;      // fleet.carriers — fleet-service
+}
+
+// Rispecchia il CHECK su platform.documents.kind.
+enum DocumentKind {
+  DOCUMENT_KIND_UNSPECIFIED = 0;
+  DOCUMENT_KIND_BILL_OF_LADING = 1;
+  DOCUMENT_KIND_COMMERCIAL_INVOICE = 2;
+  DOCUMENT_KIND_PACKING_LIST = 3;
+  DOCUMENT_KIND_CERTIFICATE_OF_ORIGIN = 4;
+  DOCUMENT_KIND_PROOF_OF_DELIVERY = 5;
+  DOCUMENT_KIND_DAMAGE_PHOTO = 6;
+  DOCUMENT_KIND_INSURANCE_CERTIFICATE = 7;
+  DOCUMENT_KIND_CUSTOMS_DECISION = 8;
+  DOCUMENT_KIND_RENDERED_INVOICE = 9;
+  DOCUMENT_KIND_CREDIT_NOTE = 10;
+}
+
+message Document {
+  // doc_<ULID>.
+  string document_id = 1;
+
+  string tenant_id = 2;
+  DocumentOwnerType owner_type = 3;
+  string owner_id = 4;
+  DocumentKind kind = 5;
+
+  // Chiave nell'object store, prefissata per regione. Non è mai restituita ai client esterni:
+  // partner-portal-api serve solo l'URL firmato.
+  string storage_key = 6;
+
+  common.v1.RegionCode region_code = 7;
+  string mime_type = 8;
+  int64 byte_size = 9;
+
+  // Impronta del contenuto. È la chiave del Diamante B di §1.2: quando partner-portal-api fa
+  // caricare la stessa fattura commerciale sia da billing-service sia da customs-service, il
+  // secondo scrittore riconosce il duplicato da qui e riusa il doc_ esistente invece di
+  // memorizzare il blob due volte.
+  bytes sha256 = 10;
+
+  string uploaded_by = 11;
+  google.protobuf.Timestamp uploaded_at = 12;
+
+  // Data di conservazione minima, YYYY-MM-DD. Per i documenti doganali è la data di deposito più
+  // OF_CUSTOMS_RETENTION_YEARS. Finché è nel futuro, DELETE /v1/documents/{document_id} rifiuta.
+  string retained_until = 13;
+
+  google.protobuf.Timestamp deleted_at = 14;
+}
+
+// Rispecchia il CHECK su platform.notifications.channel.
+enum NotificationChannel {
+  NOTIFICATION_CHANNEL_UNSPECIFIED = 0;
+  NOTIFICATION_CHANNEL_EMAIL = 1;
+  NOTIFICATION_CHANNEL_SMS = 2;
+  NOTIFICATION_CHANNEL_PUSH = 3;
+  NOTIFICATION_CHANNEL_WEBHOOK = 4;
+  NOTIFICATION_CHANNEL_CONSOLE = 5;
+}
+
+enum NotificationState {
+  NOTIFICATION_STATE_UNSPECIFIED = 0;
+  NOTIFICATION_STATE_QUEUED = 1;
+  NOTIFICATION_STATE_SENDING = 2;
+  NOTIFICATION_STATE_SENT = 3;
+  NOTIFICATION_STATE_FAILED = 4;
+
+  // Non è un fallimento: la preferenza dell'utente in platform.notification_preferences, o la sua
+  // finestra di silenzio, hanno soppresso l'invio.
+  NOTIFICATION_STATE_SUPPRESSED = 5;
+}

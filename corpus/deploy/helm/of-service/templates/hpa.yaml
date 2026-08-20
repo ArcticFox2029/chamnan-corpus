@@ -1,0 +1,81 @@
+{{- /*
+=============================================================================
+Automatické škálování — jen tam, kde dává smysl.
+
+Zapíná se v hodnotách, ne tady. Důvod je v deploy/kubernetes/base/hpa.yaml
+popsaný podrobně: kořen grafu (identity-service) a služby se zahřívacím
+stavem (geo-service se silničním grafem) se škálovat nemají, protože nová
+replika dorazí pozdě a odejde brzy.
+
+Sestup je všude pomalejší než výstup. Odcházející pod u konzumenta znamená
+přebalancování skupiny přes desítky partition, a to je dražší než pár minut
+zbytečně běžící repliky.
+=============================================================================
+*/ -}}
+{{- if .Values.autoscaling.enabled -}}
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: {{ include "of-service.fullname" . }}
+  labels:
+    {{- include "of-service.labels" . | nindent 4 }}
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: {{ include "of-service.fullname" . }}
+  minReplicas: {{ .Values.autoscaling.minReplicas }}
+  maxReplicas: {{ .Values.autoscaling.maxReplicas }}
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: {{ .Values.autoscaling.targetCPUUtilizationPercentage }}
+    {{- if and .Values.autoscaling.consumerLagTarget .Values.kafka.consumerGroup }}
+    - type: External
+      external:
+        metric:
+          name: kafka_consumergroup_lag
+          selector:
+            matchLabels:
+              consumergroup: {{ .Values.kafka.consumerGroup }}
+        target:
+          type: AverageValue
+          averageValue: {{ .Values.autoscaling.consumerLagTarget | quote }}
+    {{- end }}
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 60
+      policies:
+        - type: Percent
+          value: 50
+          periodSeconds: 60
+    scaleDown:
+      stabilizationWindowSeconds: 600
+      policies:
+        - type: Pods
+          value: 1
+          periodSeconds: 180
+{{- end }}
+---
+{{- if .Values.podDisruptionBudget.enabled }}
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "of-service.fullname" . }}
+  labels:
+    {{- include "of-service.labels" . | nindent 4 }}
+spec:
+  {{- /* Past, na kterou se dá narazit jen jednou, ale bolí: minAvailable
+         rovný počtu replik zablokuje vyprázdnění uzlu úplně a operátor to
+         zjistí až po půl hodině čekání. */}}
+  {{- if ge (int .Values.podDisruptionBudget.minAvailable) (int .Values.replicaCount) }}
+  {{- fail (printf "podDisruptionBudget.minAvailable (%d) musi byt nizsi nez replicaCount (%d)" (int .Values.podDisruptionBudget.minAvailable) (int .Values.replicaCount)) }}
+  {{- end }}
+  minAvailable: {{ .Values.podDisruptionBudget.minAvailable }}
+  selector:
+    matchLabels:
+      {{- include "of-service.selectorLabels" . | nindent 6 }}
+{{- end }}

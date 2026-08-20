@@ -1,0 +1,31 @@
+# =============================================================================
+# Obsluhy role of_telemetry_partitions.
+#
+# ANALYZE po každé změně partition není kosmetika: plánovač bez statistik
+# sáhne na readings_container_time_idx sekvenčním scanem přes celou partition,
+# a to je na tabulce s nejvyšším objemem zápisu v celé platformě rozdíl mezi
+# milisekundami a minutami u GET /v1/containers/{container_id}/readings.
+# =============================================================================
+
+- name: Přepočítat statistiky partition
+  ansible.builtin.command:
+    cmd: >-
+      {{ of_telemetry_psql }} --dbname {{ of_telemetry_database }}
+      --username {{ of_telemetry_maintenance_user }}
+      --command "ANALYZE {{ of_telemetry_schema }}.{{ of_telemetry_parent_table }}"
+  become_user: postgres
+  changed_when: false
+  listen: Přepočítat statistiky partition
+
+- name: Ověřit, že rodičovská tabulka vidí všechny lokální partition
+  ansible.builtin.command:
+    cmd: >-
+      {{ of_telemetry_psql }} --dbname {{ of_telemetry_database }}
+      --username {{ of_telemetry_maintenance_user }} --tuples-only --no-align
+      --command "SELECT count(*) FROM pg_inherits
+                 WHERE inhparent = '{{ of_telemetry_schema }}.{{ of_telemetry_parent_table }}'::regclass"
+  become_user: postgres
+  register: of_telemetry_partition_count
+  changed_when: false
+  failed_when: of_telemetry_partition_count.stdout | int < of_telemetry_local_regions | length
+  listen: Přepočítat statistiky partition
