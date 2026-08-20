@@ -6,6 +6,12 @@ context tool against something difficult without pointing it at your own code.
 Drop it in a folder, run whatever you are testing, and compare numbers with anyone else who did the
 same. That is the whole idea: **measurements nobody has to take your word for.**
 
+> **Clone it beside your work, not inside it.** Most indexers resolve a repository root by walking
+> up from the working directory until they find a `.git`. Nested inside a repository of your own,
+> that walk finds *yours* — so the tool measures your code, writes its output into your tree, and
+> reports a number that has nothing to do with this corpus. The clone below brings its own `.git`,
+> which is what keeps the boundary where you expect it.
+
 ```bash
 git clone https://github.com/ArcticFox2029/chamnan-corpus.git
 cd chamnan-corpus
@@ -46,18 +52,29 @@ It was built for [chamnan](https://github.com/ArcticFox2029/chamnan), and those 
 reproducible from a clone:
 
 ```bash
+git clone https://github.com/ArcticFox2029/chamnan.git ../chamnan
 python3 plant_secrets.py
-cd corpus && chamnan-map
+../chamnan/bin/chamnan-map
 ```
 
 ```
-528 source file(s), 1,368,905 tokens of code
-Quick Index    51,894 tokens  (3.8% of the source)
-described    [###################.] 516/528 files (98%)
+529 source file(s), 1,373,242 tokens of code
+Quick Index    53,652 tokens  (3.9% of the source)
+Full Detail   132,999 tokens  (grep this, never read it whole)
+described    [###################.] 517/529 files (98%)
 
 Over the 3,000-token session budget, so session start will roll this up by
-directory: ~2,996 tokens injected per session instead of 51,894
+directory: ~2,970 tokens injected per session instead of 53,652
 ```
+
+Then check the part that actually matters — that none of what you just planted came out the other
+end:
+
+```bash
+grep -cE 'AKIA[A-Z0-9]{16}|sk_live_|ghp_|glpat-|SG\.|xoxb-|sk-ant-|BEGIN [A-Z ]*PRIVATE KEY' .chamnan/MAP.md
+```
+
+`0`.
 
 The interesting test is not the ratio. It is whether **none of the planted credentials appear in the
 generated index** — and whether the tool still says something useful about a repository whose
