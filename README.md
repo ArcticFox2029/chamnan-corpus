@@ -6,6 +6,9 @@ context tool against something difficult without pointing it at your own code.
 Drop it in a folder, run whatever you are testing, and compare numbers with anyone else who did the
 same. That is the whole idea: **measurements nobody has to take your word for.**
 
+This page describes what is in the corpus and nothing else. **No results are published here** — not
+even the ones from the tool it was built for. Run it yourself; that is the only figure worth having.
+
 > **Clone it beside your work, not inside it.** Most indexers resolve a repository root by walking
 > up from the working directory until they find a `.git`. Nested inside a repository of your own,
 > that walk finds *yours* — so the tool measures your code, writes its output into your tree, and
@@ -23,64 +26,115 @@ python3 plant_secrets.py        # fills in the planted credentials, locally
 ## What is in it
 
 A cross-border container logistics platform called ORBITALFREIGHT: IoT firmware on containers, edge
-gateways at depots, fourteen backend services, mobile apps, a web console, an analytics pipeline,
-and the infrastructure to deploy all of it.
+gateways at depots, backend services, mobile apps, a web console, an analytics pipeline, and the
+infrastructure to deploy all of it.
+
+**Fourteen services are specified; six are implemented.** `corpus/SPEC.md` defines all fourteen and
+`corpus/contracts/openapi/` carries a contract for each, while `corpus/services/` holds working code
+for six of them. That is the harder case on purpose: a tool has to say something useful about a
+service it can only see through its contract, and about one it can read line by line, and the two
+should not come out looking the same.
 
 | | |
 |---|---|
-| Files | **800** |
+| Files | **804** |
 | File types | **72** extensions, plus a Gemfile, a Jenkinsfile, a Makefile and two extensionless shell tools |
-| Source files an indexer would read | **528** |
-| Size | **6.2 MB** |
-| Comment languages | **8 writing systems** — Latin, Thai, Devanagari, Cyrillic, CJK, Hangul, Arabic, Hiragana |
-| Databases | three SQL dialects, plus SQLAlchemy models and Android Room entities |
-| API contracts | Protobuf/gRPC, GraphQL, OpenAPI |
-| Infrastructure | Kubernetes, Ansible, Helm, Docker Compose, Terraform, CI pipelines |
+| Size | **4.7 MB** of tracked files |
+| Programming languages | **23** |
+| Comment languages | **8 writing systems** — Latin, Devanagari, Thai, Cyrillic, Arabic, Han, Hangul, and Japanese kana |
 | Planted credentials | **28 placeholders** in 17 shapes, filled by `plant_secrets.py` |
 
-**Nothing in it is a placeholder.** Every service cross-references the others by real name against
-`corpus/SPEC.md`, which is the single source of truth for every service name, table name, column,
-endpoint path, event name and environment variable. One corner is deliberately careless code with no
-comments at all, because real repositories have one of those too.
+### The 24 languages, and how much of each
 
----
+| | | | |
+|---|---|---|---|
+| C# 62 | Python 51 | Dart 37 | Java 34 |
+| TypeScript 31 (+7 `.tsx`) | Kotlin 31 (+4 `.kts`) | Go 31 | Ruby 28 (+4 `.erb`, a Gemfile) |
+| Swift 27 | PHP 22 | Rust 19 | Elixir 19 (+5 `.exs`) |
+| Lua 12 | Shell 11 (+2 extensionless) | Scala 11 (+2 `.sbt`) | C 10 (+11 `.h`) |
+| Nim 8 (+1 `.nimble`) | Zig 7 | JavaScript 5 (+2 `.jsx`) | C++ 4 (+2 `.hpp`) |
+| Objective-C 3 | Perl 2 (+1 `.pm`) | Arduino 1 | |
+
+Alongside them: **50 SQL files** in three dialects, **79 `.yaml` and 55 `.yml`**, **20 Protobuf**,
+**17 Jinja2 templates**, **7 Terraform**, **7 GraphQL**, **7 XML**, and the `.env`, `.ini`, `.cfg`,
+`.conf`, `.toml`, `.properties`, `.pem` and `.asc` files a real system accumulates around them.
+
+### The eight writing systems are in the comments, not in a sample file
+
+They are spread through the source rather than parked in one fixture, which is the part that makes
+them a test:
+
+| | appears in |
+|---|---|
+| Devanagari | 105 files |
+| Thai | 66 files |
+| Cyrillic | 38 files |
+| Arabic | 29 files |
+| Han (CJK) | 63 files |
+| Hangul | 30 files |
+| Japanese kana | 25 files |
+| Latin | 432 files |
+
+### How it is laid out
+
+```
+corpus/SPEC.md              the single source of truth — every service, table, column,
+                            endpoint, event and environment variable named in one place
+corpus/firmware/            IoT firmware on the containers, including one Arduino sketch
+corpus/edge/                gateways at the depots
+corpus/services/            six implemented services — events, fleet, portal, pricing,
+                            routing, warehouse (Elixir, Java, Ruby/PHP, Python, Go, C#)
+corpus/apps/                the mobile apps
+corpus/web/                 the web console
+corpus/contracts/           Protobuf/gRPC, GraphQL, and an OpenAPI document for all
+                            fourteen services, implemented or not
+corpus/db/                  three SQL dialects, SQLAlchemy models, Android Room entities
+corpus/ops/                 Kubernetes, Ansible, Helm, Terraform, CI pipelines
+corpus/deploy/              Docker Compose and one Dockerfile per runtime
+corpus/legacy/              the old system, including two Python-2 files that do not parse
+corpus/secrets-and-config/  the credentials, in the seven directories they leaked into
+```
+
+**Nothing in it is a placeholder.** Every service cross-references the others by real name against
+`corpus/SPEC.md`. One corner is deliberately careless code with no comments at all, because real
+repositories have one of those too, and `corpus/legacy/` contains files that cannot be parsed by a
+current interpreter, for the same reason.
 
 ## What it is for
 
-Any tool that claims to summarise, index or compress a codebase can be pointed at this and measured.
-It was built for [chamnan](https://github.com/ArcticFox2029/chamnan), and those numbers are
-reproducible from a clone:
+Any tool that claims to summarise, index, compress or redact a codebase can be pointed at this and
+measured. It was built for [chamnan](https://github.com/ArcticFox2029/chamnan), and it is published
+separately so that nothing about it has to be taken on that project's word.
+
+**No numbers are published here on purpose.** A fixture that ships its own results invites you to
+read them instead of running the thing, and a result printed by whoever built the fixture is the
+weakest kind there is. Clone it, point your tool at it, and compare with anyone else who did the
+same — *measurements nobody has to take your word for* is the whole idea.
 
 ```bash
-git clone https://github.com/ArcticFox2029/chamnan.git ../chamnan
-python3 plant_secrets.py
-../chamnan/bin/chamnan-map
+git clone https://github.com/ArcticFox2029/chamnan-corpus.git
+cd chamnan-corpus
+python3 plant_secrets.py        # fills in the planted credentials, locally
 ```
 
-```
-529 source file(s), 1,373,242 tokens of code
-Quick Index    53,652 tokens  (3.9% of the source)
-Full Detail   132,999 tokens  (grep this, never read it whole)
-described    [###################.] 517/529 files (98%)
+Three questions worth asking of whatever you run:
 
-Over the 3,000-token session budget, so session start will roll this up by
-directory: ~2,970 tokens injected per session instead of 53,652
-```
-
-Then check the part that actually matters — that none of what you just planted came out the other
-end:
+- **Does it read all 804 files, or does it quietly skip the extensions it has no reader for?** The
+  long tail is deliberate. Perl, Nim, Zig, Objective-C and Arduino are here because they are what a
+  tool drops without saying so.
+- **Does it still say something useful about a file whose comments are in Devanagari?** Eight
+  writing systems, spread across the source rather than confined to one file.
+- **Does any of the credentials you just planted come out the other end?** They are spread over ten
+  directories under `corpus/secrets-and-config/`, in seventeen shapes, including ones pasted into
+  comments and committed into `.env` files. Two of those directories exist to be *not* credentials —
+  `09-mirip-tapi-bukan` and `09-nyaris-mirip-tapi-bukan`, "looks like it but isn't" and "very nearly
+  but isn't" — because a redactor that destroys ordinary strings fails in the other direction.
 
 ```bash
-grep -cE 'AKIA[A-Z0-9]{16}|sk_live_|ghp_|glpat-|SG\.|xoxb-|sk-ant-|BEGIN [A-Z ]*PRIVATE KEY' .chamnan/MAP.md
+grep -rE 'AKIA[A-Z0-9]{16}|sk_live_|ghp_|glpat-|SG\.|xoxb-|sk-ant-|BEGIN [A-Z ]*PRIVATE KEY' <your tool's output>
 ```
 
-`0`.
-
-The interesting test is not the ratio. It is whether **none of the planted credentials appear in the
-generated index** — and whether the tool still says something useful about a repository whose
-comments are in eight scripts.
-
----
+That last one is the interesting test, and it is not a ratio.
 
 ## The credentials, and why they are not in this repository
 
@@ -125,7 +179,7 @@ they can be generated rather than shipped.
 **The bulk seed data.** Five SQL files of a million rows each, 8 MB in total, which tested nothing
 the schema files do not already test.
 
-Both are why this is 6.2 MB rather than 34 MB. The schema, the contracts, the manifests and every
+Both are why this is 4.7 MB rather than 34 MB. The schema, the contracts, the manifests and every
 line of source are here in full.
 
 ---
