@@ -129,6 +129,12 @@ service publishes. This is why every consumer must be idempotent on `event_id`.
 Ports are the in-cluster listen ports; every service is reachable at
 `http://<service-name>.orbitalfreight.svc.cluster.local:<http_port>`.
 
+> **The `Directory` column below is where a service WOULD live. Twelve of the fourteen are not
+> built in this repository** — they exist as an OpenAPI document in `contracts/openapi/` and are
+> referenced by name from the code that is built. Only `services/fleet/` and `services/routing/`
+> resolve as written, and `services/routing/` is Go here rather than the Python this table gives it.
+> **§6.0 has the map of what is actually on disk**, and `check_spec.py` re-derives it.
+
 | # | Service | Purpose | Language | Directory | HTTP | gRPC |
 |---|---|---|---|---|---|---|
 | 1 | **identity-service** | Issues and introspects tokens; owns tenants, users, org-unit hierarchy, roles and API credentials. | Go 1.22 | `services/identity/` | 8081 | 9081 |
@@ -1535,6 +1541,66 @@ The platform is one repository. Each directory has exactly one owning team, and 
 its comments and documentation in its own working language — the result of the 2023 merger, and
 deliberately left alone since. Identifiers, log messages and anything on the wire are English
 everywhere; only prose comments follow the column below.
+
+> **§6.1 and §6.2 below specify the whole platform. This repository ships an implemented subset of
+> it, and the two do not match row for row.** §6.0 is the map from one to the other, and it is
+> derived from the tree rather than declared: `python3 check_spec.py` walks every path, service and
+> language named in this document and reports which resolve. Read §6.0 before measuring anything
+> against this corpus, and run the checker before believing either.
+
+### 6.0 What is actually in this repository
+
+**Six of the fourteen services in §1 are implemented.** The other eight exist as an OpenAPI document
+under `contracts/openapi/` and are referenced by name from the six that are implemented — which is
+the point of the arrangement rather than an accident: a tool pointed at this corpus has to say
+something useful about a service it can only see through its contract AND about one it can read line
+by line, and those two answers should not come out looking the same.
+
+**The six that ship do not all use the name, language or comment language §6.2 gives them.** That is
+recorded here rather than corrected in §6.2, because §6.2 is the specification and these are the
+directories as built:
+
+| Directory | Names itself | Programming language | Comment language |
+|---|---|---|---|
+| `services/events/` | event-backbone | Elixir (+ Scala) | Russian |
+| `services/fleet/` | fleet-service | Java (+ a Kotlin SDK) | Korean |
+| `services/portal/` | portal | Ruby (+ PHP) | French |
+| `services/pricing/` | pricing-service | Python | Thai |
+| `services/routing/` | routing-service | Go | Vietnamese |
+| `services/warehouse/` | warehouse-service | C# | Polish |
+
+`pricing-service`, `warehouse-service` and `event-backbone` are **not named anywhere in §1**, and
+`services/portal/` is not the `services/partner-portal/` of §6.2. §7 rule 1 says names come from
+this file; these four are the standing exceptions to it, and they are the only ones.
+
+**Twelve of the fourteen paths in §6.2 are not built.** Each of the fourteen services still has an
+OpenAPI document under `contracts/openapi/`, and the code that IS built calls them by the names §1
+gives them — `services/warehouse/` consumes from container-registry, telemetry-ingest and
+customs-service, none of which exist here as code. The unbuilt paths, so that a checker can tell a
+declared absence from a broken reference:
+
+`services/identity/` · `services/container-registry/` · `services/telemetry-ingest/` ·
+`services/geo/` · `services/customs/` · `services/billing/` · `services/document/` ·
+`services/notification/` · `services/partner-portal/` · `services/analytics/` ·
+`services/audit-ledger/` · `services/reconciliation/`
+
+Only `services/fleet/` and `services/routing/` resolve as §6.2 writes them, and `services/routing/`
+is Go with Vietnamese comments rather than the Python with Spanish comments §6.2 gives it.
+
+**Of the thirteen top-level directories in §6.1, eight exist**: `services/`, `apps/`, `web/`,
+`edge/`, `firmware/`, `db/`, `ops/`, `contracts/`. `libs/`, `pipelines/`, `infra/`, `tools/` and
+`docs/` are specified and not built — the Kubernetes, Terraform and Helm manifests §6.1 puts in
+`infra/` are in `ops/` and `deploy/` instead.
+
+**Three directories exist that §6.1 does not mention**, and each is here for a reason that has
+nothing to do with the platform:
+
+| Directory | Why it is here |
+|---|---|
+| `deploy/` | Docker Compose, and one Dockerfile per runtime — including runtimes no service here is written in |
+| `legacy/` | the system this one replaced. Contains Python 2 that a current interpreter cannot parse, on purpose |
+| `secrets-and-config/` | the planted credentials, in the ten directories they leaked into. Two of the ten are near-misses that must NOT be redacted |
+
 
 ### 6.1 Top-level
 

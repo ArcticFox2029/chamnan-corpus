@@ -115,7 +115,20 @@ same — *measurements nobody has to take your word for* is the whole idea.
 git clone https://github.com/ArcticFox2029/chamnan-corpus.git
 cd chamnan-corpus
 python3 plant_secrets.py        # fills in the planted credentials, locally
+python3 check_spec.py           # the answer key and the tree still agree
 ```
+
+**`check_spec.py` is there because the answer key drifted once.** `corpus/SPEC.md` is what makes this
+more than a pile of files: it names every service, table, column, endpoint, event and environment
+variable, so a tool can be scored on whether it resolves a cross-reference correctly. On 2026-09-16
+twelve of the fourteen service directories it named did not exist, four that did exist were named
+nowhere, and five of its thirteen top-level directories were absent. Anybody scoring a tool against
+those rows was scoring it against a broken key, and nothing said so — a specification that is only
+prose decays in silence.
+
+The derivable half of it is now checked: 64 claims a filesystem can settle, and `--quiet` for CI. It
+asserts paths, service names and contract documents; it says nothing about whether the prose is
+right, which is not a thing a script can know.
 
 Three questions worth asking of whatever you run:
 
