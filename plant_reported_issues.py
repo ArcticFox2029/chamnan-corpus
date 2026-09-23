@@ -38,6 +38,7 @@ HERE = pathlib.Path(__file__).resolve().parent
 EDGE = HERE / "corpus" / "edge" / "reported"
 PLANTED = []
 DRY = False
+INSTALL = False
 
 
 def _w(path, text, note, cite="", *, binary=False):
@@ -109,6 +110,10 @@ def denied():
        "says so, is indistinguishable from a sweep that looked and found nothing.\n\n"
        f"Reported against ripgrep: {_RG863}\n",
        "the note naming the ambiguity", _RG863)
+    # The directory ships READABLE and `--install` takes the mode away. Committed at mode 000 its
+    # contents cannot be added at all -- git says "Permission denied" and skips them, which is a
+    # better answer than ripgrep gives but still leaves the fixture empty in the clone. Note that
+    # git tracks no directory mode either way, so the hostile state can only ever be local.
     d = root / "unreadable"
     if not DRY:
         if d.exists():
@@ -118,7 +123,9 @@ def denied():
             "GITHUB_TOKEN=__PLANTED_GITHUB__\n", encoding="utf-8")
         (d / "has-a-bug.py").write_text(
             "# A finding nothing will ever reach.\nx = 1 / 0\n", encoding="utf-8")
-        os.chmod(d, 0)
+        if INSTALL:
+            os.chmod(d, 0)
+            print("  --install: corpus/edge/reported/denied/unreadable/ is now mode 000")
     PLANTED.append({"file": "corpus/edge/reported/denied/unreadable/", "bytes": 0, "cite": _RG863,
                     "hazard": "a mode-000 directory holding a credential and a bug"})
 
@@ -247,6 +254,7 @@ GROUPS = [boundary, sizecap, denied, confusable, entropy, longpath, install]
 
 if __name__ == "__main__":
     DRY = "--dry-run" in sys.argv
+    INSTALL = "--install" in sys.argv
     for fn in GROUPS:
         fn()
     named = [p for p in PLANTED if p["hazard"]]
