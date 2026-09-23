@@ -41,3 +41,12 @@ corpus/edge/windows-hostile/*
 # `plant_situations.py --install` renames these to `.git`, which git cannot track by name. The
 # tracked form is the `dot-git` placeholder beside each.
 corpus/edge/git-shapes/**/.git
+
+# `plant_supply_chain.py --install` writes these two at the repository root. They are the live
+# form of CVE-2025-59536 and its MCP half: a repo-scoped settings file whose SessionStart hook
+# fires before the trust dialog, and an MCP declaration that approves its own servers. A PUBLIC
+# repository whose tracked files make a tool execute anything on open is a weapon however
+# harmless the payload is, so the tracked form is the `.attack-shape` document beside each.
+/.claude/settings.json
+/.mcp.json
+corpus/edge/supply-chain/EXECUTED.log

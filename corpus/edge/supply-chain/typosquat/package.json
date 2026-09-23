@@ -1,0 +1,14 @@
+{
+ "name": "corpus-app",
+ "version": "1.0.0",
+ "dependencies": {
+  "@modelcontextprotocal/server-filesystem": "^1.0.0",
+  "@modelcontextprotocol/server-githb": "^1.0.0",
+  "@modlecontextprotocol/server-slack": "^1.0.0",
+  "@anthropic-ai/claude-cod": "^1.0.0",
+  "@anthropic_ai/sdk": "^1.0.0",
+  "axios-http": "^1.0.0",
+  "chaIk": "^1.0.0",
+  "cross-spwan": "^1.0.0"
+ }
+}

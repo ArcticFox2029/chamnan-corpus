@@ -1,0 +1,80 @@
+[
+ {
+  "file": "corpus/edge/supply-chain/hooks/settings.json.attack-shape",
+  "hazard": "the CVE-2025-59536 settings file, as a document",
+  "cite": "https://research.checkpoint.com/2026/rce-and-api-token-exfiltration-through-claude-code-project-files-cve-2025-59536/",
+  "bytes": 1341
+ },
+ {
+  "file": "corpus/edge/supply-chain/hooks/README.md",
+  "hazard": "the note naming the test and the limit on the payload",
+  "cite": "https://research.checkpoint.com/2026/rce-and-api-token-exfiltration-through-claude-code-project-files-cve-2025-59536/",
+  "bytes": 688
+ },
+ {
+  "file": "corpus/edge/supply-chain/mcp/mcp.json.attack-shape",
+  "hazard": "a repo-scoped MCP declaration of servers the user never approved",
+  "cite": "https://thehackernews.com/2026/02/claude-code-flaws-allow-remote-code.html",
+  "bytes": 828
+ },
+ {
+  "file": "corpus/edge/supply-chain/mcp/env-override.env",
+  "hazard": "an environment file that redirects the API base URL",
+  "cite": "https://thehackernews.com/2026/02/claude-code-flaws-allow-remote-code.html",
+  "bytes": 413
+ },
+ {
+  "file": "corpus/edge/supply-chain/mcp/.envrc",
+  "hazard": "the same override in the form a shell loads on cd",
+  "cite": "https://thehackernews.com/2026/02/claude-code-flaws-allow-remote-code.html",
+  "bytes": 201
+ },
+ {
+  "file": "corpus/edge/supply-chain/mcp/preload.js",
+  "hazard": "the module NODE_OPTIONS would preload",
+  "cite": "",
+  "bytes": 138
+ },
+ {
+  "file": "corpus/edge/supply-chain/typosquat/package.json",
+  "hazard": "a manifest where every dependency is one edit from the real one",
+  "cite": "https://thehackernews.com/2026/02/claude-code-flaws-allow-remote-code.html",
+  "bytes": 371
+ },
+ {
+  "file": "corpus/edge/supply-chain/typosquat/README.md",
+  "hazard": "the note pairing each squat with its target",
+  "cite": "https://thehackernews.com/2026/02/claude-code-flaws-allow-remote-code.html",
+  "bytes": 890
+ },
+ {
+  "file": "corpus/edge/supply-chain/namespace/package.json",
+  "hazard": "32 dependencies under one namespace, which is the whole trust decision",
+  "cite": "https://thehackernews.com/2026/02/claude-code-flaws-allow-remote-code.html",
+  "bytes": 1392
+ },
+ {
+  "file": "corpus/edge/supply-chain/namespace/README.md",
+  "hazard": "the note naming why spelling checks do not reach this",
+  "cite": "https://thehackernews.com/2026/02/claude-code-flaws-allow-remote-code.html",
+  "bytes": 340
+ },
+ {
+  "file": "corpus/edge/supply-chain/sourcemap/bundle.min.js.map",
+  "hazard": "a source map that discloses a whole internal tree",
+  "cite": "https://thehackernews.com/2026/04/claude-code-tleaked-via-npm-packaging.html",
+  "bytes": 2310902
+ },
+ {
+  "file": "corpus/edge/supply-chain/sourcemap/bundle.min.js",
+  "hazard": "the one-line bundle that points at it",
+  "cite": "https://thehackernews.com/2026/04/claude-code-tleaked-via-npm-packaging.html",
+  "bytes": 63
+ },
+ {
+  "file": "corpus/edge/supply-chain/sourcemap/README.md",
+  "hazard": "the note naming the shape",
+  "cite": "https://thehackernews.com/2026/04/claude-code-tleaked-via-npm-packaging.html",
+  "bytes": 383
+ }
+]

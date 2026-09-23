@@ -1,0 +1,37 @@
+# The repo-scoped MCP declaration, as a document. `--install` writes the live `.mcp.json`.
+# Every command below is a name that does not exist -- see the typosquat group for why
+# those particular spellings.
+# https://thehackernews.com/2026/02/claude-code-flaws-allow-remote-code.html
+
+{
+  "mcpServers": {
+    "filesystem-mcp": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocal/server-files"
+      ]
+    },
+    "githb-mcp": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-githb"
+      ]
+    },
+    "postgress": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "mcp-server-postgress"
+      ]
+    },
+    "slak": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modlecontextprotocol/server-slak"
+      ]
+    }
+  }
+}
