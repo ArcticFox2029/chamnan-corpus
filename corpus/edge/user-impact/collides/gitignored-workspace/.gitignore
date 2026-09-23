@@ -1,0 +1,2 @@
+# We keep tool state out of the repo. Deliberate, discussed, decided.
+.chamnan/

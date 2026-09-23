@@ -182,19 +182,28 @@ python3 plant_secrets.py --revert   # put the placeholders back
 
 ---
 
-## The hazards, and the four scripts that plant them
+## The hazards, and the 10 scripts that plant them
 
-The corpus above is hard to *index*. This part is hard to *survive*. Four planters write about
-1,900 entries whose point is that a tool reading them does the wrong thing — and none of it is
-invented for the corpus: each group traces to a failure that was measured somewhere, either in a
-guard's own source or in a published comparison of four shipped plugins.
+The corpus above is hard to *index*. This part is hard to *survive*. 10 planters write
+2,013 entries whose point is that a tool reading them does the wrong thing — and none of it is
+invented for the corpus: each group traces to a failure that was measured somewhere, in a guard's
+own source, in a published comparison of shipped plugins, in an issue a real user filed, or in a
+dated incident with a name people recognise.
+
+The counts here are derived from the manifests rather than typed: this heading said *four* while
+10 existed, which is the same drift `check_spec.py` was written for.
 
 ```bash
 python3 plant_secrets.py            # the credentials — already documented above
 python3 plant_rule_patterns.py      # 177 rule trailers: patterns that run at session start
-python3 plant_workspace_hazards.py  # 463 entries across every workspace surface a clone carries
+python3 plant_workspace_hazards.py  # every workspace surface a clone carries
 python3 plant_failure_classes.py    # the nine classes a four-plugin comparison measured
 python3 plant_situations.py         # arrangements: many hosts at once, git shapes, scale, links
+python3 plant_reported_issues.py    # conditions real users filed against real tools
+python3 plant_named_gaps.py         # gaps this project's own research named and left open
+python3 plant_supply_chain.py       # repository-borne attack shapes filed as CVEs
+python3 plant_incidents.py          # published, dated incidents in the form a repo carried them
+python3 plant_user_impact.py        # what a context tool costs the person who installed it
 ```
 
 Each writes a manifest next to what it planted, so a run can be diffed against what was true when
@@ -228,6 +237,16 @@ that contradicts its neighbours; a `.git` that is a file, as a worktree and a su
 it; 1,200 files in one directory and a path fourteen deep; a symlink loop and a symlink back to the
 repository root; and generated files that are real, committed, and should not be read as if a
 person wrote them.
+
+**`plant_user_impact.py` — what it costs the person who installed it.** The others ask whether a
+tool can read this repository. This one asks the question from the user's side, and the answer is a
+different list: a customer's name copied verbatim into an index the tool encourages committing, a
+`.gitignore` line that means the workspace is never shared, merge markers inside the file the block
+quotes at every start, an index naming twenty-five files that were deleted, and the user's own
+security documentation read as the attack it describes. A hundred cases with their disposition are
+in `.chamnan/state/USER_IMPACT_CASES.md`: 67 planted, 12 already here from an earlier planter, and
+21 that no corpus can hold — a duration, a host behaviour, an OS, or a state git refuses to track.
+The last 21 are listed rather than omitted, which is the only way the coverage claim stays checkable.
 
 **One conflict could not be planted, because it cannot exist.** One adapter reads
 `.clinerules/chamnan.md` and another reads `.clinerules` as a file. One path, two types — no

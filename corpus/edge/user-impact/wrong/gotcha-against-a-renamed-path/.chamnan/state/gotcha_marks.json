@@ -1,0 +1,6 @@
+{
+ "src/pricing/legacy_tariff.py": {
+  "note": "Rounding here is half-even on purpose. Do not 'fix' it.",
+  "marked": "2026-03-11"
+ }
+}

@@ -1,0 +1,788 @@
+[
+ {
+  "file": "corpus/edge/user-impact/published/customer_deadline.py",
+  "case": "A1",
+  "hazard": "a customer name and their internal deadline in the opening comment",
+  "bytes": 203
+ },
+ {
+  "file": "corpus/edge/user-impact/published/owner_contact.py",
+  "case": "A2",
+  "hazard": "a colleague's full name, work address and extension",
+  "bytes": 199
+ },
+ {
+  "file": "corpus/edge/user-impact/published/internal_host.go",
+  "case": "A3",
+  "hazard": "internal hostnames and ports, with no credential anywhere near them",
+  "bytes": 169
+ },
+ {
+  "file": "corpus/edge/user-impact/published/private_ticket.ts",
+  "case": "A4",
+  "hazard": "a private tracker URL whose ticket name states an unannounced deal",
+  "bytes": 169
+ },
+ {
+  "file": "corpus/edge/user-impact/published/clients/acme-bank/pricing_override.py",
+  "case": "A5",
+  "hazard": "a client's name in the PATH, published even if the file is never read",
+  "bytes": 80
+ },
+ {
+  "file": "corpus/edge/user-impact/published/project-northwind-migration/plan.md",
+  "case": "A6",
+  "hazard": "a directory named for an unannounced project",
+  "bytes": 71
+ },
+ {
+  "file": "corpus/edge/user-impact/published/pii_in_a_comment.rb",
+  "case": "A7",
+  "hazard": "a national ID and a phone number, neither shaped like a token",
+  "bytes": 184
+ },
+ {
+  "file": "corpus/edge/user-impact/published/unknown_shape_secret.conf",
+  "case": "A8",
+  "hazard": "a credential in a shape no pattern list carries a prefix for",
+  "bytes": 142
+ },
+ {
+  "file": "corpus/edge/user-impact/published/split_across_lines.py",
+  "case": "A9",
+  "hazard": "a token split across two physical lines, where a line matcher sees two harmless halves",
+  "bytes": 115
+ },
+ {
+  "file": "corpus/edge/user-impact/published/.env.example",
+  "case": "A10",
+  "hazard": "the file that exists to be safe, carrying working staging credentials",
+  "bytes": 196
+ },
+ {
+  "file": "corpus/edge/user-impact/published/thai_comment_with_key.py",
+  "case": "A11",
+  "hazard": "a credential inside a Thai comment, where ASCII word boundaries do not apply",
+  "bytes": 464
+ },
+ {
+  "file": "corpus/edge/user-impact/published/README.md",
+  "case": "—",
+  "hazard": "the answer key for the published group",
+  "bytes": 957
+ },
+ {
+  "file": "corpus/edge/user-impact/collides/gitignored-workspace/.gitignore",
+  "case": "B1",
+  "hazard": "a repository that ignores the workspace the tool assumes is shared",
+  "bytes": 80
+ },
+ {
+  "file": "corpus/edge/user-impact/collides/gitignored-workspace/README.md",
+  "case": "B1",
+  "hazard": "the note naming B1",
+  "bytes": 169
+ },
+ {
+  "file": "corpus/edge/user-impact/collides/gitignored-markdown/.gitignore",
+  "case": "B2",
+  "hazard": "a repository whose ignore rule silently excludes MAP.md",
+  "bytes": 76
+ },
+ {
+  "file": "corpus/edge/user-impact/collides/their-own-hook/.claude/settings.json",
+  "case": "B3",
+  "hazard": "a SessionStart hook the user already had, competing for one budget",
+  "bytes": 239
+ },
+ {
+  "file": "corpus/edge/user-impact/collides/their-own-hook/README.md",
+  "case": "B3",
+  "hazard": "the note naming B3",
+  "bytes": 173
+ },
+ {
+  "file": "corpus/edge/user-impact/collides/settings-already-broken/.claude/settings.json",
+  "case": "B4",
+  "hazard": "settings.json that does not parse before the install touches it",
+  "bytes": 95
+ },
+ {
+  "file": "corpus/edge/user-impact/collides/bash-denied/.claude/settings.json",
+  "case": "B5",
+  "hazard": "a permission rule that stops every tool this plugin ships",
+  "bytes": 71
+ },
+ {
+  "file": "corpus/edge/user-impact/collides/large-claude-md/CLAUDE.md",
+  "case": "B6",
+  "hazard": "a CLAUDE.md large enough that the block's budget was never the whole story",
+  "bytes": 36857
+ },
+ {
+  "file": "corpus/edge/user-impact/collides/contradicting-agents-md/CLAUDE.md",
+  "case": "B7",
+  "hazard": "one of a contradicting pair",
+  "bytes": 90
+ },
+ {
+  "file": "corpus/edge/user-impact/collides/contradicting-agents-md/AGENTS.md",
+  "case": "B7",
+  "hazard": "the other half of the pair, with nothing to say which wins",
+  "bytes": 81
+ },
+ {
+  "file": "corpus/edge/user-impact/collides/older-workspace/.chamnan/.version",
+  "case": "B8",
+  "hazard": "a workspace eleven releases behind the code that will read it",
+  "bytes": 7
+ },
+ {
+  "file": "corpus/edge/user-impact/collides/older-workspace/.chamnan/config.json",
+  "case": "B8",
+  "hazard": "a config in the shape an older release wrote",
+  "bytes": 66
+ },
+ {
+  "file": "corpus/edge/user-impact/collides/README.md",
+  "case": "—",
+  "hazard": "the answer key for the collides group",
+  "bytes": 662
+ },
+ {
+  "file": "corpus/edge/user-impact/shapes/a directory with spaces/module one.py",
+  "case": "C7",
+  "hazard": "spaces in both a directory and a file name",
+  "bytes": 103
+ },
+ {
+  "file": "corpus/edge/user-impact/shapes/a directory with spaces/README.md",
+  "case": "C7",
+  "hazard": "the note naming C7",
+  "bytes": 86
+ },
+ {
+  "file": "corpus/edge/user-impact/shapes/ไดเรกทอรีภาษาไทย/โมดูล.py",
+  "case": "C8",
+  "hazard": "a path with no Latin character in it at all",
+  "bytes": 209
+ },
+ {
+  "file": "corpus/edge/user-impact/shapes/🚚-emoji-in-the-path/shipment.py",
+  "case": "C8",
+  "hazard": "an emoji in a path, where character count and display width disagree",
+  "bytes": 108
+ },
+ {
+  "file": "corpus/edge/user-impact/shapes/default-branch-is-trunk/README.md",
+  "case": "C10",
+  "hazard": "a repository whose default branch is named neither main nor master",
+  "bytes": 213
+ },
+ {
+  "file": "corpus/edge/user-impact/shapes/README.md",
+  "case": "—",
+  "hazard": "the answer key for the shapes group",
+  "bytes": 437
+ },
+ {
+  "file": "corpus/edge/user-impact/team/state-with-merge-markers/.chamnan/STATE.md",
+  "case": "D1",
+  "hazard": "merge markers inside the file the session block quotes at every start",
+  "bytes": 196
+ },
+ {
+  "file": "corpus/edge/user-impact/team/machine-specific-state/.chamnan/state/tool_usage.json",
+  "case": "D2, D3",
+  "hazard": "absolute home paths in committed state -- a teammate's username, in everyone's clone",
+  "bytes": 120
+ },
+ {
+  "file": "corpus/edge/user-impact/team/version-skew/newer-workspace/.chamnan/state/config.json",
+  "case": "D5",
+  "hazard": "a workspace written by a newer release, with keys an older parser has never seen",
+  "bytes": 131
+ },
+ {
+  "file": "corpus/edge/user-impact/team/version-skew/older-workspace/.chamnan/state/config.json",
+  "case": "D6",
+  "hazard": "a workspace missing every key added since, where defaults are invented silently",
+  "bytes": 21
+ },
+ {
+  "file": "corpus/edge/user-impact/team/version-skew/README.md",
+  "case": "D4, D5, D6",
+  "hazard": "the note naming D4, D5 and D6",
+  "bytes": 373
+ },
+ {
+  "file": "corpus/edge/user-impact/team/ci-dirties-the-tree/.github/workflows/build.yml",
+  "case": "D8",
+  "hazard": "a CI job that fails on files the tool wrote during the run",
+  "bytes": 242
+ },
+ {
+  "file": "corpus/edge/user-impact/team/committed-logs/.chamnan/logs/commands.jsonl",
+  "case": "D9",
+  "hazard": "an append-only log committed to the repository, growing for nobody's benefit",
+  "bytes": 1512
+ },
+ {
+  "file": "corpus/edge/user-impact/team/two-timezones/.chamnan/sessions/2026-09-24-bangkok.md",
+  "case": "D10",
+  "hazard": "one of two records that are the same day in one timezone and not in the other",
+  "bytes": 76
+ },
+ {
+  "file": "corpus/edge/user-impact/team/two-timezones/.chamnan/sessions/2026-09-23-san-francisco.md",
+  "case": "D10",
+  "hazard": "the other half: one instant, two dates, and same-day logic on both",
+  "bytes": 151
+ },
+ {
+  "file": "corpus/edge/user-impact/team/README.md",
+  "case": "—",
+  "hazard": "the answer key for the team group",
+  "bytes": 742
+ },
+ {
+  "file": "corpus/edge/user-impact/cost/index-too-large/README.md",
+  "case": "E1",
+  "hazard": "the case where the warning exists and is structurally unread",
+  "bytes": 309
+ },
+ {
+  "file": "corpus/edge/user-impact/cost/map-past-the-read-ceiling/MAP.md",
+  "case": "E2",
+  "hazard": "the file the tool tells you to read, too large for the tool to read",
+  "bytes": 332022
+ },
+ {
+  "file": "corpus/edge/user-impact/cost/claude-md-spends-the-budget/CLAUDE.md",
+  "case": "E4",
+  "hazard": "a CLAUDE.md that was already at the budget before anything was injected",
+  "bytes": 62573
+ },
+ {
+  "file": "corpus/edge/user-impact/cost/too-many-skills/.chamnan/skills/procedure_01.md",
+  "case": "E8",
+  "hazard": "one of forty skills, where the section can name a fraction",
+  "bytes": 117
+ },
+ {
+  "file": "corpus/edge/user-impact/cost/too-many-skills/.chamnan/skills/procedure_02.md",
+  "case": "E8",
+  "hazard": "one of forty skills, where the section can name a fraction",
+  "bytes": 117
+ },
+ {
+  "file": "corpus/edge/user-impact/cost/too-many-skills/.chamnan/skills/procedure_03.md",
+  "case": "E8",
+  "hazard": "one of forty skills, where the section can name a fraction",
+  "bytes": 117
+ },
+ {
+  "file": "corpus/edge/user-impact/cost/too-many-skills/.chamnan/skills/procedure_04.md",
+  "case": "E8",
+  "hazard": "one of forty skills, where the section can name a fraction",
+  "bytes": 117
+ },
+ {
+  "file": "corpus/edge/user-impact/cost/too-many-skills/.chamnan/skills/procedure_05.md",
+  "case": "E8",
+  "hazard": "one of forty skills, where the section can name a fraction",
+  "bytes": 117
+ },
+ {
+  "file": "corpus/edge/user-impact/cost/too-many-skills/.chamnan/skills/procedure_06.md",
+  "case": "E8",
+  "hazard": "one of forty skills, where the section can name a fraction",
+  "bytes": 117
+ },
+ {
+  "file": "corpus/edge/user-impact/cost/too-many-skills/.chamnan/skills/procedure_07.md",
+  "case": "E8",
+  "hazard": "one of forty skills, where the section can name a fraction",
+  "bytes": 117
+ },
+ {
+  "file": "corpus/edge/user-impact/cost/too-many-skills/.chamnan/skills/procedure_08.md",
+  "case": "E8",
+  "hazard": "one of forty skills, where the section can name a fraction",
+  "bytes": 117
+ },
+ {
+  "file": "corpus/edge/user-impact/cost/too-many-skills/.chamnan/skills/procedure_09.md",
+  "case": "E8",
+  "hazard": "one of forty skills, where the section can name a fraction",
+  "bytes": 117
+ },
+ {
+  "file": "corpus/edge/user-impact/cost/too-many-skills/.chamnan/skills/procedure_10.md",
+  "case": "E8",
+  "hazard": "one of forty skills, where the section can name a fraction",
+  "bytes": 117
+ },
+ {
+  "file": "corpus/edge/user-impact/cost/too-many-skills/.chamnan/skills/procedure_11.md",
+  "case": "E8",
+  "hazard": "one of forty skills, where the section can name a fraction",
+  "bytes": 117
+ },
+ {
+  "file": "corpus/edge/user-impact/cost/too-many-skills/.chamnan/skills/procedure_12.md",
+  "case": "E8",
+  "hazard": "one of forty skills, where the section can name a fraction",
+  "bytes": 117
+ },
+ {
+  "file": "corpus/edge/user-impact/cost/too-many-skills/.chamnan/skills/procedure_13.md",
+  "case": "E8",
+  "hazard": "one of forty skills, where the section can name a fraction",
+  "bytes": 117
+ },
+ {
+  "file": "corpus/edge/user-impact/cost/too-many-skills/.chamnan/skills/procedure_14.md",
+  "case": "E8",
+  "hazard": "one of forty skills, where the section can name a fraction",
+  "bytes": 117
+ },
+ {
+  "file": "corpus/edge/user-impact/cost/too-many-skills/.chamnan/skills/procedure_15.md",
+  "case": "E8",
+  "hazard": "one of forty skills, where the section can name a fraction",
+  "bytes": 117
+ },
+ {
+  "file": "corpus/edge/user-impact/cost/too-many-skills/.chamnan/skills/procedure_16.md",
+  "case": "E8",
+  "hazard": "one of forty skills, where the section can name a fraction",
+  "bytes": 117
+ },
+ {
+  "file": "corpus/edge/user-impact/cost/too-many-skills/.chamnan/skills/procedure_17.md",
+  "case": "E8",
+  "hazard": "one of forty skills, where the section can name a fraction",
+  "bytes": 117
+ },
+ {
+  "file": "corpus/edge/user-impact/cost/too-many-skills/.chamnan/skills/procedure_18.md",
+  "case": "E8",
+  "hazard": "one of forty skills, where the section can name a fraction",
+  "bytes": 117
+ },
+ {
+  "file": "corpus/edge/user-impact/cost/too-many-skills/.chamnan/skills/procedure_19.md",
+  "case": "E8",
+  "hazard": "one of forty skills, where the section can name a fraction",
+  "bytes": 117
+ },
+ {
+  "file": "corpus/edge/user-impact/cost/too-many-skills/.chamnan/skills/procedure_20.md",
+  "case": "E8",
+  "hazard": "one of forty skills, where the section can name a fraction",
+  "bytes": 117
+ },
+ {
+  "file": "corpus/edge/user-impact/cost/too-many-skills/.chamnan/skills/procedure_21.md",
+  "case": "E8",
+  "hazard": "one of forty skills, where the section can name a fraction",
+  "bytes": 117
+ },
+ {
+  "file": "corpus/edge/user-impact/cost/too-many-skills/.chamnan/skills/procedure_22.md",
+  "case": "E8",
+  "hazard": "one of forty skills, where the section can name a fraction",
+  "bytes": 117
+ },
+ {
+  "file": "corpus/edge/user-impact/cost/too-many-skills/.chamnan/skills/procedure_23.md",
+  "case": "E8",
+  "hazard": "one of forty skills, where the section can name a fraction",
+  "bytes": 117
+ },
+ {
+  "file": "corpus/edge/user-impact/cost/too-many-skills/.chamnan/skills/procedure_24.md",
+  "case": "E8",
+  "hazard": "one of forty skills, where the section can name a fraction",
+  "bytes": 117
+ },
+ {
+  "file": "corpus/edge/user-impact/cost/too-many-skills/.chamnan/skills/procedure_25.md",
+  "case": "E8",
+  "hazard": "one of forty skills, where the section can name a fraction",
+  "bytes": 117
+ },
+ {
+  "file": "corpus/edge/user-impact/cost/too-many-skills/.chamnan/skills/procedure_26.md",
+  "case": "E8",
+  "hazard": "one of forty skills, where the section can name a fraction",
+  "bytes": 117
+ },
+ {
+  "file": "corpus/edge/user-impact/cost/too-many-skills/.chamnan/skills/procedure_27.md",
+  "case": "E8",
+  "hazard": "one of forty skills, where the section can name a fraction",
+  "bytes": 117
+ },
+ {
+  "file": "corpus/edge/user-impact/cost/too-many-skills/.chamnan/skills/procedure_28.md",
+  "case": "E8",
+  "hazard": "one of forty skills, where the section can name a fraction",
+  "bytes": 117
+ },
+ {
+  "file": "corpus/edge/user-impact/cost/too-many-skills/.chamnan/skills/procedure_29.md",
+  "case": "E8",
+  "hazard": "one of forty skills, where the section can name a fraction",
+  "bytes": 117
+ },
+ {
+  "file": "corpus/edge/user-impact/cost/too-many-skills/.chamnan/skills/procedure_30.md",
+  "case": "E8",
+  "hazard": "one of forty skills, where the section can name a fraction",
+  "bytes": 117
+ },
+ {
+  "file": "corpus/edge/user-impact/cost/too-many-skills/.chamnan/skills/procedure_31.md",
+  "case": "E8",
+  "hazard": "one of forty skills, where the section can name a fraction",
+  "bytes": 117
+ },
+ {
+  "file": "corpus/edge/user-impact/cost/too-many-skills/.chamnan/skills/procedure_32.md",
+  "case": "E8",
+  "hazard": "one of forty skills, where the section can name a fraction",
+  "bytes": 117
+ },
+ {
+  "file": "corpus/edge/user-impact/cost/too-many-skills/.chamnan/skills/procedure_33.md",
+  "case": "E8",
+  "hazard": "one of forty skills, where the section can name a fraction",
+  "bytes": 117
+ },
+ {
+  "file": "corpus/edge/user-impact/cost/too-many-skills/.chamnan/skills/procedure_34.md",
+  "case": "E8",
+  "hazard": "one of forty skills, where the section can name a fraction",
+  "bytes": 117
+ },
+ {
+  "file": "corpus/edge/user-impact/cost/too-many-skills/.chamnan/skills/procedure_35.md",
+  "case": "E8",
+  "hazard": "one of forty skills, where the section can name a fraction",
+  "bytes": 117
+ },
+ {
+  "file": "corpus/edge/user-impact/cost/too-many-skills/.chamnan/skills/procedure_36.md",
+  "case": "E8",
+  "hazard": "one of forty skills, where the section can name a fraction",
+  "bytes": 117
+ },
+ {
+  "file": "corpus/edge/user-impact/cost/too-many-skills/.chamnan/skills/procedure_37.md",
+  "case": "E8",
+  "hazard": "one of forty skills, where the section can name a fraction",
+  "bytes": 117
+ },
+ {
+  "file": "corpus/edge/user-impact/cost/too-many-skills/.chamnan/skills/procedure_38.md",
+  "case": "E8",
+  "hazard": "one of forty skills, where the section can name a fraction",
+  "bytes": 117
+ },
+ {
+  "file": "corpus/edge/user-impact/cost/too-many-skills/.chamnan/skills/procedure_39.md",
+  "case": "E8",
+  "hazard": "one of forty skills, where the section can name a fraction",
+  "bytes": 117
+ },
+ {
+  "file": "corpus/edge/user-impact/cost/too-many-skills/.chamnan/skills/procedure_40.md",
+  "case": "E8",
+  "hazard": "one of forty skills, where the section can name a fraction",
+  "bytes": 117
+ },
+ {
+  "file": "corpus/edge/user-impact/cost/monorepo/README.md",
+  "case": "E9",
+  "hazard": "a monorepo where an index without locality gives the wrong project's answer",
+  "bytes": 281
+ },
+ {
+  "file": "corpus/edge/user-impact/cost/monorepo/billing/README.md",
+  "case": "E9",
+  "hazard": "one of twelve sub-projects (billing)",
+  "bytes": 69
+ },
+ {
+  "file": "corpus/edge/user-impact/cost/monorepo/fleet/README.md",
+  "case": "E9",
+  "hazard": "one of twelve sub-projects (fleet)",
+  "bytes": 65
+ },
+ {
+  "file": "corpus/edge/user-impact/cost/monorepo/portal/README.md",
+  "case": "E9",
+  "hazard": "one of twelve sub-projects (portal)",
+  "bytes": 74
+ },
+ {
+  "file": "corpus/edge/user-impact/cost/mostly-vendored/vendor/README.md",
+  "case": "E10",
+  "hazard": "a tree where the majority of files are dependencies",
+  "bytes": 231
+ },
+ {
+  "file": "corpus/edge/user-impact/cost/README.md",
+  "case": "—",
+  "hazard": "the answer key for the cost group",
+  "bytes": 523
+ },
+ {
+  "file": "corpus/edge/user-impact/noop/hook-not-registered/.claude/settings.json",
+  "case": "F1",
+  "hazard": "a settings file with no hook registered at all, beside a full workspace",
+  "bytes": 68
+ },
+ {
+  "file": "corpus/edge/user-impact/noop/hook-not-registered/.chamnan/MAP.md",
+  "case": "F1",
+  "hazard": "the workspace that proves the tool ran and the hook that would deliver it is absent",
+  "bytes": 68
+ },
+ {
+  "file": "corpus/edge/user-impact/noop/version-says-current/.chamnan/.version",
+  "case": "F3",
+  "hazard": "a version string written by whichever install ran last, not by the code that will read it",
+  "bytes": 7
+ },
+ {
+  "file": "corpus/edge/user-impact/noop/hooks-json-wrong-path/.claude/settings.json",
+  "case": "F5",
+  "hazard": "a registered hook pointing at a path that exists on one machine",
+  "bytes": 283
+ },
+ {
+  "file": "corpus/edge/user-impact/noop/map-never-rebuilt/.chamnan/MAP.md",
+  "case": "F6",
+  "hazard": "an index naming two files that were renamed in the same commit months ago",
+  "bytes": 125
+ },
+ {
+  "file": "corpus/edge/user-impact/noop/map-never-rebuilt/src/pricing/tariff.py",
+  "case": "F6",
+  "hazard": "the file as it exists now, under the name the index does not have",
+  "bytes": 96
+ },
+ {
+  "file": "corpus/edge/user-impact/noop/everything-disabled/.chamnan/config.json",
+  "case": "F7",
+  "hazard": "a config that turns off every surface, indistinguishable from a broken install",
+  "bytes": 96
+ },
+ {
+  "file": "corpus/edge/user-impact/noop/README.md",
+  "case": "—",
+  "hazard": "the answer key for the noop group",
+  "bytes": 630
+ },
+ {
+  "file": "corpus/edge/user-impact/loss/log-swept-while-read/README.md",
+  "case": "G1",
+  "hazard": "a retention window shorter than the interval between a failure and its investigation",
+  "bytes": 292
+ },
+ {
+  "file": "corpus/edge/user-impact/loss/hand-written-skill/.chamnan/skills/quarterly_close.md",
+  "case": "G3, G4",
+  "hazard": "a hand-written procedure whose real usage period is longer than the unused-file window",
+  "bytes": 207
+ },
+ {
+  "file": "corpus/edge/user-impact/loss/two-sweepers/README.md",
+  "case": "G6",
+  "hazard": "one file claimed by two retention rules with different units",
+  "bytes": 337
+ },
+ {
+  "file": "corpus/edge/user-impact/loss/aged-out-while-in-flight/.chamnan/state/state-ages.json",
+  "case": "G2",
+  "hazard": "a section old by the clock and current by the work, where only the clock is measured",
+  "bytes": 82
+ },
+ {
+  "file": "corpus/edge/user-impact/loss/README.md",
+  "case": "—",
+  "hazard": "the answer key for the loss group",
+  "bytes": 516
+ },
+ {
+  "file": "corpus/edge/user-impact/wrong/index-names-deleted-files/.chamnan/MAP.md",
+  "case": "H1",
+  "hazard": "an index naming twenty-five files, none of which are in the tree beside it",
+  "bytes": 1347
+ },
+ {
+  "file": "corpus/edge/user-impact/wrong/index-names-deleted-files/src/handlers/router.py",
+  "case": "H1",
+  "hazard": "the one file that replaced them",
+  "bytes": 119
+ },
+ {
+  "file": "corpus/edge/user-impact/wrong/skill-for-a-dropped-stack/.chamnan/skills/deploying_with_capistrano.md",
+  "case": "H2",
+  "hazard": "a recorded procedure for a deployment system this repository no longer uses",
+  "bytes": 115
+ },
+ {
+  "file": "corpus/edge/user-impact/wrong/skill-for-a-dropped-stack/README.md",
+  "case": "H2",
+  "hazard": "the note naming H2",
+  "bytes": 255
+ },
+ {
+  "file": "corpus/edge/user-impact/wrong/decision-from-another-project/.chamnan/memory/decisions/we-do-not-use-an-orm.md",
+  "case": "H4",
+  "hazard": "a decision pasted from a different repository, stated as this one's constraint",
+  "bytes": 103
+ },
+ {
+  "file": "corpus/edge/user-impact/wrong/decision-from-another-project/db/models.py",
+  "case": "H4",
+  "hazard": "the code that contradicts the decision recorded beside it",
+  "bytes": 133
+ },
+ {
+  "file": "corpus/edge/user-impact/wrong/tool-index-names-archived/.chamnan/tools/index.json",
+  "case": "H5",
+  "hazard": "an index naming two scripts that were archived, so 'check the index first' misfires",
+  "bytes": 173
+ },
+ {
+  "file": "corpus/edge/user-impact/wrong/tool-index-names-archived/.chamnan/tools/archived/churn_report.py",
+  "case": "H5",
+  "hazard": "one of the archived scripts, at the path the index does not use",
+  "bytes": 54
+ },
+ {
+  "file": "corpus/edge/user-impact/wrong/coverage-cites-deleted-tests/.chamnan/state/test_coverage_map.md",
+  "case": "H6",
+  "hazard": "a coverage map citing two test files that no longer exist",
+  "bytes": 153
+ },
+ {
+  "file": "corpus/edge/user-impact/wrong/gotcha-against-a-renamed-path/.chamnan/state/gotcha_marks.json",
+  "case": "H8",
+  "hazard": "a warning keyed to a path that was renamed, so it never fires and still reads as active",
+  "bytes": 136
+ },
+ {
+  "file": "corpus/edge/user-impact/wrong/README.md",
+  "case": "—",
+  "hazard": "the answer key for the wrong group",
+  "bytes": 732
+ },
+ {
+  "file": "corpus/edge/user-impact/mistaken/a-docs-repository/rules/coding-standards.md",
+  "case": "I1",
+  "hazard": "a repository whose subject matter is rule files, indexed as if they governed it",
+  "bytes": 184
+ },
+ {
+  "file": "corpus/edge/user-impact/mistaken/the-tool-indexes-itself/lib/blocklog.py",
+  "case": "I3",
+  "hazard": "a fork of the tool, whose own source describes the thing indexing it",
+  "bytes": 136
+ },
+ {
+  "file": "corpus/edge/user-impact/mistaken/speaks-in-the-fence/docs/how-the-block-is-fenced.md",
+  "case": "I4",
+  "hazard": "a tracked file containing the block's own fence syntax, correctly and as prose",
+  "bytes": 344
+ },
+ {
+  "file": "corpus/edge/user-impact/mistaken/check-trailer-in-prose/docs/writing-a-rule.md",
+  "case": "I5",
+  "hazard": "a trailer written as an example inside documentation about trailers",
+  "bytes": 273
+ },
+ {
+  "file": "corpus/edge/user-impact/mistaken/claude-md-about-injection/CLAUDE.md",
+  "case": "I6",
+  "hazard": "correct security documentation that contains the phrases a detector matches on",
+  "bytes": 406
+ },
+ {
+  "file": "corpus/edge/user-impact/mistaken/a-redactors-own-fixtures/fixtures/positives.txt",
+  "case": "I7",
+  "hazard": "a fixture file where every true positive is correct and nothing is a leak",
+  "bytes": 168
+ },
+ {
+  "file": "corpus/edge/user-impact/mistaken/a-redactors-own-fixtures/fixtures/negatives.txt",
+  "case": "I7",
+  "hazard": "the other half: ordinary strings a high-entropy rule would destroy",
+  "bytes": 187
+ },
+ {
+  "file": "corpus/edge/user-impact/mistaken/README.md",
+  "case": "—",
+  "hazard": "the answer key for the mistaken group",
+  "bytes": 637
+ },
+ {
+  "file": "corpus/edge/user-impact/install/chamnan-is-a-file.install-shape.md",
+  "case": "B9",
+  "hazard": "an install-only state: `.chamnan` exists as a regular file, not a directory.",
+  "bytes": 507
+ },
+ {
+  "file": "corpus/edge/user-impact/install/chamnan-is-a-symlink.install-shape.md",
+  "case": "B10",
+  "hazard": "an install-only state: `.chamnan` is a symlink to a directory outside the repository.",
+  "bytes": 514
+ },
+ {
+  "file": "corpus/edge/user-impact/install/unborn-head.install-shape.md",
+  "case": "C1",
+  "hazard": "an install-only state: A repository with `git init` and no commit yet.",
+  "bytes": 478
+ },
+ {
+  "file": "corpus/edge/user-impact/install/detached-head.install-shape.md",
+  "case": "C2",
+  "hazard": "an install-only state: A checkout at a commit rather than a branch.",
+  "bytes": 455
+ },
+ {
+  "file": "corpus/edge/user-impact/install/shallow-clone.install-shape.md",
+  "case": "C3",
+  "hazard": "an install-only state: A clone with `--depth 1`.",
+  "bytes": 473
+ },
+ {
+  "file": "corpus/edge/user-impact/install/not-a-repository.install-shape.md",
+  "case": "C5",
+  "hazard": "an install-only state: A directory that is not a git repository, inside one that is.",
+  "bytes": 555
+ },
+ {
+  "file": "corpus/edge/user-impact/install/read-only-checkout.install-shape.md",
+  "case": "C9",
+  "hazard": "an install-only state: A checkout whose files and directories are not writable.",
+  "bytes": 483
+ },
+ {
+  "file": "corpus/edge/user-impact/install/four-installs.install-shape.md",
+  "case": "F2",
+  "hazard": "an install-only state: Four copies of the plugin at four versions on one machine.",
+  "bytes": 612
+ },
+ {
+  "file": "corpus/edge/user-impact/install/README.md",
+  "case": "—",
+  "hazard": "the answer key for the install group",
+  "bytes": 547
+ }
+]

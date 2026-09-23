@@ -1,0 +1,4 @@
+# Strings that must NOT be redacted: a commit hash, a UUID, a version, a base64 icon.
+9f3c1a2b4d5e6f708192a3b4c5d6e7f809a1b2c3
+3f2504e0-4f89-11d3-9a0c-0305e82c3301
+1.31.0-rc.2+build.4417

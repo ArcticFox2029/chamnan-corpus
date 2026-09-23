@@ -1,0 +1,15 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "startup",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 ./tools/our_own_context.py"
+          }
+        ]
+      }
+    ]
+  }
+}

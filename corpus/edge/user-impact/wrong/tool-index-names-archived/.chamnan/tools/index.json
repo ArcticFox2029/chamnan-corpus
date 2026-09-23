@@ -1,0 +1,12 @@
+{
+ "tools": [
+  {
+   "name": "churn_report.py",
+   "desc": "Which files change most"
+  },
+  {
+   "name": "seed_fixtures.py",
+   "desc": "Rebuild the test fixtures"
+  }
+ ]
+}

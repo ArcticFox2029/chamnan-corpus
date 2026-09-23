@@ -1,0 +1,11 @@
+{
+ "ceiling": 9500,
+ "sections": {
+  "map": {
+   "rank": 8,
+   "cap": 1400
+  }
+ },
+ "allocator": "gdsf",
+ "recompute": "on-read"
+}

@@ -1,0 +1,10 @@
+name: build
+on: [push]
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: make test
+      # The session hook has written logs by now. This step fails on them.
+      - run: git diff --exit-code

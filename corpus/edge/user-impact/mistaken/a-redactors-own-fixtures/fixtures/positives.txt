@@ -1,0 +1,4 @@
+# Every line here is a synthetic credential. That is the point of the file.
+AKIAIOSFODNN7EXAMPLE
+__PLANTED_GITHUB__
+__PLANTED_STRIPE__

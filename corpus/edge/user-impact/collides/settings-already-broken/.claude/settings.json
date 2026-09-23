@@ -1,0 +1,7 @@
+{
+  "hooks": {
+    "SessionStart": [
+      // a comment, which JSON does not have
+    ]
+  },
+}

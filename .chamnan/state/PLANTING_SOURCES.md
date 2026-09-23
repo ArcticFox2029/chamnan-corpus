@@ -47,6 +47,38 @@ file and conflicts the first time two people ship on one day · a source file wi
 silences the staleness warning, and the dead-end entry records that clamping does not fix it ·
 `HUGE_BYTES`, `WINDOW_HOURS` and chamnan-context's CEILING override have no coverage at all.
 
+## Source 4 — the question asked from the user's side
+
+The three sources above all ask *can a tool read this repository*. Source 4 asks what a tool costs
+the person who installed it, which is a different list: a repository that is merely hard to index
+produces a worse index, while a repository in one of these states produces a published customer
+name, a merge conflict in a file nobody edits by hand, or a confident answer about files deleted
+last month.
+
+Derived from what chamnan actually does to a repository rather than from a threat model — it
+commits `MAP.md`, it injects a budgeted block at every session start, its workspace arrives with
+the clone, it sweeps its own logs, and `chamnan-setup` exists because four installs at four
+versions were found on one laptop. A hundred cases are enumerated with their disposition in
+`USER_IMPACT_CASES.md`; `plant_user_impact.py` writes the plantable ones.
+
+| group | what it is | cases |
+| --- | --- | --- |
+| `published` | private content that is not shaped like a credential, in files the index copies verbatim | A1-A11 |
+| `collides` | the repository already had a CLAUDE.md, its own hook, and a tuned `.gitignore` | B1-B8 |
+| `shapes` | spaces, Thai and an emoji in a path; a default branch called `trunk` | C7, C8, C10 |
+| `team` | the workspace arrives with the clone, so two people conflict in generated files | D1-D10 |
+| `cost` | the budget from the side of the person paying for it | E1, E2, E4, E8-E10 |
+| `noop` | installed, registered, and silently producing nothing | F1, F3, F5-F7 |
+| `loss` | what the sweeps take that a rebuild cannot give back | G1-G4, G6 |
+| `wrong` | it answered, the answer looked fine, and it was false | H1, H2, H4-H6, H8 |
+| `mistaken` | the user's own content, read as if addressed to the tool | I1, I3-I7 |
+| `install` | eight states git cannot track, shipped as documents that say how to build them | B9, B10, C1-C3, C5, C9, F2 |
+
+Counted off the table rather than from memory: **67 planted, 12 already carried by an earlier
+planter at a path each row names, and 21 that no corpus can hold** — a duration, a host behaviour,
+an OS, a decision, or a state git refuses to track. The 21 are listed with their reason so that
+"we covered the report" stays checkable.
+
 ## What is deliberately NOT here
 
 A planted credential exists in this repository and nowhere else, at placeholder fidelity in the

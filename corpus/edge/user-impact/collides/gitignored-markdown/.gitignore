@@ -1,0 +1,3 @@
+# Generated docs are not reviewed, so they are not tracked.
+*.md
+!README.md
