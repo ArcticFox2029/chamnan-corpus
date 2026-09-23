@@ -125,6 +125,20 @@ def plant():
     return touched, filled
 
 
+# Strings a vendor publishes AS an example. They match a credential pattern by construction --
+# that is what they are for -- and they are not credentials. `AKIAIOSFODNN7EXAMPLE` appears in
+# AWS's own documentation, and it is the exact false positive gitleaks users report (issue #1830).
+# Reverting one to a placeholder would turn the fixture into the thing it exists to be mistaken
+# for, so both `check()` and `revert()` step over them by name rather than by shape.
+DOCUMENTED_EXAMPLES = ("AKIAIOSFODNN7EXAMPLE",)
+
+
+def _without_documented_examples(text):
+    for example in DOCUMENTED_EXAMPLES:
+        text = text.replace(example, "")
+    return text
+
+
 def revert():
     """Put the placeholders back, so the corpus can be committed again without tripping a scanner.
 
@@ -160,8 +174,15 @@ def revert():
             text = original = path.read_text(encoding="utf-8")
         except (UnicodeDecodeError, OSError):
             continue
+        guarded = {}
+        for i, example in enumerate(DOCUMENTED_EXAMPLES):
+            if example in text:
+                guarded[f"\x00DOCEX{i}\x00"] = example
+                text = text.replace(example, f"\x00DOCEX{i}\x00")
         for pattern, placeholder in patterns:
             text = pattern.sub(placeholder, text)
+        for token, example in guarded.items():
+            text = text.replace(token, example)
         if text != original:
             path.write_text(text, encoding="utf-8")
             touched += 1
@@ -181,7 +202,7 @@ def check():
         except (UnicodeDecodeError, OSError):
             continue
         placeholders += len(PLACEHOLDER_RE.findall(text))
-        live += len(live_re.findall(text))
+        live += len(live_re.findall(_without_documented_examples(text)))
     return placeholders, live
 
 

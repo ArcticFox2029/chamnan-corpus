@@ -7,7 +7,7 @@
  {
   "file": "corpus/edge/concurrency/hammer.py",
   "hazard": "a harness that produces a lost update on demand",
-  "bytes": 1840
+  "bytes": 2106
  },
  {
   "file": "corpus/edge/concurrency/parse-failure-is-an-empty-dict.json",

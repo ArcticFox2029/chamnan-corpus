@@ -1,15 +1,31 @@
 {
- "log_retention_days": -5,
- "session_retention_days": 1000000000,
- "index_token_budget": "not a number",
- "dashboard": "yes",
- "commit_guard": null,
- "a_key_that_does_not_exist": true,
- "nested": {
-  "deeper": {
-   "deeper": {
-    "deeper": {}
-   }
-  }
- }
+  "map": true,
+  "state": true,
+  "capture": true,
+  "promote": true,
+  "report": true,
+  "recall": true,
+  "agents": true,
+  "log_retention_days": 7,
+  "language": "en",
+  "index_token_budget": 3000,
+  "test_patterns": {},
+  "commit_guard": true,
+  "dashboard": true,
+  "output_byte_ceiling": 9500,
+  "rules_char_budget": 1500,
+  "warn_on_bulk_reads": true,
+  "pointer": true,
+  "reply_style": "off",
+  "resume": true,
+  "resume_pointer": true,
+  "session_retention_days": 30,
+  "state_stale_days": 14,
+  "memory": true,
+  "milestones": true,
+  "timeline": true,
+  "environments": true,
+  "ledger": true,
+  "state_token_budget": 1700,
+  "context_profile": "standard"
 }

@@ -1,0 +1,158 @@
+[
+ {
+  "file": "corpus/edge/reported/boundary/secret-at-the-end-just-under-2mb.log",
+  "hazard": "a credential on the LAST line of a file just under the 2 MB ceiling",
+  "cite": "https://github.com/gitleaks/gitleaks/issues/1432",
+  "bytes": 1900000
+ },
+ {
+  "file": "corpus/edge/reported/boundary/secret-at-the-start-just-under-2mb.log",
+  "hazard": "the same credential on the FIRST line, just under the 2 MB ceiling -- the control",
+  "cite": "https://github.com/gitleaks/gitleaks/issues/1432",
+  "bytes": 1900000
+ },
+ {
+  "file": "corpus/edge/reported/boundary/secret-at-the-end-just-over-2mb.log",
+  "hazard": "a credential on the LAST line of a file just over the 2 MB ceiling",
+  "cite": "https://github.com/gitleaks/gitleaks/issues/1432",
+  "bytes": 2100007
+ },
+ {
+  "file": "corpus/edge/reported/boundary/secret-at-the-start-just-over-2mb.log",
+  "hazard": "the same credential on the FIRST line, just over the 2 MB ceiling -- the control",
+  "cite": "https://github.com/gitleaks/gitleaks/issues/1432",
+  "bytes": 2100007
+ },
+ {
+  "file": "corpus/edge/reported/boundary/secret-in-one-enormous-line.log",
+  "hazard": "a credential 1.5 MB into a file that has one line",
+  "cite": "https://github.com/gitleaks/gitleaks/issues/1432",
+  "bytes": 1900027
+ },
+ {
+  "file": "corpus/edge/reported/sizecap/under-semgrep-1mb.py",
+  "hazard": "900,000 bytes -- admitted by both",
+  "cite": "https://semgrep.dev/docs/cli-reference#scan",
+  "bytes": 900140
+ },
+ {
+  "file": "corpus/edge/reported/sizecap/between-1mb-and-2mb.py",
+  "hazard": "1,500,000 bytes -- admitted by one",
+  "cite": "https://semgrep.dev/docs/cli-reference#scan",
+  "bytes": 1500124
+ },
+ {
+  "file": "corpus/edge/reported/sizecap/over-both-caps.py",
+  "hazard": "2,500,000 bytes -- dropped by both",
+  "cite": "https://semgrep.dev/docs/cli-reference#scan",
+  "bytes": 2500134
+ },
+ {
+  "file": "corpus/edge/reported/denied/README.md",
+  "hazard": "the note naming the ambiguity",
+  "cite": "https://github.com/BurntSushi/ripgrep/issues/863",
+  "bytes": 274
+ },
+ {
+  "file": "corpus/edge/reported/denied/unreadable/",
+  "bytes": 0,
+  "cite": "https://github.com/BurntSushi/ripgrep/issues/863",
+  "hazard": "a mode-000 directory holding a credential and a bug"
+ },
+ {
+  "file": "corpus/edge/reported/confusable/cyrillic-a-in-password.env",
+  "hazard": "Cyrillic \u0430 in the keyword a detector anchors on",
+  "cite": "https://github.com/openai/codex/issues/13095",
+  "bytes": 108
+ },
+ {
+  "file": "corpus/edge/reported/confusable/cyrillic-e-in-secret.env",
+  "hazard": "Cyrillic \u0435 in the keyword",
+  "cite": "https://github.com/openai/codex/issues/13095",
+  "bytes": 110
+ },
+ {
+  "file": "corpus/edge/reported/confusable/greek-omicron-in-token.env",
+  "hazard": "Greek omicron in the keyword",
+  "cite": "https://github.com/openai/codex/issues/13095",
+  "bytes": 105
+ },
+ {
+  "file": "corpus/edge/reported/confusable/fullwidth-key.env",
+  "hazard": "full-width Latin in the keyword",
+  "cite": "https://github.com/openai/codex/issues/13095",
+  "bytes": 113
+ },
+ {
+  "file": "corpus/edge/reported/confusable/control-plain-ascii.env",
+  "hazard": "the plain-ASCII control that must still be caught",
+  "cite": "https://github.com/openai/codex/issues/13095",
+  "bytes": 107
+ },
+ {
+  "file": "corpus/edge/reported/confusable/zero-width-inside-keyword.env",
+  "hazard": "a zero-width space inside the keyword",
+  "cite": "https://github.com/openai/codex/issues/13095",
+  "bytes": 110
+ },
+ {
+  "file": "corpus/edge/reported/confusable/combining-accent.env",
+  "hazard": "a combining accent inside the keyword",
+  "cite": "https://github.com/openai/codex/issues/13095",
+  "bytes": 109
+ },
+ {
+  "file": "corpus/edge/reported/entropy/high-entropy-but-not-secret.py",
+  "hazard": "160 high-entropy strings, none of them a credential",
+  "cite": "https://github.com/gitleaks/gitleaks/issues/1830",
+  "bytes": 6812
+ },
+ {
+  "file": "corpus/edge/reported/entropy/one-real-one-among-them.py",
+  "hazard": "the same file with exactly one real credential hidden in it",
+  "cite": "https://github.com/gitleaks/gitleaks/issues/1830",
+  "bytes": 6840
+ },
+ {
+  "file": "corpus/edge/reported/longpath/a-descriptive-directory-name-of-the-kind-a-generator-produces/a-descriptive-directory-name-of-the-kind-a-generator-produces/a-descriptive-directory-name-of-the-kind-a-generator-produces/a-descriptive-directory-name-of-the-kind-a-generator-produces/a-descriptive-leaf-name-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx.md",
+  "hazard": "a path past the Windows MAX_PATH bound, measured from the repository root",
+  "cite": "https://github.com/pytest-dev/pytest/issues/291",
+  "bytes": 121
+ },
+ {
+  "file": "corpus/edge/reported/install/cached-marketplace.json",
+  "hazard": "a cached manifest that says 0.3.0",
+  "cite": "https://github.com/anthropics/claude-code/issues/72616",
+  "bytes": 84
+ },
+ {
+  "file": "corpus/edge/reported/install/installed_record.json",
+  "hazard": "an install record that says 0.4.0 -- the same tool, the same moment",
+  "cite": "https://github.com/anthropics/claude-code/issues/72616",
+  "bytes": 44
+ },
+ {
+  "file": "corpus/edge/reported/install/plugin.json",
+  "hazard": "the declaration on disk, which agrees with neither",
+  "cite": "https://github.com/anthropics/claude-code/issues/72616",
+  "bytes": 44
+ },
+ {
+  "file": "corpus/edge/reported/install/success-with-nothing-behind-it.log",
+  "hazard": "a success message with no postcondition behind it",
+  "cite": "https://github.com/anthropics/claude-code/issues/31941",
+  "bytes": 118
+ },
+ {
+  "file": "corpus/edge/reported/install/repair-that-did-nothing.log",
+  "hazard": "detection and repair as separate postconditions, only one of them met",
+  "cite": "https://github.com/pnpm/pnpm/issues/3840",
+  "bytes": 123
+ },
+ {
+  "file": "corpus/edge/reported/install/README.md",
+  "hazard": "the note naming the shared shape",
+  "cite": "https://github.com/anthropics/claude-code/issues/72616",
+  "bytes": 572
+ }
+]

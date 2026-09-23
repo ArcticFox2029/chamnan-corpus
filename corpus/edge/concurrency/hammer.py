@@ -8,7 +8,7 @@ reports as an empty workspace rather than as damage.
 
 Usage: python3 hammer.py <path.json> <writers> [--atomic] [--locked]
 """
-import json, os, sys, tempfile
+import json, os, sys, tempfile, time
 from multiprocessing import Process
 
 def bump(path, atomic, locked):
@@ -21,6 +21,9 @@ def bump(path, atomic, locked):
         except Exception:
             d = {}          # the fallback that turns damage into an empty workspace
         d["counter"] = d.get("counter", 0) + 1
+        time.sleep(0.02)   # the read-modify-write WINDOW. Without it the whole cycle is
+                           # faster than the scheduler can interleave, every arm reports
+                           # N of N, and the harness is a check that cannot fail.
         text = json.dumps(d)
         if atomic:
             fd, tmp = tempfile.mkstemp(dir=os.path.dirname(path) or ".")
