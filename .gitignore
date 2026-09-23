@@ -50,3 +50,9 @@ corpus/edge/git-shapes/**/.git
 /.claude/settings.json
 /.mcp.json
 corpus/edge/supply-chain/EXECUTED.log
+
+# `plant_incidents.py --install` writes an editor task with `runOn: folderOpen` and
+# `reveal: never`. A tracked file that makes an editor run something the moment a folder opens
+# is a weapon whatever it runs, so the tracked form is `tasks.json.attack-shape`.
+/.vscode/
+corpus/edge/incidents/EXECUTED.log

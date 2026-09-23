@@ -1,0 +1,9 @@
+# The title is attacker-controlled text interpolated straight into a shell.
+name: greet
+on: [issues]
+
+jobs:
+  greet:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "New issue: ${{ github.event.issue.title }}"

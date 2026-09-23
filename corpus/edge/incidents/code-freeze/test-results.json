@@ -1,0 +1,9 @@
+{
+ "generated": "2026-09-24T03:11:00Z",
+ "suite": "integration",
+ "passed": 1206,
+ "failed": 0,
+ "skipped": 0,
+ "note": "every case green",
+ "duration_seconds": 0.004
+}

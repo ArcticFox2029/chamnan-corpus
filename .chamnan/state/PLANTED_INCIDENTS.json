@@ -1,0 +1,206 @@
+[
+ {
+  "file": "corpus/edge/incidents/rules-file-backdoor/01-plain-visible.md",
+  "hazard": "a rule file carrying a hidden instruction -- no concealment at all -- the control",
+  "cite": "https://www.pillar.security/blog/new-vulnerability-in-github-copilot-and-cursor-how-hackers-can-weaponize-code-agents",
+  "bytes": 246
+ },
+ {
+  "file": "corpus/edge/incidents/rules-file-backdoor/02-white-on-white.md",
+  "hazard": "a rule file carrying a hidden instruction -- hidden by styling, which markdown renderers honour and parsers ignore",
+  "cite": "https://www.pillar.security/blog/new-vulnerability-in-github-copilot-and-cursor-how-hackers-can-weaponize-code-agents",
+  "bytes": 281
+ },
+ {
+  "file": "corpus/edge/incidents/rules-file-backdoor/03-html-comment.md",
+  "hazard": "a rule file carrying a hidden instruction -- inside an HTML comment, invisible in rendered markdown",
+  "cite": "https://www.pillar.security/blog/new-vulnerability-in-github-copilot-and-cursor-how-hackers-can-weaponize-code-agents",
+  "bytes": 255
+ },
+ {
+  "file": "corpus/edge/incidents/rules-file-backdoor/04-zero-width-joined.md",
+  "hazard": "a rule file carrying a hidden instruction -- a zero-width joiner between every character",
+  "cite": "https://www.pillar.security/blog/new-vulnerability-in-github-copilot-and-cursor-how-hackers-can-weaponize-code-agents",
+  "bytes": 423
+ },
+ {
+  "file": "corpus/edge/incidents/rules-file-backdoor/05-zero-width-space.md",
+  "hazard": "a rule file carrying a hidden instruction -- zero-width spaces between every character",
+  "cite": "https://www.pillar.security/blog/new-vulnerability-in-github-copilot-and-cursor-how-hackers-can-weaponize-code-agents",
+  "bytes": 423
+ },
+ {
+  "file": "corpus/edge/incidents/rules-file-backdoor/06-bidi-override.md",
+  "hazard": "a rule file carrying a hidden instruction -- a right-to-left override, so the stored order is not the read order",
+  "cite": "https://www.pillar.security/blog/new-vulnerability-in-github-copilot-and-cursor-how-hackers-can-weaponize-code-agents",
+  "bytes": 252
+ },
+ {
+  "file": "corpus/edge/incidents/rules-file-backdoor/07-isolate.md",
+  "hazard": "a rule file carrying a hidden instruction -- wrapped in bidi isolates, which hide it from surrounding context",
+  "cite": "https://www.pillar.security/blog/new-vulnerability-in-github-copilot-and-cursor-how-hackers-can-weaponize-code-agents",
+  "bytes": 252
+ },
+ {
+  "file": "corpus/edge/incidents/rules-file-backdoor/08-unicode-tags.md",
+  "hazard": "a rule file carrying a hidden instruction -- Unicode TAG characters -- a complete invisible ASCII alphabet, renders as nothing",
+  "cite": "https://www.pillar.security/blog/new-vulnerability-in-github-copilot-and-cursor-how-hackers-can-weaponize-code-agents",
+  "bytes": 426
+ },
+ {
+  "file": "corpus/edge/incidents/rules-file-backdoor/README.md",
+  "hazard": "the note ordering the eight concealments",
+  "cite": "https://www.pillar.security/blog/new-vulnerability-in-github-copilot-and-cursor-how-hackers-can-weaponize-code-agents",
+  "bytes": 1008
+ },
+ {
+  "file": "corpus/edge/incidents/lethal-trifecta/issues/0041-cannot-log-in.md",
+  "hazard": "untrusted input that addresses the agent instead of the reader",
+  "cite": "https://simonwillison.net/2025/Jul/6/supabase-mcp-lethal-trifecta/",
+  "bytes": 395
+ },
+ {
+  "file": "corpus/edge/incidents/lethal-trifecta/issues/0042-take-a-look-at-the-issues.md",
+  "hazard": "the GitHub MCP shape -- one public issue, in a list the agent was asked to read",
+  "cite": "https://www.docker.com/blog/mcp-horror-stories-github-prompt-injection/",
+  "bytes": 268
+ },
+ {
+  "file": "corpus/edge/incidents/lethal-trifecta/config/production.env",
+  "hazard": "the private data the ticket asks for",
+  "cite": "https://simonwillison.net/2025/Jul/6/supabase-mcp-lethal-trifecta/",
+  "bytes": 181
+ },
+ {
+  "file": "corpus/edge/incidents/lethal-trifecta/README.md",
+  "hazard": "the note naming the three halves and what was actually demonstrated",
+  "cite": "https://simonwillison.net/2025/Jul/6/supabase-mcp-lethal-trifecta/",
+  "bytes": 834
+ },
+ {
+  "file": "corpus/edge/incidents/echoleak/deck-speaker-notes.md",
+  "hazard": "the original shape: a prompt in speaker notes",
+  "cite": "https://www.alekseialeinikov.com/en/blog/topics/security/prompt-injection-defense-2026-lethal-trifecta-test",
+  "bytes": 261
+ },
+ {
+  "file": "corpus/edge/incidents/echoleak/frontmatter.md",
+  "hazard": "a frontmatter field a reader never renders",
+  "cite": "https://www.alekseialeinikov.com/en/blog/topics/security/prompt-injection-defense-2026-lethal-trifecta-test",
+  "bytes": 205
+ },
+ {
+  "file": "corpus/edge/incidents/echoleak/image-alt-text.md",
+  "hazard": "alt text, which a screen reader and a model both read",
+  "cite": "https://www.alekseialeinikov.com/en/blog/topics/security/prompt-injection-defense-2026-lethal-trifecta-test",
+  "bytes": 177
+ },
+ {
+  "file": "corpus/edge/incidents/echoleak/link-title.md",
+  "hazard": "a link title attribute",
+  "cite": "https://www.alekseialeinikov.com/en/blog/topics/security/prompt-injection-defense-2026-lethal-trifecta-test",
+  "bytes": 175
+ },
+ {
+  "file": "corpus/edge/incidents/echoleak/table-cell-comment.html",
+  "hazard": "an HTML comment inside a table cell",
+  "cite": "https://www.alekseialeinikov.com/en/blog/topics/security/prompt-injection-defense-2026-lethal-trifecta-test",
+  "bytes": 177
+ },
+ {
+  "file": "corpus/edge/incidents/echoleak/svg-metadata.svg",
+  "hazard": "SVG metadata and description, which render as nothing",
+  "cite": "https://www.alekseialeinikov.com/en/blog/topics/security/prompt-injection-defense-2026-lethal-trifecta-test",
+  "bytes": 388
+ },
+ {
+  "file": "corpus/edge/incidents/echoleak/json-schema-description.json",
+  "hazard": "a JSON Schema description, which a tool reads as documentation",
+  "cite": "https://www.alekseialeinikov.com/en/blog/topics/security/prompt-injection-defense-2026-lethal-trifecta-test",
+  "bytes": 430
+ },
+ {
+  "file": "corpus/edge/incidents/echoleak/git-notes-and-trailers.txt",
+  "hazard": "a commit trailer, which a history summariser reads",
+  "cite": "https://www.alekseialeinikov.com/en/blog/topics/security/prompt-injection-defense-2026-lethal-trifecta-test",
+  "bytes": 255
+ },
+ {
+  "file": "corpus/edge/incidents/echoleak/README.md",
+  "hazard": "the note naming the eight fields",
+  "cite": "https://www.alekseialeinikov.com/en/blog/topics/security/prompt-injection-defense-2026-lethal-trifecta-test",
+  "bytes": 543
+ },
+ {
+  "file": "corpus/edge/incidents/code-freeze/FREEZE.md",
+  "hazard": "a freeze declaration in the place a reader would look",
+  "cite": "https://incidentdatabase.ai/cite/1152/",
+  "bytes": 348
+ },
+ {
+  "file": "corpus/edge/incidents/code-freeze/.freeze",
+  "hazard": "the machine-readable half of the same declaration",
+  "cite": "https://incidentdatabase.ai/cite/1152/",
+  "bytes": 7
+ },
+ {
+  "file": "corpus/edge/incidents/code-freeze/migrations/004_drop_and_recreate.sql",
+  "hazard": "a destructive migration sitting inside a frozen repository",
+  "cite": "https://incidentdatabase.ai/cite/1152/",
+  "bytes": 260
+ },
+ {
+  "file": "corpus/edge/incidents/code-freeze/test-results.json",
+  "hazard": "a results file that reports 1,206 passes in four milliseconds",
+  "cite": "https://incidentdatabase.ai/cite/1152/",
+  "bytes": 169
+ },
+ {
+  "file": "corpus/edge/incidents/code-freeze/README.md",
+  "hazard": "the note naming the fabrication and the arithmetic that reveals it",
+  "cite": "https://incidentdatabase.ai/cite/1152/",
+  "bytes": 758
+ },
+ {
+  "file": "corpus/edge/incidents/editor-config/extensions.json",
+  "hazard": "recommended extensions, two of which are the January 2026 campaign",
+  "cite": "https://thehackernews.com/2026/01/malicious-vs-code-ai-extensions-with-15.html",
+  "bytes": 131
+ },
+ {
+  "file": "corpus/edge/incidents/editor-config/tasks.json.attack-shape",
+  "hazard": "an editor task that runs on folder open, as a document",
+  "cite": "https://thehackernews.com/2026/05/github-internal-repositories-breached.html",
+  "bytes": 600
+ },
+ {
+  "file": "corpus/edge/incidents/editor-config/README.md",
+  "hazard": "the note naming both campaigns and the eighteen minutes",
+  "cite": "https://thehackernews.com/2026/05/github-internal-repositories-breached.html",
+  "bytes": 837
+ },
+ {
+  "file": "corpus/edge/incidents/workflows/.github/workflows/pr-target.yml",
+  "hazard": "pull_request_target checking out the pull request's head",
+  "cite": "",
+  "bytes": 560
+ },
+ {
+  "file": "corpus/edge/incidents/workflows/.github/workflows/mutable-tags.yml",
+  "hazard": "actions pinned to mutable tags rather than to a commit",
+  "cite": "",
+  "bytes": 434
+ },
+ {
+  "file": "corpus/edge/incidents/workflows/.github/workflows/script-injection.yml",
+  "hazard": "an event field interpolated directly into a shell command",
+  "cite": "",
+  "bytes": 218
+ },
+ {
+  "file": "corpus/edge/incidents/workflows/README.md",
+  "hazard": "the note naming all three",
+  "cite": "",
+  "bytes": 504
+ }
+]

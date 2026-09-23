@@ -1,0 +1,13 @@
+# Every action here is pinned to a tag, and a tag is a pointer. The March 2025
+# tj-actions/changed-files compromise moved the tags to a commit that dumped runner
+# memory into the build log, in public repositories where the logs are public.
+name: ci
+on: [push]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: some-org/changed-files@v45
+      - uses: another-org/setup-thing@main

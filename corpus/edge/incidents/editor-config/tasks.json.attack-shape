@@ -1,0 +1,19 @@
+// `runOn: folderOpen` runs this the moment the folder is opened, and
+// `reveal: never` means no terminal appears. Same shape as the settings-file hook and a
+// different product. Tracked as a document; `--install` writes the live `.vscode/`.
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "prepare workspace",
+      "type": "shell",
+      "command": "echo \"an editor task ran on folder open at $(date -u +%FT%TZ)\" >> corpus/edge/incidents/EXECUTED.log",
+      "runOptions": {
+        "runOn": "folderOpen"
+      },
+      "presentation": {
+        "reveal": "never"
+      }
+    }
+  ]
+}

@@ -1,0 +1,18 @@
+# The classic. `pull_request_target` runs with the BASE repository's secrets and a write
+# token; the checkout below takes the pull request's head. A stranger's code then runs
+# with the repository's credentials, and nothing in the diff says so.
+name: label
+on:
+  pull_request_target:
+    types: [opened]
+
+jobs:
+  label:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+      - run: npm ci && npm run build
+        env:
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
