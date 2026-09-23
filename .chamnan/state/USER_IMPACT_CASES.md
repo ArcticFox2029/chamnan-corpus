@@ -37,10 +37,10 @@ index. Everything in a comment that is private but is not shaped like a token th
 | A5 | a path naming a client (`clients/<name>/pricing.py`) | the *path* is published even when the file is never read | PLANT |
 | A6 | a directory named for an unannounced product | the tree alone leaks the roadmap | PLANT |
 | A7 | a comment with a national ID / phone number | PII in a committed index | PLANT |
-| A8 | a credential in a shape the redactor does not know | the case the narrow-pattern choice accepts | PLANT |
-| A9 | a secret split across two physical lines | a line-oriented matcher sees two harmless halves | PLANT |
-| A10 | `.env.example` whose values are real | the file that exists to be safe, and is not | PLANT |
-| A11 | a credential inside a non-Latin comment | the pattern's word boundaries were written for ASCII | PLANT |
+| A8 | a credential in a shape the redactor does not know | the case the narrow-pattern choice accepts | PLANT — measured: truncated, not redacted |
+| A9 | a secret split across two physical lines | a line-oriented matcher sees two harmless halves | PLANT — **a real leak, found and fixed 2026-09-24** |
+| A10 | `.env.example` whose values are real | the file that exists to be safe, and is not | PLANT — measured: truncated, not redacted |
+| A11 | a credential inside a non-Latin comment | the pattern's word boundaries were written for ASCII | PLANT — measured: **redacted correctly**; the claim was wrong |
 | A12 | a branch name that names the unannounced thing | the block reports the branch | NO — a branch is not a tracked file; `--install` creates it |
 
 ## B — the repository already had its own arrangements

@@ -1,3 +1,4 @@
-# A real key, written the way a formatter leaves it.
-TOKEN = ("ghp_" 
-         "EXAMPLEEXAMPLEEXAMPLEEXAMPLE1234")
+# The deploy key, wrapped by the formatter: "ghp_" 
+# "EXAMPLEEXAMPLEEXAMPLEEXAMPLE1234" -- one value, two physical lines.
+def deploy():
+    return None

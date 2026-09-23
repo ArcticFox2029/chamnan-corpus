@@ -40,6 +40,7 @@ import sys
 HERE = pathlib.Path(__file__).resolve().parent
 WS = HERE / ".chamnan"
 EDGE = HERE / "corpus" / "edge" / "user-impact"
+MANIFEST = "PLANTED_USER_IMPACT.json"
 PLANTED = []
 COLLISIONS = []
 DRY = False
@@ -55,6 +56,12 @@ def _claimed():
     """
     out = {}
     for f in sorted((WS / "state").glob("PLANTED*.json")):
+        # 🐛 [2026-09-24] Not our OWN manifest. The glob matched it, so the second run of this
+        # planter refused all 131 of its own paths and planted nothing -- a guard that works once
+        # is a guard that makes the fixture unfixable, and this one blocked the very edit the
+        # first run's findings called for.
+        if f.name == MANIFEST:
+            continue
         try:
             rows = json.loads(f.read_text(encoding="utf-8"))
         except (OSError, ValueError):
@@ -131,20 +138,34 @@ def published():
        "# Do not delete it, support uses it to reproduce the Thai address bug.\n"
        "TEST_ACCOUNT = 'acct_4471'\n",
        "a national ID and a phone number, neither shaped like a token", "A7")
-    _w(g / "unknown_shape_secret.conf",
-       "# The vendor issues these as 44 chars of base64 with no prefix at all.\n"
-       "vendor_session_material = 9Qf2bXk1TzupLmA0eRdYwNs7VhGjCoIrP4ZtBuKxSyE=\n",
-       "a credential in a shape no pattern list carries a prefix for", "A8")
+    # 🐛 [2026-09-24] These three were planted with the credential on a LATER line, and the first
+    # run through `chamnan-map` reported all three clean -- because the index copies a file's
+    # OPENING comment and never saw them. A fixture that cannot reach the code it is aimed at
+    # reports a pass it did not earn, which is the corpus's own group `wrong` turned on itself.
+    # Every unusual shape below is now in the opening comment, where the index will carry it.
+    _w(g / "unknown_shape_secret.py",
+       "# The vendor issues session material as 44 chars of base64 with no prefix at all:\n"
+       "# 9Qf2bXk1TzupLmA0eRdYwNs7VhGjCoIrP4ZtBuKxSyE= -- do not regenerate without asking them.\n"
+       "def session():\n    return None\n",
+       "a credential in a shape no pattern list carries a prefix for, in the opening comment",
+       "A8")
     _w(g / "split_across_lines.py",
-       "# A real key, written the way a formatter leaves it.\n"
-       'TOKEN = ("ghp_" \n         "EXAMPLEEXAMPLEEXAMPLEEXAMPLE1234")\n',
+       '# The deploy key, wrapped by the formatter: "ghp_" \n'
+       '# "EXAMPLEEXAMPLEEXAMPLEEXAMPLE1234" -- one value, two physical lines.\n'
+       "def deploy():\n    return None\n",
        "a token split across two physical lines, where a line matcher sees two harmless halves",
        "A9")
+    _w(g / "env_example_loader.py",
+       "# Loads .env.example, which nobody filled in -- these ARE the staging values:\n"
+       "# DATABASE_URL=postgres://reporting:sT4ging-Pass-2026@pg-report-02.corp.internal:5433/rep\n"
+       "# SMTP_PASSWORD=Autumn!Freight#2026\n"
+       "def load():\n    return None\n",
+       "the file that exists to be safe, quoted into a comment the index copies", "A10")
     _w(g / ".env.example",
        "# Copy to .env and fill in. (Nobody did -- these are the staging values.)\n"
        "DATABASE_URL=postgres://reporting:sT4ging-Pass-2026@pg-report-02.corp.internal:5433/rep\n"
        "SMTP_PASSWORD=Autumn!Freight#2026\n",
-       "the file that exists to be safe, carrying working staging credentials", "A10")
+       "the same values in the file itself, which no reader currently describes", "A10")
     _w(g / "thai_comment_with_key.py",
        "# คีย์ของระบบขนส่งชายแดน ห้ามแก้โดยไม่ถามทีม ops ก่อน คีย์คือ __PLANTED_STRIPE__\n"
        "# บรรทัดนี้เขียนเป็นภาษาไทยทั้งบรรทัด ไม่มีช่องว่างแบบภาษาอังกฤษให้ยึดเป็นขอบคำ\n"
@@ -653,7 +674,7 @@ if __name__ == "__main__":
         for p in PLANTED:
             print(f"  {p['bytes']:>9,}  {p['case']:<10} {p['file'][:52]:<52} {p['hazard'][:48]}")
     else:
-        out = WS / "state" / "PLANTED_USER_IMPACT.json"
+        out = WS / "state" / MANIFEST
         out.parent.mkdir(parents=True, exist_ok=True)
         out.write_text(json.dumps(PLANTED, indent=1, ensure_ascii=False) + "\n", encoding="utf-8")
     for rel, owner, case in COLLISIONS:

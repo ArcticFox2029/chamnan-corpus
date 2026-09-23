@@ -42,21 +42,27 @@
   "bytes": 184
  },
  {
-  "file": "corpus/edge/user-impact/published/unknown_shape_secret.conf",
+  "file": "corpus/edge/user-impact/published/unknown_shape_secret.py",
   "case": "A8",
-  "hazard": "a credential in a shape no pattern list carries a prefix for",
-  "bytes": 142
+  "hazard": "a credential in a shape no pattern list carries a prefix for, in the opening comment",
+  "bytes": 202
  },
  {
   "file": "corpus/edge/user-impact/published/split_across_lines.py",
   "case": "A9",
   "hazard": "a token split across two physical lines, where a line matcher sees two harmless halves",
-  "bytes": 115
+  "bytes": 153
+ },
+ {
+  "file": "corpus/edge/user-impact/published/env_example_loader.py",
+  "case": "A10",
+  "hazard": "the file that exists to be safe, quoted into a comment the index copies",
+  "bytes": 232
  },
  {
   "file": "corpus/edge/user-impact/published/.env.example",
   "case": "A10",
-  "hazard": "the file that exists to be safe, carrying working staging credentials",
+  "hazard": "the same values in the file itself, which no reader currently describes",
   "bytes": 196
  },
  {
