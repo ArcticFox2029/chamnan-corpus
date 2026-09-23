@@ -470,11 +470,19 @@ def loss():
 def wrong():
     """It answered, the answer looked fine, and it was false. The failure this corpus is for."""
     g = EDGE / "wrong"
+    # 🐛 [2026-09-24] The first version of this file was a bare list of `## \`path\`` headings with
+    # no `## Full Detail`, and chamnan answered "this index is truncated or hand-edited" -- which
+    # was CORRECT, and meant the dead-entry check this case exists for was never reached. A fixture
+    # has to be well-formed before its defect is the thing under test.
     _w(g / "index-names-deleted-files" / ".chamnan" / "MAP.md",
-       "# Architecture index\n\n"
-       + "".join(f"## `src/handlers/handler_{i:02d}.py`\n\nHandles one route.\n\n"
+       "# Architecture index\n\n## Quick Index\n\n"
+       + "".join(f"- **`src/handlers/handler_{i:02d}.py`** (12L, 1fn) — handles one route.\n"
+                 for i in range(1, 26))
+       + "\n## Full Detail\n\n"
+       + "".join(f"## `src/handlers/handler_{i:02d}.py`\nHandles one route.\n\n"
                  for i in range(1, 26)),
-       "an index naming twenty-five files, none of which are in the tree beside it", "H1")
+       "a well-formed index naming twenty-five files, none of which are in the tree beside it",
+       "H1")
     _w(g / "index-names-deleted-files" / "src" / "handlers" / "router.py",
        "# The twenty-five handlers were folded into this one file. The index has not noticed.\n"
        "def route(path):\n    return path\n",
@@ -497,11 +505,22 @@ def wrong():
        "# This repository uses SQLAlchemy throughout, and always has.\n"
        "from sqlalchemy.orm import declarative_base\n\nBase = declarative_base()\n",
        "the code that contradicts the decision recorded beside it", "H4")
+    # The registry's real shape is a flat list of {name, desc, added, origin, runs}. The first
+    # version wrapped it in {"tools": [...]}, which `tools_index.load` drops entirely -- so the
+    # case tested a reader's tolerance for a malformed file rather than the staleness it names.
     _w(g / "tool-index-names-archived" / ".chamnan" / "tools" / "index.json",
-       json.dumps({"tools": [{"name": "churn_report.py", "desc": "Which files change most"},
-                             {"name": "seed_fixtures.py", "desc": "Rebuild the test fixtures"}]},
+       json.dumps([{"name": "churn_report.py", "desc": "Which files change most",
+                    "added": "2026-03-02T09:00:00+07:00", "origin": "churn_report.py", "runs": 31},
+                   {"name": "seed_fixtures.py", "desc": "Rebuild the test fixtures",
+                    "added": "2026-04-11T09:00:00+07:00", "origin": "seed_fixtures.py",
+                    "runs": 4},
+                   {"name": "still_here.py", "desc": "A tool that does still exist",
+                    "added": "2026-05-01T09:00:00+07:00", "origin": "still_here.py", "runs": 9}],
                   indent=1) + "\n",
-       "an index naming two scripts that were archived, so 'check the index first' misfires", "H5")
+       "a registry naming two scripts that were archived, beside one that is really there", "H5")
+    _w(g / "tool-index-names-archived" / ".chamnan" / "tools" / "still_here.py",
+       "# The one registered tool whose file is where the registry says it is.\n",
+       "the control: a registration that is not stale", "H5")
     _w(g / "tool-index-names-archived" / ".chamnan" / "tools" / "archived" / "churn_report.py",
        "# Archived. The index still lists it at its old path.\n",
        "one of the archived scripts, at the path the index does not use", "H5")

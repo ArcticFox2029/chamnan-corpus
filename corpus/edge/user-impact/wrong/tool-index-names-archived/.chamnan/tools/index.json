@@ -1,12 +1,23 @@
-{
- "tools": [
-  {
-   "name": "churn_report.py",
-   "desc": "Which files change most"
-  },
-  {
-   "name": "seed_fixtures.py",
-   "desc": "Rebuild the test fixtures"
-  }
- ]
-}
+[
+ {
+  "name": "churn_report.py",
+  "desc": "Which files change most",
+  "added": "2026-03-02T09:00:00+07:00",
+  "origin": "churn_report.py",
+  "runs": 31
+ },
+ {
+  "name": "seed_fixtures.py",
+  "desc": "Rebuild the test fixtures",
+  "added": "2026-04-11T09:00:00+07:00",
+  "origin": "seed_fixtures.py",
+  "runs": 4
+ },
+ {
+  "name": "still_here.py",
+  "desc": "A tool that does still exist",
+  "added": "2026-05-01T09:00:00+07:00",
+  "origin": "still_here.py",
+  "runs": 9
+ }
+]

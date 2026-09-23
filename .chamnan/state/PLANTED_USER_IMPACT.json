@@ -626,8 +626,8 @@
  {
   "file": "corpus/edge/user-impact/wrong/index-names-deleted-files/.chamnan/MAP.md",
   "case": "H1",
-  "hazard": "an index naming twenty-five files, none of which are in the tree beside it",
-  "bytes": 1347
+  "hazard": "a well-formed index naming twenty-five files, none of which are in the tree beside it",
+  "bytes": 3080
  },
  {
   "file": "corpus/edge/user-impact/wrong/index-names-deleted-files/src/handlers/router.py",
@@ -662,8 +662,14 @@
  {
   "file": "corpus/edge/user-impact/wrong/tool-index-names-archived/.chamnan/tools/index.json",
   "case": "H5",
-  "hazard": "an index naming two scripts that were archived, so 'check the index first' misfires",
-  "bytes": 173
+  "hazard": "a registry naming two scripts that were archived, beside one that is really there",
+  "bytes": 477
+ },
+ {
+  "file": "corpus/edge/user-impact/wrong/tool-index-names-archived/.chamnan/tools/still_here.py",
+  "case": "H5",
+  "hazard": "the control: a registration that is not stale",
+  "bytes": 71
  },
  {
   "file": "corpus/edge/user-impact/wrong/tool-index-names-archived/.chamnan/tools/archived/churn_report.py",
