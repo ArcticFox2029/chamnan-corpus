@@ -1,0 +1,5 @@
+# One pattern per line. Read and compiled by build_matcher.py below.
+(a+)+$
+(x|x)*y
+^(\w+\s?)*$
+ordinary-and-harmless

@@ -1,0 +1,140 @@
+[
+ {
+  "file": "corpus/edge/named-gaps/non-english/arabic.py",
+  "hazard": "a docstring entirely in one script (ar) -- long enough for a 39-44% counting error to change a budget",
+  "cite": "chamnan_research_backlog.md \u2014 agent 5, non-English repos",
+  "bytes": 5448
+ },
+ {
+  "file": "corpus/edge/named-gaps/non-english/hebrew.py",
+  "hazard": "a docstring entirely in one script (he) -- long enough for a 39-44% counting error to change a budget",
+  "cite": "chamnan_research_backlog.md \u2014 agent 5, non-English repos",
+  "bytes": 4923
+ },
+ {
+  "file": "corpus/edge/named-gaps/non-english/japanese.py",
+  "hazard": "a docstring entirely in one script (ja) -- long enough for a 39-44% counting error to change a budget",
+  "cite": "chamnan_research_backlog.md \u2014 agent 5, non-English repos",
+  "bytes": 3423
+ },
+ {
+  "file": "corpus/edge/named-gaps/non-english/chinese.py",
+  "hazard": "a docstring entirely in one script (zh) -- long enough for a 39-44% counting error to change a budget",
+  "cite": "chamnan_research_backlog.md \u2014 agent 5, non-English repos",
+  "bytes": 2448
+ },
+ {
+  "file": "corpus/edge/named-gaps/non-english/hindi.py",
+  "hazard": "a docstring entirely in one script (hi) -- long enough for a 39-44% counting error to change a budget",
+  "cite": "chamnan_research_backlog.md \u2014 agent 5, non-English repos",
+  "bytes": 5423
+ },
+ {
+  "file": "corpus/edge/named-gaps/non-english/thai.py",
+  "hazard": "a docstring entirely in one script (th) -- long enough for a 39-44% counting error to change a budget",
+  "cite": "chamnan_research_backlog.md \u2014 agent 5, non-English repos",
+  "bytes": 9748
+ },
+ {
+  "file": "corpus/edge/named-gaps/non-english/korean.py",
+  "hazard": "a docstring entirely in one script (ko) -- long enough for a 39-44% counting error to change a budget",
+  "cite": "chamnan_research_backlog.md \u2014 agent 5, non-English repos",
+  "bytes": 3323
+ },
+ {
+  "file": "corpus/edge/named-gaps/non-english/russian.py",
+  "hazard": "a docstring entirely in one script (ru) -- long enough for a 39-44% counting error to change a budget",
+  "cite": "chamnan_research_backlog.md \u2014 agent 5, non-English repos",
+  "bytes": 5848
+ },
+ {
+  "file": "corpus/edge/named-gaps/non-english/mixed-scripts.py",
+  "hazard": "four scripts inside one docstring",
+  "cite": "chamnan_research_backlog.md \u2014 agent 5, non-English repos",
+  "bytes": 277
+ },
+ {
+  "file": ".chamnan/sessions/2026-09-24-first.md",
+  "hazard": "one of two same-day session records -- only one is read forward",
+  "cite": "chamnan_research_backlog.md \u2014 still open from agent 5",
+  "bytes": 181
+ },
+ {
+  "file": ".chamnan/sessions/2026-09-24-second.md",
+  "hazard": "one of two same-day session records -- only one is read forward",
+  "cite": "chamnan_research_backlog.md \u2014 still open from agent 5",
+  "bytes": 187
+ },
+ {
+  "file": ".chamnan/milestones.md",
+  "hazard": "two entries under one date in a single append-only file",
+  "cite": "chamnan_research_backlog.md \u2014 still open from agent 5",
+  "bytes": 157
+ },
+ {
+  "file": "corpus/edge/named-gaps/same-day/README.md",
+  "hazard": "the note naming the pair",
+  "cite": "chamnan_research_backlog.md \u2014 still open from agent 5",
+  "bytes": 434
+ },
+ {
+  "file": "corpus/edge/named-gaps/staleness/edited-but-dated-in-the-future.py",
+  "hazard": "a changed source file whose mtime is in the future",
+  "cite": "chamnan_research_dead_ends.md \u2014 mtime cannot answer this question",
+  "bytes": 213
+ },
+ {
+  "file": "corpus/edge/named-gaps/staleness/README.md",
+  "hazard": "the note naming why the fix was reverted",
+  "cite": "chamnan_research_dead_ends.md \u2014 mtime cannot answer this question",
+  "bytes": 488
+ },
+ {
+  "file": "corpus/edge/named-gaps/thresholds/README.md",
+  "hazard": "the note naming the three untested constants",
+  "cite": "chamnan_research_backlog.md \u2014 still open from agent 3",
+  "bytes": 587
+ },
+ {
+  "file": "corpus/edge/named-gaps/thresholds/just-under-huge.py",
+  "hazard": "900,000 bytes, for the 'very large' branch nothing reaches",
+  "cite": "chamnan_research_backlog.md \u2014 still open from agent 3",
+  "bytes": 900076
+ },
+ {
+  "file": "corpus/edge/named-gaps/thresholds/just-over-huge.py",
+  "hazard": "1,100,000 bytes, for the 'very large' branch nothing reaches",
+  "cite": "chamnan_research_backlog.md \u2014 still open from agent 3",
+  "bytes": 1100056
+ },
+ {
+  "file": ".chamnan/sessions/1990-01-01-outside-every-window.md",
+  "hazard": "a session record far outside WINDOW_HOURS",
+  "cite": "chamnan_research_backlog.md \u2014 still open from agent 3",
+  "bytes": 75
+ },
+ {
+  "file": "corpus/edge/named-gaps/thresholds/adapter-with-its-own-ceiling/.cursor/rules/chamnan.mdc",
+  "hazard": "an adapter file declaring both a glob activation and its own ceiling",
+  "cite": "chamnan_research_backlog.md \u2014 still open from agent 3",
+  "bytes": 283
+ },
+ {
+  "file": "corpus/edge/named-gaps/conflicts/unresolved.py",
+  "hazard": "merge markers in a tracked source file",
+  "cite": "",
+  "bytes": 79
+ },
+ {
+  "file": "corpus/edge/named-gaps/conflicts/unresolved.md",
+  "hazard": "merge markers in prose, where they read as ordinary text",
+  "cite": "",
+  "bytes": 157
+ },
+ {
+  "file": "corpus/edge/named-gaps/conflicts/looks-like-a-conflict-but-is-not.md",
+  "hazard": "prose that describes markers without containing a conflict",
+  "cite": "",
+  "bytes": 275
+ }
+]

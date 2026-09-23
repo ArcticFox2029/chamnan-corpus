@@ -1,0 +1,10 @@
+---
+globs: ["**/*.py"]
+alwaysApply: false
+ceiling: 400
+---
+
+# A rule file that declares its own ceiling and an Auto-Attached glob
+
+Cursor attaches this only when a matching file is in context. The `ceiling` here is
+smaller than the default, which is the override path nothing tests.

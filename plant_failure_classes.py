@@ -318,7 +318,88 @@ def windows():
        "the note explaining why the group is install-only")
 
 
-GROUPS = [concurrent, clockjump, silentwrite, encodings, unreadable, extensions, windows]
+# ---- patterns assembled at runtime, which no scan can see ---------------------------------------
+def runtimeregex():
+    """The comparison's own words for what it could not measure, in any of the four tools.
+
+    Extracting regex literals from source finds the literals. Running them finds what runs. Neither
+    sees a pattern that does not exist until a variable is read -- and a variable read from a
+    repository is a pattern the repository's author chose. The 557 patterns fired in V8 were all
+    literals plus 20 built with `new RegExp(string)` where the string was itself a literal; a string
+    that arrives from a file is the case with no method behind it at all.
+    """
+    root = EDGE / "runtime-regex"
+    _w(root / "README.md",
+       "# Patterns that do not exist until something is read\n\n"
+       "Every file here builds a regular expression from data rather than from source. The data is\n"
+       "in this repository, so whoever wrote the repository chose the pattern -- and a scan of the\n"
+       "SOURCE finds `re.compile(pattern)` with nothing to say about it.\n\n"
+       "This is the blind spot the four-plugin comparison named for all four tools: \"a pattern\n"
+       "assembled from a variable at runtime is invisible to extraction and to execution alike\".\n",
+       "the note naming the blind spot")
+    _w(root / "patterns.txt",
+       "# One pattern per line. Read and compiled by build_matcher.py below.\n"
+       "(a+)+$\n"
+       "(x|x)*y\n"
+       "^(\\w+\\s?)*$\n"
+       "ordinary-and-harmless\n",
+       "the DATA that becomes the pattern -- two of these four will not terminate")
+    _w(root / "build_matcher.py",
+       "import pathlib, re\n\n"
+       "# A scan of this file finds one `re.compile` and one variable. The hazard is in\n"
+       "# patterns.txt beside it, which is data, and data is not scanned for patterns.\n"
+       "PATTERNS = [l.strip() for l in pathlib.Path('patterns.txt').read_text().splitlines()\n"
+       "            if l.strip() and not l.startswith('#')]\n"
+       "MATCHERS = [re.compile(p) for p in PATTERNS]\n",
+       "source that compiles whatever the data file says")
+    _w(root / "build_matcher.js",
+       "const fs = require('fs');\n\n"
+       "// The JavaScript form of the same thing. `new RegExp(string)` where the string came from\n"
+       "// disk is what neither literal-extraction nor a worker fired at literals can reach.\n"
+       "const patterns = fs.readFileSync('patterns.txt', 'utf8').split('\\n')\n"
+       "  .filter(l => l && !l.startsWith('#'));\n"
+       "const matchers = patterns.map(p => new RegExp(p));\n",
+       "the same construction in the engine the comparison actually fired")
+    _w(root / "assembled-from-pieces.py",
+       "import re\n\n"
+       "# Worse than reading a file: no single string in this source is a pattern. Concatenation\n"
+       "# is what makes one, and the pieces are individually meaningless.\n"
+       "OPEN, ATOM, CLOSE, QUANT = '(', 'a+', ')', '+'\n"
+       "RX = re.compile(OPEN + ATOM + CLOSE + QUANT)\n",
+       "a pattern that is not a string anywhere in the source")
+    _w(root / "from-an-environment-variable.py",
+       "import os, re\n\n"
+       "# And the form that is not even in the repository: the pattern is in the environment.\n"
+       "RX = re.compile(os.environ.get('CORPUS_FILTER', '.*'))\n",
+       "a pattern that is not in the repository at all")
+
+
+# ---- a cap that counts items when the cost is bytes ---------------------------------------------
+def countcap():
+    """N records of any length is not a bound, and the comparison put a name to it.
+
+    One tool caps continuity at the first N observations (`slice(0, count)`); chamnan caps at a
+    byte ceiling. The two behave identically until a record is large, and then only one of them is
+    still a bound. These records are ordinary in every way except length.
+    """
+    root = EDGE / "count-vs-bytes"
+    _w(root / "README.md",
+       "# Ten records, and any count-based cap admits all of them\n\n"
+       "`slice(0, 10)` takes ten records. Ten of THESE records is 5 MB. Nothing here is malformed\n"
+       "and nothing is adversarial -- a long working day produces a long record.\n\n"
+       "A byte ceiling and a count cap agree on every ordinary input, which is why the difference\n"
+       "only ever shows up in production.\n",
+       "the note naming the difference")
+    for i in range(10):
+        _w(root / f"observation-{i:02d}.md",
+           f"# Observation {i}\n\n"
+           + (f"A line of an ordinary working note, the {i}th of many, written by somebody who "
+              f"had a lot to say about what they were doing.\n" * 4000),
+           "one of ten records of ~500 KB each" if i == 0 else "")
+
+
+GROUPS = [concurrent, clockjump, silentwrite, encodings,
+          unreadable, extensions, windows, runtimeregex, countcap]
 
 if __name__ == "__main__":
     DRY = "--dry-run" in sys.argv

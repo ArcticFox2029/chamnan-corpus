@@ -323,5 +323,90 @@
   "file": "corpus/edge/windows-hostile/README.md",
   "hazard": "the note explaining why the group is install-only",
   "bytes": 1033
+ },
+ {
+  "file": "corpus/edge/runtime-regex/README.md",
+  "hazard": "the note naming the blind spot",
+  "bytes": 478
+ },
+ {
+  "file": "corpus/edge/runtime-regex/patterns.txt",
+  "hazard": "the DATA that becomes the pattern -- two of these four will not terminate",
+  "bytes": 118
+ },
+ {
+  "file": "corpus/edge/runtime-regex/build_matcher.py",
+  "hazard": "source that compiles whatever the data file says",
+  "bytes": 361
+ },
+ {
+  "file": "corpus/edge/runtime-regex/build_matcher.js",
+  "hazard": "the same construction in the engine the comparison actually fired",
+  "bytes": 363
+ },
+ {
+  "file": "corpus/edge/runtime-regex/assembled-from-pieces.py",
+  "hazard": "a pattern that is not a string anywhere in the source",
+  "bytes": 258
+ },
+ {
+  "file": "corpus/edge/runtime-regex/from-an-environment-variable.py",
+  "hazard": "a pattern that is not in the repository at all",
+  "bytes": 156
+ },
+ {
+  "file": "corpus/edge/count-vs-bytes/README.md",
+  "hazard": "the note naming the difference",
+  "bytes": 347
+ },
+ {
+  "file": "corpus/edge/count-vs-bytes/observation-00.md",
+  "hazard": "one of ten records of ~500 KB each",
+  "bytes": 488017
+ },
+ {
+  "file": "corpus/edge/count-vs-bytes/observation-01.md",
+  "hazard": "",
+  "bytes": 488017
+ },
+ {
+  "file": "corpus/edge/count-vs-bytes/observation-02.md",
+  "hazard": "",
+  "bytes": 488017
+ },
+ {
+  "file": "corpus/edge/count-vs-bytes/observation-03.md",
+  "hazard": "",
+  "bytes": 488017
+ },
+ {
+  "file": "corpus/edge/count-vs-bytes/observation-04.md",
+  "hazard": "",
+  "bytes": 488017
+ },
+ {
+  "file": "corpus/edge/count-vs-bytes/observation-05.md",
+  "hazard": "",
+  "bytes": 488017
+ },
+ {
+  "file": "corpus/edge/count-vs-bytes/observation-06.md",
+  "hazard": "",
+  "bytes": 488017
+ },
+ {
+  "file": "corpus/edge/count-vs-bytes/observation-07.md",
+  "hazard": "",
+  "bytes": 488017
+ },
+ {
+  "file": "corpus/edge/count-vs-bytes/observation-08.md",
+  "hazard": "",
+  "bytes": 488017
+ },
+ {
+  "file": "corpus/edge/count-vs-bytes/observation-09.md",
+  "hazard": "",
+  "bytes": 488017
  }
 ]
