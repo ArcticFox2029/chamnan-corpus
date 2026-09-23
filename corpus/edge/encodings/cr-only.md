@@ -1,0 +1,1 @@
+# headingclassic Mac line endings

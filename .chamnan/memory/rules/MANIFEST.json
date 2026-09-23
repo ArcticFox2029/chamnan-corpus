@@ -1,0 +1,1418 @@
+[
+ {
+  "file": "001-nested-a-plus-plus.md",
+  "group": "nested",
+  "expect": "refused",
+  "compiles": true,
+  "pattern": "(a+)+",
+  "guard_said": "refused"
+ },
+ {
+  "file": "002-nested-a-plus-star.md",
+  "group": "nested",
+  "expect": "refused",
+  "compiles": true,
+  "pattern": "(a+)*",
+  "guard_said": "refused"
+ },
+ {
+  "file": "003-nested-a-star-plus.md",
+  "group": "nested",
+  "expect": "refused",
+  "compiles": true,
+  "pattern": "(a*)+",
+  "guard_said": "refused"
+ },
+ {
+  "file": "004-nested-a-star-star.md",
+  "group": "nested",
+  "expect": "refused",
+  "compiles": true,
+  "pattern": "(a*)*",
+  "guard_said": "refused"
+ },
+ {
+  "file": "005-nested-az-plus-plus.md",
+  "group": "nested",
+  "expect": "refused",
+  "compiles": true,
+  "pattern": "([a-z]+)+",
+  "guard_said": "refused"
+ },
+ {
+  "file": "006-nested-az-plus-star.md",
+  "group": "nested",
+  "expect": "refused",
+  "compiles": true,
+  "pattern": "([a-z]+)*",
+  "guard_said": "refused"
+ },
+ {
+  "file": "007-nested-az-star-plus.md",
+  "group": "nested",
+  "expect": "refused",
+  "compiles": true,
+  "pattern": "([a-z]*)+",
+  "guard_said": "refused"
+ },
+ {
+  "file": "008-nested-az-star-star.md",
+  "group": "nested",
+  "expect": "refused",
+  "compiles": true,
+  "pattern": "([a-z]*)*",
+  "guard_said": "refused"
+ },
+ {
+  "file": "009-nested-w-plus-plus.md",
+  "group": "nested",
+  "expect": "refused",
+  "compiles": true,
+  "pattern": "(\\w+)+",
+  "guard_said": "refused"
+ },
+ {
+  "file": "010-nested-w-plus-star.md",
+  "group": "nested",
+  "expect": "refused",
+  "compiles": true,
+  "pattern": "(\\w+)*",
+  "guard_said": "refused"
+ },
+ {
+  "file": "011-nested-w-star-plus.md",
+  "group": "nested",
+  "expect": "refused",
+  "compiles": true,
+  "pattern": "(\\w*)+",
+  "guard_said": "refused"
+ },
+ {
+  "file": "012-nested-w-star-star.md",
+  "group": "nested",
+  "expect": "refused",
+  "compiles": true,
+  "pattern": "(\\w*)*",
+  "guard_said": "refused"
+ },
+ {
+  "file": "013-nested-d-plus-plus.md",
+  "group": "nested",
+  "expect": "refused",
+  "compiles": true,
+  "pattern": "(\\d+)+",
+  "guard_said": "refused"
+ },
+ {
+  "file": "014-nested-d-plus-star.md",
+  "group": "nested",
+  "expect": "refused",
+  "compiles": true,
+  "pattern": "(\\d+)*",
+  "guard_said": "refused"
+ },
+ {
+  "file": "015-nested-d-star-plus.md",
+  "group": "nested",
+  "expect": "refused",
+  "compiles": true,
+  "pattern": "(\\d*)+",
+  "guard_said": "refused"
+ },
+ {
+  "file": "016-nested-d-star-star.md",
+  "group": "nested",
+  "expect": "refused",
+  "compiles": true,
+  "pattern": "(\\d*)*",
+  "guard_said": "refused"
+ },
+ {
+  "file": "017-nested-s-plus-plus.md",
+  "group": "nested",
+  "expect": "refused",
+  "compiles": true,
+  "pattern": "(\\s+)+",
+  "guard_said": "refused"
+ },
+ {
+  "file": "018-nested-s-plus-star.md",
+  "group": "nested",
+  "expect": "refused",
+  "compiles": true,
+  "pattern": "(\\s+)*",
+  "guard_said": "refused"
+ },
+ {
+  "file": "019-nested-s-star-plus.md",
+  "group": "nested",
+  "expect": "refused",
+  "compiles": true,
+  "pattern": "(\\s*)+",
+  "guard_said": "refused"
+ },
+ {
+  "file": "020-nested-s-star-star.md",
+  "group": "nested",
+  "expect": "refused",
+  "compiles": true,
+  "pattern": "(\\s*)*",
+  "guard_said": "refused"
+ },
+ {
+  "file": "021-nested-dot-plus-plus.md",
+  "group": "nested",
+  "expect": "refused",
+  "compiles": true,
+  "pattern": "(.+)+",
+  "guard_said": "refused"
+ },
+ {
+  "file": "022-nested-dot-plus-star.md",
+  "group": "nested",
+  "expect": "refused",
+  "compiles": true,
+  "pattern": "(.+)*",
+  "guard_said": "refused"
+ },
+ {
+  "file": "023-nested-dot-star-plus.md",
+  "group": "nested",
+  "expect": "refused",
+  "compiles": true,
+  "pattern": "(.*)+",
+  "guard_said": "refused"
+ },
+ {
+  "file": "024-nested-dot-star-star.md",
+  "group": "nested",
+  "expect": "refused",
+  "compiles": true,
+  "pattern": "(.*)*",
+  "guard_said": "refused"
+ },
+ {
+  "file": "025-nested-09-plus-plus.md",
+  "group": "nested",
+  "expect": "refused",
+  "compiles": true,
+  "pattern": "([0-9]+)+",
+  "guard_said": "refused"
+ },
+ {
+  "file": "026-nested-09-plus-star.md",
+  "group": "nested",
+  "expect": "refused",
+  "compiles": true,
+  "pattern": "([0-9]+)*",
+  "guard_said": "refused"
+ },
+ {
+  "file": "027-nested-09-star-plus.md",
+  "group": "nested",
+  "expect": "refused",
+  "compiles": true,
+  "pattern": "([0-9]*)+",
+  "guard_said": "refused"
+ },
+ {
+  "file": "028-nested-09-star-star.md",
+  "group": "nested",
+  "expect": "refused",
+  "compiles": true,
+  "pattern": "([0-9]*)*",
+  "guard_said": "refused"
+ },
+ {
+  "file": "029-nested-ab-plus-plus.md",
+  "group": "nested",
+  "expect": "refused",
+  "compiles": true,
+  "pattern": "((?:ab)+)+",
+  "guard_said": "refused"
+ },
+ {
+  "file": "030-nested-ab-plus-star.md",
+  "group": "nested",
+  "expect": "refused",
+  "compiles": true,
+  "pattern": "((?:ab)+)*",
+  "guard_said": "refused"
+ },
+ {
+  "file": "031-nested-ab-star-plus.md",
+  "group": "nested",
+  "expect": "refused",
+  "compiles": true,
+  "pattern": "((?:ab)*)+",
+  "guard_said": "refused"
+ },
+ {
+  "file": "032-nested-ab-star-star.md",
+  "group": "nested",
+  "expect": "refused",
+  "compiles": true,
+  "pattern": "((?:ab)*)*",
+  "guard_said": "refused"
+ },
+ {
+  "file": "033-nested-word-plus-plus.md",
+  "group": "nested",
+  "expect": "refused",
+  "compiles": true,
+  "pattern": "([A-Za-z0-9_]+)+",
+  "guard_said": "refused"
+ },
+ {
+  "file": "034-nested-word-plus-star.md",
+  "group": "nested",
+  "expect": "refused",
+  "compiles": true,
+  "pattern": "([A-Za-z0-9_]+)*",
+  "guard_said": "refused"
+ },
+ {
+  "file": "035-nested-word-star-plus.md",
+  "group": "nested",
+  "expect": "refused",
+  "compiles": true,
+  "pattern": "([A-Za-z0-9_]*)+",
+  "guard_said": "refused"
+ },
+ {
+  "file": "036-nested-word-star-star.md",
+  "group": "nested",
+  "expect": "refused",
+  "compiles": true,
+  "pattern": "([A-Za-z0-9_]*)*",
+  "guard_said": "refused"
+ },
+ {
+  "file": "037-nested-s-plus-plus.md",
+  "group": "nested",
+  "expect": "refused",
+  "compiles": true,
+  "pattern": "(\\S+)+",
+  "guard_said": "refused"
+ },
+ {
+  "file": "038-nested-s-plus-star.md",
+  "group": "nested",
+  "expect": "refused",
+  "compiles": true,
+  "pattern": "(\\S+)*",
+  "guard_said": "refused"
+ },
+ {
+  "file": "039-nested-s-star-plus.md",
+  "group": "nested",
+  "expect": "refused",
+  "compiles": true,
+  "pattern": "(\\S*)+",
+  "guard_said": "refused"
+ },
+ {
+  "file": "040-nested-s-star-star.md",
+  "group": "nested",
+  "expect": "refused",
+  "compiles": true,
+  "pattern": "(\\S*)*",
+  "guard_said": "refused"
+ },
+ {
+  "file": "041-nested-counted-both.md",
+  "group": "nested",
+  "expect": "refused",
+  "compiles": true,
+  "pattern": "(a{1,}){2,}",
+  "guard_said": "refused"
+ },
+ {
+  "file": "042-nested-counted-outer.md",
+  "group": "nested",
+  "expect": "refused",
+  "compiles": true,
+  "pattern": "(a+){2,5}",
+  "guard_said": "refused"
+ },
+ {
+  "file": "043-nested-counted-inner.md",
+  "group": "nested",
+  "expect": "refused",
+  "compiles": true,
+  "pattern": "(a{2,})+",
+  "guard_said": "refused"
+ },
+ {
+  "file": "044-nested-counted-class.md",
+  "group": "nested",
+  "expect": "refused",
+  "compiles": true,
+  "pattern": "([a-z]{1,3})+",
+  "guard_said": "refused"
+ },
+ {
+  "file": "045-nested-counted-digit.md",
+  "group": "nested",
+  "expect": "refused",
+  "compiles": true,
+  "pattern": "(\\d{1,}){1,}",
+  "guard_said": "refused"
+ },
+ {
+  "file": "046-nested-noncapturing-wrapper.md",
+  "group": "nested",
+  "expect": "refused",
+  "compiles": true,
+  "pattern": "(?:(\\w+)+)",
+  "guard_said": "refused"
+ },
+ {
+  "file": "047-nested-named-group.md",
+  "group": "nested",
+  "expect": "refused",
+  "compiles": true,
+  "pattern": "(?P<x>a+)+",
+  "guard_said": "refused"
+ },
+ {
+  "file": "048-nested-anchored.md",
+  "group": "nested",
+  "expect": "refused",
+  "compiles": true,
+  "pattern": "^(a+)+$",
+  "guard_said": "refused"
+ },
+ {
+  "file": "049-nested-with-literals.md",
+  "group": "nested",
+  "expect": "refused",
+  "compiles": true,
+  "pattern": "prefix-(a+)+-suffix",
+  "guard_said": "refused"
+ },
+ {
+  "file": "050-nested-double-wrapped.md",
+  "group": "nested",
+  "expect": "refused",
+  "compiles": true,
+  "pattern": "(( a+ )+)",
+  "guard_said": "refused"
+ },
+ {
+  "file": "051-equal-literal.md",
+  "group": "equal",
+  "expect": "refused",
+  "compiles": true,
+  "pattern": "(a|a)*",
+  "guard_said": "refused"
+ },
+ {
+  "file": "052-equal-literal-plus.md",
+  "group": "equal",
+  "expect": "refused",
+  "compiles": true,
+  "pattern": "(a|a)+",
+  "guard_said": "refused"
+ },
+ {
+  "file": "053-equal-two-char.md",
+  "group": "equal",
+  "expect": "refused",
+  "compiles": true,
+  "pattern": "(ab|ab)*",
+  "guard_said": "refused"
+ },
+ {
+  "file": "054-equal-three-branches.md",
+  "group": "equal",
+  "expect": "refused",
+  "compiles": true,
+  "pattern": "(a|a|a)*",
+  "guard_said": "refused"
+ },
+ {
+  "file": "055-equal-word.md",
+  "group": "equal",
+  "expect": "refused",
+  "compiles": true,
+  "pattern": "(GET|GET)+x",
+  "guard_said": "refused"
+ },
+ {
+  "file": "056-equal-class-escape.md",
+  "group": "equal",
+  "expect": "refused",
+  "compiles": true,
+  "pattern": "(\\d|\\d)*",
+  "guard_said": "refused"
+ },
+ {
+  "file": "057-equal-class-literal.md",
+  "group": "equal",
+  "expect": "refused",
+  "compiles": true,
+  "pattern": "([0-9]|[0-9])*",
+  "guard_said": "refused"
+ },
+ {
+  "file": "058-equal-space.md",
+  "group": "equal",
+  "expect": "refused",
+  "compiles": true,
+  "pattern": "(\\s|\\s)+",
+  "guard_said": "refused"
+ },
+ {
+  "file": "059-equal-with-tail.md",
+  "group": "equal",
+  "expect": "refused",
+  "compiles": true,
+  "pattern": "(a|a)*b",
+  "guard_said": "refused"
+ },
+ {
+  "file": "060-equal-anchored.md",
+  "group": "equal",
+  "expect": "refused",
+  "compiles": true,
+  "pattern": "^(a|a)*$",
+  "guard_said": "refused"
+ },
+ {
+  "file": "061-equal-counted.md",
+  "group": "equal",
+  "expect": "refused",
+  "compiles": true,
+  "pattern": "(x|x){2,}",
+  "guard_said": "refused"
+ },
+ {
+  "file": "062-equal-under-nested.md",
+  "group": "equal",
+  "expect": "refused",
+  "compiles": true,
+  "pattern": "((a|a)*)*",
+  "guard_said": "refused"
+ },
+ {
+  "file": "063-equal-noncapturing.md",
+  "group": "equal",
+  "expect": "refused",
+  "compiles": true,
+  "pattern": "(?:a|a)*",
+  "guard_said": "refused"
+ },
+ {
+  "file": "064-equal-named.md",
+  "group": "equal",
+  "expect": "refused",
+  "compiles": true,
+  "pattern": "(?P<dup>a|a)*",
+  "guard_said": "refused"
+ },
+ {
+  "file": "065-equal-word-with-tail.md",
+  "group": "equal",
+  "expect": "refused",
+  "compiles": true,
+  "pattern": "(foo|foo)+bar",
+  "guard_said": "refused"
+ },
+ {
+  "file": "066-equal-escaped-dot.md",
+  "group": "equal",
+  "expect": "refused",
+  "compiles": true,
+  "pattern": "(\\.|\\.)*",
+  "guard_said": "refused"
+ },
+ {
+  "file": "067-equal-dash.md",
+  "group": "equal",
+  "expect": "refused",
+  "compiles": true,
+  "pattern": "(-|-)+",
+  "guard_said": "refused"
+ },
+ {
+  "file": "068-equal-two-groups.md",
+  "group": "equal",
+  "expect": "refused",
+  "compiles": true,
+  "pattern": "(a|a)*(b|b)*",
+  "guard_said": "refused"
+ },
+ {
+  "file": "069-equal-tab.md",
+  "group": "equal",
+  "expect": "refused",
+  "compiles": true,
+  "pattern": "(\\t|\\t)+",
+  "guard_said": "refused"
+ },
+ {
+  "file": "070-equal-marker.md",
+  "group": "equal",
+  "expect": "refused",
+  "compiles": true,
+  "pattern": "(TODO|TODO)*",
+  "guard_said": "refused"
+ },
+ {
+  "file": "071-overlap-prefix.md",
+  "group": "overlap",
+  "expect": "refused",
+  "compiles": true,
+  "pattern": "(a|ab)+",
+  "guard_said": "refused"
+ },
+ {
+  "file": "072-overlap-prefix-reversed.md",
+  "group": "overlap",
+  "expect": "refused",
+  "compiles": true,
+  "pattern": "(ab|a)+",
+  "guard_said": "refused"
+ },
+ {
+  "file": "073-overlap-word-digit.md",
+  "group": "overlap",
+  "expect": "refused",
+  "compiles": true,
+  "pattern": "(\\w|\\d)*",
+  "guard_said": "through"
+ },
+ {
+  "file": "074-overlap-word-literal.md",
+  "group": "overlap",
+  "expect": "refused",
+  "compiles": true,
+  "pattern": "(\\w|a)*",
+  "guard_said": "through"
+ },
+ {
+  "file": "075-overlap-nonspace-word.md",
+  "group": "overlap",
+  "expect": "refused",
+  "compiles": true,
+  "pattern": "(\\S|\\w)+",
+  "guard_said": "through"
+ },
+ {
+  "file": "076-overlap-dot-literal.md",
+  "group": "overlap",
+  "expect": "refused",
+  "compiles": true,
+  "pattern": "(.|a)*",
+  "guard_said": "through"
+ },
+ {
+  "file": "077-overlap-class-subset.md",
+  "group": "overlap",
+  "expect": "refused",
+  "compiles": true,
+  "pattern": "([a-z]|[a-c])*",
+  "guard_said": "through"
+ },
+ {
+  "file": "078-overlap-digit-two-ways.md",
+  "group": "overlap",
+  "expect": "refused",
+  "compiles": true,
+  "pattern": "([0-9]|\\d)+",
+  "guard_said": "through"
+ },
+ {
+  "file": "079-overlap-longer-prefix.md",
+  "group": "overlap",
+  "expect": "refused",
+  "compiles": true,
+  "pattern": "(ab|abc)+",
+  "guard_said": "refused"
+ },
+ {
+  "file": "080-overlap-quantified-branch.md",
+  "group": "overlap",
+  "expect": "refused",
+  "compiles": true,
+  "pattern": "(a+|aa)+",
+  "guard_said": "refused"
+ },
+ {
+  "file": "081-overlap-verb-initial.md",
+  "group": "overlap",
+  "expect": "refused",
+  "compiles": true,
+  "pattern": "(GET|G)+",
+  "guard_said": "refused"
+ },
+ {
+  "file": "082-overlap-scheme.md",
+  "group": "overlap",
+  "expect": "refused",
+  "compiles": true,
+  "pattern": "(https|http)://\\S+",
+  "guard_said": "refused"
+ },
+ {
+  "file": "083-overlap-number-shapes.md",
+  "group": "overlap",
+  "expect": "refused",
+  "compiles": true,
+  "pattern": "(\\d+|\\d+\\.\\d+)*",
+  "guard_said": "refused"
+ },
+ {
+  "file": "084-overlap-case-classes.md",
+  "group": "overlap",
+  "expect": "refused",
+  "compiles": true,
+  "pattern": "([A-Z]|[A-Za-z])+",
+  "guard_said": "through"
+ },
+ {
+  "file": "085-overlap-one-or-two-spaces.md",
+  "group": "overlap",
+  "expect": "refused",
+  "compiles": true,
+  "pattern": "(\\s|\\s\\s)+",
+  "guard_said": "refused"
+ },
+ {
+  "file": "086-overlap-three-prefixes.md",
+  "group": "overlap",
+  "expect": "refused",
+  "compiles": true,
+  "pattern": "(x|xy|xyz)*",
+  "guard_said": "refused"
+ },
+ {
+  "file": "087-overlap-literal-in-class.md",
+  "group": "overlap",
+  "expect": "refused",
+  "compiles": true,
+  "pattern": "(a|[ab])*",
+  "guard_said": "through"
+ },
+ {
+  "file": "088-overlap-dot-word.md",
+  "group": "overlap",
+  "expect": "refused",
+  "compiles": true,
+  "pattern": "(\\.|\\w)*",
+  "guard_said": "through"
+ },
+ {
+  "file": "089-chain-4-plus.md",
+  "group": "chain",
+  "expect": "refused",
+  "compiles": true,
+  "pattern": "a+b+c+d+",
+  "guard_said": "through"
+ },
+ {
+  "file": "090-chain-5-plus.md",
+  "group": "chain",
+  "expect": "refused",
+  "compiles": true,
+  "pattern": "a+b+c+d+e+",
+  "guard_said": "refused"
+ },
+ {
+  "file": "091-chain-6-plus.md",
+  "group": "chain",
+  "expect": "refused",
+  "compiles": true,
+  "pattern": "a+b+c+d+e+f+",
+  "guard_said": "refused"
+ },
+ {
+  "file": "092-chain-7-plus.md",
+  "group": "chain",
+  "expect": "refused",
+  "compiles": true,
+  "pattern": "a+b+c+d+e+f+g+",
+  "guard_said": "refused"
+ },
+ {
+  "file": "093-chain-8-plus.md",
+  "group": "chain",
+  "expect": "refused",
+  "compiles": true,
+  "pattern": "a+b+c+d+e+f+g+h+",
+  "guard_said": "refused"
+ },
+ {
+  "file": "094-chain-9-plus.md",
+  "group": "chain",
+  "expect": "refused",
+  "compiles": true,
+  "pattern": "a+b+c+d+e+f+g+h+i+",
+  "guard_said": "refused"
+ },
+ {
+  "file": "095-chain-10-plus.md",
+  "group": "chain",
+  "expect": "refused",
+  "compiles": true,
+  "pattern": "a+b+c+d+e+f+g+h+i+j+",
+  "guard_said": "refused"
+ },
+ {
+  "file": "096-chain-space-nonspace.md",
+  "group": "chain",
+  "expect": "refused",
+  "compiles": true,
+  "pattern": "\\s*\\S*\\s*\\S*\\s*\\S*\\s*",
+  "guard_said": "refused"
+ },
+ {
+  "file": "097-chain-dashed-numbers.md",
+  "group": "chain",
+  "expect": "refused",
+  "compiles": true,
+  "pattern": "\\d+-\\d+-\\d+-\\d+-\\d+-\\d+",
+  "guard_said": "refused"
+ },
+ {
+  "file": "098-chain-dot-star.md",
+  "group": "chain",
+  "expect": "refused",
+  "compiles": true,
+  "pattern": ".*a.*b.*c.*d.*e.*",
+  "guard_said": "refused"
+ },
+ {
+  "file": "099-chain-alternating-classes.md",
+  "group": "chain",
+  "expect": "refused",
+  "compiles": true,
+  "pattern": "[a-z]+[0-9]+[a-z]+[0-9]+[a-z]+[0-9]+",
+  "guard_said": "refused"
+ },
+ {
+  "file": "100-chain-five-words.md",
+  "group": "chain",
+  "expect": "refused",
+  "compiles": true,
+  "pattern": "(\\w+)\\s+(\\w+)\\s+(\\w+)\\s+(\\w+)\\s+(\\w+)",
+  "guard_said": "refused"
+ },
+ {
+  "file": "101-evade-case-insensitive-branches.md",
+  "group": "evasion",
+  "expect": "open",
+  "compiles": true,
+  "pattern": "(?i)(a|A)*",
+  "guard_said": "through"
+ },
+ {
+  "file": "102-evade-hex-escape-branch.md",
+  "group": "evasion",
+  "expect": "open",
+  "compiles": true,
+  "pattern": "(a|\\x61)*",
+  "guard_said": "through"
+ },
+ {
+  "file": "103-evade-one-char-class.md",
+  "group": "evasion",
+  "expect": "open",
+  "compiles": true,
+  "pattern": "(a|[a])*",
+  "guard_said": "through"
+ },
+ {
+  "file": "104-evade-range-overlap.md",
+  "group": "evasion",
+  "expect": "open",
+  "compiles": true,
+  "pattern": "(a|[a-b])*",
+  "guard_said": "through"
+ },
+ {
+  "file": "105-evade-quantified-backreference.md",
+  "group": "evasion",
+  "expect": "open",
+  "compiles": true,
+  "pattern": "(a)\\1*",
+  "guard_said": "through"
+ },
+ {
+  "file": "106-evade-branches-in-groups.md",
+  "group": "evasion",
+  "expect": "open",
+  "compiles": true,
+  "pattern": "((a)|(a))*",
+  "guard_said": "through"
+ },
+ {
+  "file": "107-evade-unicode-escape-branch.md",
+  "group": "evasion",
+  "expect": "open",
+  "compiles": true,
+  "pattern": "(a|a)*",
+  "guard_said": "refused"
+ },
+ {
+  "file": "108-evade-triple-nesting.md",
+  "group": "evasion",
+  "expect": "open",
+  "compiles": true,
+  "pattern": "(((a+)))+",
+  "guard_said": "refused"
+ },
+ {
+  "file": "109-evade-verbose-flag.md",
+  "group": "evasion",
+  "expect": "open",
+  "compiles": true,
+  "pattern": "(?x)( a | a )*",
+  "guard_said": "refused"
+ },
+ {
+  "file": "110-evade-counted-inner.md",
+  "group": "evasion",
+  "expect": "open",
+  "compiles": true,
+  "pattern": "(a{2,})+",
+  "guard_said": "refused"
+ },
+ {
+  "file": "111-evade-counted-both.md",
+  "group": "evasion",
+  "expect": "open",
+  "compiles": true,
+  "pattern": "(a{2,}){3,}",
+  "guard_said": "refused"
+ },
+ {
+  "file": "112-evade-possessive-lookalike.md",
+  "group": "evasion",
+  "expect": "open",
+  "compiles": true,
+  "pattern": "(a+)++",
+  "guard_said": "refused"
+ },
+ {
+  "file": "113-evade-lookahead-wrapper.md",
+  "group": "evasion",
+  "expect": "open",
+  "compiles": true,
+  "pattern": "((?=a)a+)+",
+  "guard_said": "refused"
+ },
+ {
+  "file": "114-evade-noncapturing-both.md",
+  "group": "evasion",
+  "expect": "open",
+  "compiles": true,
+  "pattern": "(?:(?:a+)+)",
+  "guard_said": "refused"
+ },
+ {
+  "file": "115-evade-inline-comment.md",
+  "group": "evasion",
+  "expect": "open",
+  "compiles": true,
+  "pattern": "(a+(?#comment))+",
+  "guard_said": "refused"
+ },
+ {
+  "file": "116-evade-trailing-space-in-group.md",
+  "group": "evasion",
+  "expect": "open",
+  "compiles": true,
+  "pattern": "(a+ )+",
+  "guard_said": "refused"
+ },
+ {
+  "file": "117-evade-leading-space-in-group.md",
+  "group": "evasion",
+  "expect": "open",
+  "compiles": true,
+  "pattern": "( a+)+",
+  "guard_said": "refused"
+ },
+ {
+  "file": "118-evade-word-boundary-in-group.md",
+  "group": "evasion",
+  "expect": "open",
+  "compiles": true,
+  "pattern": "(a+\\b)+",
+  "guard_said": "refused"
+ },
+ {
+  "file": "119-evade-lazy-outer.md",
+  "group": "evasion",
+  "expect": "open",
+  "compiles": true,
+  "pattern": "(?:a|a)*?",
+  "guard_said": "refused"
+ },
+ {
+  "file": "120-evade-lazy-inner.md",
+  "group": "evasion",
+  "expect": "open",
+  "compiles": true,
+  "pattern": "(a*?)+",
+  "guard_said": "refused"
+ },
+ {
+  "file": "121-evade-quote-escape-unsupported.md",
+  "group": "evasion",
+  "expect": "open",
+  "compiles": false,
+  "pattern": "(\\Qa+\\E)+",
+  "guard_said": "refused"
+ },
+ {
+  "file": "122-evade-named-backreference.md",
+  "group": "evasion",
+  "expect": "open",
+  "compiles": true,
+  "pattern": "(?P<g>a+)(?P=g)*",
+  "guard_said": "through"
+ },
+ {
+  "file": "123-evade-bracketed-parens.md",
+  "group": "evasion",
+  "expect": "open",
+  "compiles": true,
+  "pattern": "[(]a+[)]+",
+  "guard_said": "through"
+ },
+ {
+  "file": "124-evade-repeated-alternatives.md",
+  "group": "evasion",
+  "expect": "open",
+  "compiles": true,
+  "pattern": "(a+)|(a+)|(a+)|(a+)|(a+)",
+  "guard_said": "refused"
+ },
+ {
+  "file": "125-evade-stacked-counts.md",
+  "group": "evasion",
+  "expect": "open",
+  "compiles": false,
+  "pattern": "(?:a+){2}{2}",
+  "guard_said": "refused"
+ },
+ {
+  "file": "126-ok-todo.md",
+  "group": "benign",
+  "expect": "accepted",
+  "compiles": true,
+  "pattern": "\\bTODO\\b",
+  "guard_said": "through"
+ },
+ {
+  "file": "127-ok-heading.md",
+  "group": "benign",
+  "expect": "accepted",
+  "compiles": true,
+  "pattern": "^## ",
+  "guard_said": "through"
+ },
+ {
+  "file": "128-ok-iso-date.md",
+  "group": "benign",
+  "expect": "accepted",
+  "compiles": true,
+  "pattern": "[0-9]{4}-[0-9]{2}-[0-9]{2}",
+  "guard_said": "through"
+ },
+ {
+  "file": "129-ok-two-words.md",
+  "group": "benign",
+  "expect": "accepted",
+  "compiles": true,
+  "pattern": "(?:foo|bar)",
+  "guard_said": "through"
+ },
+ {
+  "file": "130-ok-url.md",
+  "group": "benign",
+  "expect": "accepted",
+  "compiles": true,
+  "pattern": "https?://\\S+",
+  "guard_said": "through"
+ },
+ {
+  "file": "131-ok-python-import.md",
+  "group": "benign",
+  "expect": "accepted",
+  "compiles": true,
+  "pattern": "^from\\s+\\w+\\s+import\\s+",
+  "guard_said": "through"
+ },
+ {
+  "file": "132-ok-function-def.md",
+  "group": "benign",
+  "expect": "accepted",
+  "compiles": true,
+  "pattern": "def\\s+\\w+\\(",
+  "guard_said": "through"
+ },
+ {
+  "file": "133-ok-noqa.md",
+  "group": "benign",
+  "expect": "accepted",
+  "compiles": true,
+  "pattern": "#\\s*noqa",
+  "guard_said": "through"
+ },
+ {
+  "file": "134-ok-capitalised-word.md",
+  "group": "benign",
+  "expect": "accepted",
+  "compiles": true,
+  "pattern": "[A-Z][a-z]+",
+  "guard_said": "through"
+ },
+ {
+  "file": "135-ok-semver.md",
+  "group": "benign",
+  "expect": "accepted",
+  "compiles": true,
+  "pattern": "\\d+\\.\\d+\\.\\d+",
+  "guard_said": "through"
+ },
+ {
+  "file": "136-ok-blank-line.md",
+  "group": "benign",
+  "expect": "accepted",
+  "compiles": true,
+  "pattern": "^\\s*$",
+  "guard_said": "through"
+ },
+ {
+  "file": "137-ok-email-ish.md",
+  "group": "benign",
+  "expect": "accepted",
+  "compiles": true,
+  "pattern": "[^\\s]+@[^\\s]+\\.[a-z]{2,}",
+  "guard_said": "through"
+ },
+ {
+  "file": "138-ok-password-assignment.md",
+  "group": "benign",
+  "expect": "accepted",
+  "compiles": true,
+  "pattern": "password\\s*=",
+  "guard_said": "through"
+ },
+ {
+  "file": "139-ok-multiline-flag.md",
+  "group": "benign",
+  "expect": "accepted",
+  "compiles": true,
+  "pattern": "(?m)^import ",
+  "guard_said": "through"
+ },
+ {
+  "file": "140-ok-shell-variable.md",
+  "group": "benign",
+  "expect": "accepted",
+  "compiles": true,
+  "pattern": "\\$\\{[A-Z_]+\\}",
+  "guard_said": "through"
+ },
+ {
+  "file": "141-ok-html-comment-lazy.md",
+  "group": "benign",
+  "expect": "accepted",
+  "compiles": true,
+  "pattern": "<!--.*?-->",
+  "guard_said": "through"
+ },
+ {
+  "file": "142-ok-table-row.md",
+  "group": "benign",
+  "expect": "accepted",
+  "compiles": true,
+  "pattern": "^\\| .* \\|$",
+  "guard_said": "through"
+ },
+ {
+  "file": "143-ok-two-markers.md",
+  "group": "benign",
+  "expect": "accepted",
+  "compiles": true,
+  "pattern": "\\bFIXME\\b|\\bXXX\\b",
+  "guard_said": "through"
+ },
+ {
+  "file": "144-ok-sha1.md",
+  "group": "benign",
+  "expect": "accepted",
+  "compiles": true,
+  "pattern": "[a-f0-9]{40}",
+  "guard_said": "through"
+ },
+ {
+  "file": "145-ok-indent.md",
+  "group": "benign",
+  "expect": "accepted",
+  "compiles": true,
+  "pattern": "^\\s{4}",
+  "guard_said": "through"
+ },
+ {
+  "file": "146-ok-extension.md",
+  "group": "benign",
+  "expect": "accepted",
+  "compiles": true,
+  "pattern": "\\.(py|md|js)$",
+  "guard_said": "through"
+ },
+ {
+  "file": "147-ok-case-insensitive-word.md",
+  "group": "benign",
+  "expect": "accepted",
+  "compiles": true,
+  "pattern": "(?i)license",
+  "guard_said": "through"
+ },
+ {
+  "file": "148-ok-blank-run.md",
+  "group": "benign",
+  "expect": "accepted",
+  "compiles": true,
+  "pattern": "\\n\\n+",
+  "guard_said": "through"
+ },
+ {
+  "file": "149-ok-checkbox.md",
+  "group": "benign",
+  "expect": "accepted",
+  "compiles": true,
+  "pattern": "^- \\[[ x]\\] ",
+  "guard_said": "through"
+ },
+ {
+  "file": "150-ok-http-verbs.md",
+  "group": "benign",
+  "expect": "accepted",
+  "compiles": true,
+  "pattern": "\\b(GET|POST|PUT|DELETE)\\b",
+  "guard_said": "through"
+ },
+ {
+  "file": "151-ok-command-name.md",
+  "group": "benign",
+  "expect": "accepted",
+  "compiles": true,
+  "pattern": "chamnan-[a-z]+",
+  "guard_said": "through"
+ },
+ {
+  "file": "152-ok-ordered-list.md",
+  "group": "benign",
+  "expect": "accepted",
+  "compiles": true,
+  "pattern": "^\\d+\\. ",
+  "guard_said": "through"
+ },
+ {
+  "file": "153-ok-inline-code.md",
+  "group": "benign",
+  "expect": "accepted",
+  "compiles": true,
+  "pattern": "`[^`]+`",
+  "guard_said": "through"
+ },
+ {
+  "file": "154-ok-braces.md",
+  "group": "benign",
+  "expect": "accepted",
+  "compiles": true,
+  "pattern": "[{][^{}]*[}]",
+  "guard_said": "through"
+ },
+ {
+  "file": "155-ok-trailing-space.md",
+  "group": "benign",
+  "expect": "accepted",
+  "compiles": true,
+  "pattern": "\\s+$",
+  "guard_said": "through"
+ },
+ {
+  "file": "156-bad-unclosed-group.md",
+  "group": "malformed",
+  "expect": "open",
+  "compiles": false,
+  "pattern": "(",
+  "guard_said": "through"
+ },
+ {
+  "file": "157-bad-stray-close.md",
+  "group": "malformed",
+  "expect": "open",
+  "compiles": false,
+  "pattern": ")",
+  "guard_said": "through"
+ },
+ {
+  "file": "158-bad-unclosed-class.md",
+  "group": "malformed",
+  "expect": "open",
+  "compiles": false,
+  "pattern": "[a-",
+  "guard_said": "through"
+ },
+ {
+  "file": "159-bad-reversed-range.md",
+  "group": "malformed",
+  "expect": "open",
+  "compiles": false,
+  "pattern": "a{2,1}",
+  "guard_said": "through"
+ },
+ {
+  "file": "160-bad-leading-quantifier.md",
+  "group": "malformed",
+  "expect": "open",
+  "compiles": false,
+  "pattern": "*",
+  "guard_said": "through"
+ },
+ {
+  "file": "161-bad-double-quantifier.md",
+  "group": "malformed",
+  "expect": "open",
+  "compiles": false,
+  "pattern": "a**",
+  "guard_said": "through"
+ },
+ {
+  "file": "162-bad-group-name.md",
+  "group": "malformed",
+  "expect": "open",
+  "compiles": false,
+  "pattern": "(?P<1bad>a)",
+  "guard_said": "through"
+ },
+ {
+  "file": "163-bad-duplicate-group-name.md",
+  "group": "malformed",
+  "expect": "open",
+  "compiles": false,
+  "pattern": "(?P<x>a)(?P<x>b)",
+  "guard_said": "through"
+ },
+ {
+  "file": "164-bad-trailing-backslash-escaped.md",
+  "group": "malformed",
+  "expect": "open",
+  "compiles": true,
+  "pattern": "\\\\",
+  "guard_said": "through"
+ },
+ {
+  "file": "165-bad-recursion-unsupported.md",
+  "group": "malformed",
+  "expect": "open",
+  "compiles": false,
+  "pattern": "(?R)",
+  "guard_said": "through"
+ },
+ {
+  "file": "166-bad-unicode-property-unsupported.md",
+  "group": "malformed",
+  "expect": "open",
+  "compiles": false,
+  "pattern": "\\p{L}+",
+  "guard_said": "through"
+ },
+ {
+  "file": "167-bad-variable-width-lookbehind.md",
+  "group": "malformed",
+  "expect": "open",
+  "compiles": false,
+  "pattern": "(?<=a+)b",
+  "guard_said": "through"
+ },
+ {
+  "file": "168-bad-posix-class.md",
+  "group": "malformed",
+  "expect": "open",
+  "compiles": true,
+  "pattern": "[[:alpha:]]+",
+  "guard_said": "through"
+ },
+ {
+  "file": "169-bad-dotnet-group-syntax.md",
+  "group": "malformed",
+  "expect": "open",
+  "compiles": false,
+  "pattern": "(?'name'a)",
+  "guard_said": "through"
+ },
+ {
+  "file": "170-bad-astronomical-repeat.md",
+  "group": "malformed",
+  "expect": "open",
+  "compiles": false,
+  "pattern": "a{99999}{99999}",
+  "guard_said": "through"
+ },
+ {
+  "file": "171-bad-deep-nesting.md",
+  "group": "malformed",
+  "expect": "open",
+  "compiles": true,
+  "pattern": "((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((a))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))",
+  "guard_said": "through"
+ },
+ {
+  "file": "172-bad-very-long-literal.md",
+  "group": "malformed",
+  "expect": "open",
+  "compiles": true,
+  "pattern": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "guard_said": "through"
+ },
+ {
+  "file": "173-bad-deep-alternation.md",
+  "group": "malformed",
+  "expect": "open",
+  "compiles": true,
+  "pattern": "(a|(a|(a|(a|(a|(a|(a|(a|(a|(a|(a|(a|(a|(a|(a|(a|(a|(a|(a|(a|(a|(a|(a|(a|(a|(a|(a|(a|(a|(a|(a|(a|(a|(a|(a|(a|(a|(a|(a|(a|(a|(a|(a|(a|(a|(a|(a|(a|(a|(a|(a|(a|(a|(a|(a|(a|(a|(a|(a|(a|a))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))",
+  "guard_said": "refused"
+ },
+ {
+  "file": "174-bad-undefined-backreference.md",
+  "group": "malformed",
+  "expect": "open",
+  "compiles": false,
+  "pattern": "\\k<undefined>",
+  "guard_said": "through"
+ },
+ {
+  "file": "175-bad-empty-pattern.md",
+  "group": "malformed",
+  "expect": "open",
+  "compiles": true,
+  "pattern": "",
+  "guard_said": "through"
+ },
+ {
+  "file": "176-bad-whitespace-only.md",
+  "group": "malformed",
+  "expect": "open",
+  "compiles": true,
+  "pattern": "   ",
+  "guard_said": "through"
+ },
+ {
+  "file": "177-bad-unterminated-comment.md",
+  "group": "malformed",
+  "expect": "open",
+  "compiles": false,
+  "pattern": "(?# unterminated comment",
+  "guard_said": "through"
+ }
+]

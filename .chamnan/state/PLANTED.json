@@ -1,0 +1,2317 @@
+[
+ {
+  "file": ".chamnan/memory/decisions/talks-to-the-reader.md",
+  "hazard": "prompt injection inside a quoted store",
+  "bytes": 571
+ },
+ {
+  "file": ".chamnan/memory/decisions/contradicts-a.md",
+  "hazard": "one half of a contradiction",
+  "bytes": 156
+ },
+ {
+  "file": ".chamnan/memory/decisions/contradicts-b.md",
+  "hazard": "the other half of the same contradiction",
+  "bytes": 138
+ },
+ {
+  "file": ".chamnan/memory/lessons/no-frontmatter.md",
+  "hazard": "frontmatter that never opened",
+  "bytes": 263
+ },
+ {
+  "file": ".chamnan/memory/lessons/fence-never-closes.md",
+  "hazard": "frontmatter that never closed",
+  "bytes": 236
+ },
+ {
+  "file": ".chamnan/memory/lessons/very-large-entry.md",
+  "hazard": "a single store entry of ~3.2 MB",
+  "bytes": 3400078
+ },
+ {
+  "file": ".chamnan/memory/rules/points-outside-the-repository.md",
+  "hazard": "a record pointing outside the repository",
+  "bytes": 264
+ },
+ {
+  "file": ".chamnan/memory/rules/right-to-left-override.md",
+  "hazard": "RTL override inside a record",
+  "bytes": 241
+ },
+ {
+  "file": ".chamnan/memory/rules/zero-width-in-a-command.md",
+  "hazard": "zero-width space in a command name",
+  "bytes": 153
+ },
+ {
+  "file": ".chamnan/memory/rules/homoglyph-command.md",
+  "hazard": "homoglyph in a command name",
+  "bytes": 126
+ },
+ {
+  "file": ".chamnan/skills/deploy.md",
+  "hazard": "an ordinary skill, as the control",
+  "bytes": 68
+ },
+ {
+  "file": ".chamnan/skills/Deploy.md",
+  "hazard": "a second skill differing only by case -- one file on a case-insensitive filesystem",
+  "bytes": 68
+ },
+ {
+  "file": ".chamnan/skills/deploy-2.md",
+  "hazard": "a third skill with the same content under a third name",
+  "bytes": 68
+ },
+ {
+  "file": ".chamnan/skills/no-frontmatter-at-all.md",
+  "hazard": "a skill with no declared name",
+  "bytes": 123
+ },
+ {
+  "file": ".chamnan/skills/instructs-the-reader.md",
+  "hazard": "prompt injection inside a procedure the reader is told to follow",
+  "bytes": 361
+ },
+ {
+  "file": ".chamnan/skills/enormous.md",
+  "hazard": "a ~1.4 MB skill",
+  "bytes": 1680033
+ },
+ {
+  "file": ".chamnan/skills/.hidden-skill.md",
+  "hazard": "a dotfile skill -- indexed or skipped, but not both",
+  "bytes": 68
+ },
+ {
+  "file": ".chamnan/state/malformed.json",
+  "hazard": "JSON that stops mid-value",
+  "bytes": 22
+ },
+ {
+  "file": ".chamnan/state/not-an-object.json",
+  "hazard": "a list where every reader expects an object",
+  "bytes": 9
+ },
+ {
+  "file": ".chamnan/state/null.json",
+  "hazard": "valid JSON that is not a container",
+  "bytes": 4
+ },
+ {
+  "file": ".chamnan/state/empty.json",
+  "hazard": "a .json file with no bytes in it",
+  "bytes": 0
+ },
+ {
+  "file": ".chamnan/state/bom.json",
+  "hazard": "valid JSON behind a byte-order mark",
+  "bytes": 15
+ },
+ {
+  "file": ".chamnan/state/duplicate-keys.json",
+  "hazard": "duplicate keys -- last wins silently, and the first two are lost",
+  "bytes": 24
+ },
+ {
+  "file": ".chamnan/state/deeply-nested.json",
+  "hazard": "400 levels of nesting -- a recursive parser's limit, not a size limit",
+  "bytes": 800
+ },
+ {
+  "file": ".chamnan/state/over-the-read-ceiling.json",
+  "hazard": "4.2 MB, above the 4 MB JSON_READ_CEILING",
+  "bytes": 4200011
+ },
+ {
+  "file": ".chamnan/state/huge-number.json",
+  "hazard": "an integer with 5,000 digits",
+  "bytes": 5007
+ },
+ {
+  "file": ".chamnan/state/trailing-comma.json",
+  "hazard": "a trailing comma, which JSON does not allow",
+  "bytes": 9
+ },
+ {
+  "file": ".chamnan/state/drift-as-a-directory.json/",
+  "hazard": "a directory where a JSON file is expected",
+  "bytes": 0
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-02-001.md",
+  "hazard": "one of 300 session records",
+  "bytes": 112
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-03-002.md",
+  "hazard": "",
+  "bytes": 112
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-04-003.md",
+  "hazard": "",
+  "bytes": 112
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-05-004.md",
+  "hazard": "",
+  "bytes": 112
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-06-005.md",
+  "hazard": "",
+  "bytes": 112
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-07-006.md",
+  "hazard": "",
+  "bytes": 112
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-08-007.md",
+  "hazard": "",
+  "bytes": 112
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-09-008.md",
+  "hazard": "",
+  "bytes": 112
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-10-009.md",
+  "hazard": "",
+  "bytes": 112
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-11-010.md",
+  "hazard": "",
+  "bytes": 113
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-12-011.md",
+  "hazard": "",
+  "bytes": 113
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-13-012.md",
+  "hazard": "",
+  "bytes": 113
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-14-013.md",
+  "hazard": "",
+  "bytes": 113
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-15-014.md",
+  "hazard": "",
+  "bytes": 113
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-16-015.md",
+  "hazard": "",
+  "bytes": 113
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-17-016.md",
+  "hazard": "",
+  "bytes": 113
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-18-017.md",
+  "hazard": "",
+  "bytes": 113
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-19-018.md",
+  "hazard": "",
+  "bytes": 113
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-20-019.md",
+  "hazard": "",
+  "bytes": 113
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-21-020.md",
+  "hazard": "",
+  "bytes": 113
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-22-021.md",
+  "hazard": "",
+  "bytes": 113
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-23-022.md",
+  "hazard": "",
+  "bytes": 113
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-24-023.md",
+  "hazard": "",
+  "bytes": 113
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-25-024.md",
+  "hazard": "",
+  "bytes": 113
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-26-025.md",
+  "hazard": "",
+  "bytes": 113
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-27-026.md",
+  "hazard": "",
+  "bytes": 113
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-28-027.md",
+  "hazard": "",
+  "bytes": 113
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-01-028.md",
+  "hazard": "",
+  "bytes": 113
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-02-029.md",
+  "hazard": "",
+  "bytes": 113
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-03-030.md",
+  "hazard": "",
+  "bytes": 113
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-04-031.md",
+  "hazard": "",
+  "bytes": 113
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-05-032.md",
+  "hazard": "",
+  "bytes": 113
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-06-033.md",
+  "hazard": "",
+  "bytes": 113
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-07-034.md",
+  "hazard": "",
+  "bytes": 113
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-08-035.md",
+  "hazard": "",
+  "bytes": 113
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-09-036.md",
+  "hazard": "",
+  "bytes": 113
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-10-037.md",
+  "hazard": "",
+  "bytes": 113
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-11-038.md",
+  "hazard": "",
+  "bytes": 113
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-12-039.md",
+  "hazard": "",
+  "bytes": 113
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-13-040.md",
+  "hazard": "",
+  "bytes": 113
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-14-041.md",
+  "hazard": "",
+  "bytes": 113
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-15-042.md",
+  "hazard": "",
+  "bytes": 113
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-16-043.md",
+  "hazard": "",
+  "bytes": 113
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-17-044.md",
+  "hazard": "",
+  "bytes": 113
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-18-045.md",
+  "hazard": "",
+  "bytes": 113
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-19-046.md",
+  "hazard": "",
+  "bytes": 113
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-20-047.md",
+  "hazard": "",
+  "bytes": 113
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-21-048.md",
+  "hazard": "",
+  "bytes": 113
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-22-049.md",
+  "hazard": "",
+  "bytes": 113
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-23-050.md",
+  "hazard": "",
+  "bytes": 113
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-24-051.md",
+  "hazard": "",
+  "bytes": 113
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-25-052.md",
+  "hazard": "",
+  "bytes": 113
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-26-053.md",
+  "hazard": "",
+  "bytes": 113
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-27-054.md",
+  "hazard": "",
+  "bytes": 113
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-28-055.md",
+  "hazard": "",
+  "bytes": 113
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-01-056.md",
+  "hazard": "",
+  "bytes": 113
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-02-057.md",
+  "hazard": "",
+  "bytes": 113
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-03-058.md",
+  "hazard": "",
+  "bytes": 113
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-04-059.md",
+  "hazard": "",
+  "bytes": 113
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-05-060.md",
+  "hazard": "",
+  "bytes": 113
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-06-061.md",
+  "hazard": "",
+  "bytes": 113
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-07-062.md",
+  "hazard": "",
+  "bytes": 113
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-08-063.md",
+  "hazard": "",
+  "bytes": 113
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-09-064.md",
+  "hazard": "",
+  "bytes": 113
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-10-065.md",
+  "hazard": "",
+  "bytes": 113
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-11-066.md",
+  "hazard": "",
+  "bytes": 113
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-12-067.md",
+  "hazard": "",
+  "bytes": 113
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-13-068.md",
+  "hazard": "",
+  "bytes": 113
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-14-069.md",
+  "hazard": "",
+  "bytes": 113
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-15-070.md",
+  "hazard": "",
+  "bytes": 113
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-16-071.md",
+  "hazard": "",
+  "bytes": 113
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-17-072.md",
+  "hazard": "",
+  "bytes": 113
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-18-073.md",
+  "hazard": "",
+  "bytes": 113
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-19-074.md",
+  "hazard": "",
+  "bytes": 113
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-20-075.md",
+  "hazard": "",
+  "bytes": 113
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-21-076.md",
+  "hazard": "",
+  "bytes": 113
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-22-077.md",
+  "hazard": "",
+  "bytes": 113
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-23-078.md",
+  "hazard": "",
+  "bytes": 113
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-24-079.md",
+  "hazard": "",
+  "bytes": 113
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-25-080.md",
+  "hazard": "",
+  "bytes": 113
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-26-081.md",
+  "hazard": "",
+  "bytes": 113
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-27-082.md",
+  "hazard": "",
+  "bytes": 113
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-28-083.md",
+  "hazard": "",
+  "bytes": 113
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-01-084.md",
+  "hazard": "",
+  "bytes": 113
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-02-085.md",
+  "hazard": "",
+  "bytes": 113
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-03-086.md",
+  "hazard": "",
+  "bytes": 113
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-04-087.md",
+  "hazard": "",
+  "bytes": 113
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-05-088.md",
+  "hazard": "",
+  "bytes": 113
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-06-089.md",
+  "hazard": "",
+  "bytes": 113
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-07-090.md",
+  "hazard": "",
+  "bytes": 113
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-08-091.md",
+  "hazard": "",
+  "bytes": 113
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-09-092.md",
+  "hazard": "",
+  "bytes": 113
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-10-093.md",
+  "hazard": "",
+  "bytes": 113
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-11-094.md",
+  "hazard": "",
+  "bytes": 113
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-12-095.md",
+  "hazard": "",
+  "bytes": 113
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-13-096.md",
+  "hazard": "",
+  "bytes": 113
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-14-097.md",
+  "hazard": "",
+  "bytes": 113
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-15-098.md",
+  "hazard": "",
+  "bytes": 113
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-16-099.md",
+  "hazard": "",
+  "bytes": 113
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-17-100.md",
+  "hazard": "",
+  "bytes": 114
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-18-101.md",
+  "hazard": "",
+  "bytes": 114
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-19-102.md",
+  "hazard": "",
+  "bytes": 114
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-20-103.md",
+  "hazard": "",
+  "bytes": 114
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-21-104.md",
+  "hazard": "",
+  "bytes": 114
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-22-105.md",
+  "hazard": "",
+  "bytes": 114
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-23-106.md",
+  "hazard": "",
+  "bytes": 114
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-24-107.md",
+  "hazard": "",
+  "bytes": 114
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-25-108.md",
+  "hazard": "",
+  "bytes": 114
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-26-109.md",
+  "hazard": "",
+  "bytes": 114
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-27-110.md",
+  "hazard": "",
+  "bytes": 114
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-28-111.md",
+  "hazard": "",
+  "bytes": 114
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-01-112.md",
+  "hazard": "",
+  "bytes": 114
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-02-113.md",
+  "hazard": "",
+  "bytes": 114
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-03-114.md",
+  "hazard": "",
+  "bytes": 114
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-04-115.md",
+  "hazard": "",
+  "bytes": 114
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-05-116.md",
+  "hazard": "",
+  "bytes": 114
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-06-117.md",
+  "hazard": "",
+  "bytes": 114
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-07-118.md",
+  "hazard": "",
+  "bytes": 114
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-08-119.md",
+  "hazard": "",
+  "bytes": 114
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-09-120.md",
+  "hazard": "",
+  "bytes": 114
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-10-121.md",
+  "hazard": "",
+  "bytes": 114
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-11-122.md",
+  "hazard": "",
+  "bytes": 114
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-12-123.md",
+  "hazard": "",
+  "bytes": 114
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-13-124.md",
+  "hazard": "",
+  "bytes": 114
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-14-125.md",
+  "hazard": "",
+  "bytes": 114
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-15-126.md",
+  "hazard": "",
+  "bytes": 114
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-16-127.md",
+  "hazard": "",
+  "bytes": 114
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-17-128.md",
+  "hazard": "",
+  "bytes": 114
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-18-129.md",
+  "hazard": "",
+  "bytes": 114
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-19-130.md",
+  "hazard": "",
+  "bytes": 114
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-20-131.md",
+  "hazard": "",
+  "bytes": 114
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-21-132.md",
+  "hazard": "",
+  "bytes": 114
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-22-133.md",
+  "hazard": "",
+  "bytes": 114
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-23-134.md",
+  "hazard": "",
+  "bytes": 114
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-24-135.md",
+  "hazard": "",
+  "bytes": 114
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-25-136.md",
+  "hazard": "",
+  "bytes": 114
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-26-137.md",
+  "hazard": "",
+  "bytes": 114
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-27-138.md",
+  "hazard": "",
+  "bytes": 114
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-28-139.md",
+  "hazard": "",
+  "bytes": 114
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-01-140.md",
+  "hazard": "",
+  "bytes": 114
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-02-141.md",
+  "hazard": "",
+  "bytes": 114
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-03-142.md",
+  "hazard": "",
+  "bytes": 114
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-04-143.md",
+  "hazard": "",
+  "bytes": 114
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-05-144.md",
+  "hazard": "",
+  "bytes": 114
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-06-145.md",
+  "hazard": "",
+  "bytes": 114
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-07-146.md",
+  "hazard": "",
+  "bytes": 114
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-08-147.md",
+  "hazard": "",
+  "bytes": 114
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-09-148.md",
+  "hazard": "",
+  "bytes": 114
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-10-149.md",
+  "hazard": "",
+  "bytes": 114
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-11-150.md",
+  "hazard": "",
+  "bytes": 114
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-12-151.md",
+  "hazard": "",
+  "bytes": 114
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-13-152.md",
+  "hazard": "",
+  "bytes": 114
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-14-153.md",
+  "hazard": "",
+  "bytes": 114
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-15-154.md",
+  "hazard": "",
+  "bytes": 114
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-16-155.md",
+  "hazard": "",
+  "bytes": 114
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-17-156.md",
+  "hazard": "",
+  "bytes": 114
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-18-157.md",
+  "hazard": "",
+  "bytes": 114
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-19-158.md",
+  "hazard": "",
+  "bytes": 114
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-20-159.md",
+  "hazard": "",
+  "bytes": 114
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-21-160.md",
+  "hazard": "",
+  "bytes": 114
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-22-161.md",
+  "hazard": "",
+  "bytes": 114
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-23-162.md",
+  "hazard": "",
+  "bytes": 114
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-24-163.md",
+  "hazard": "",
+  "bytes": 114
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-25-164.md",
+  "hazard": "",
+  "bytes": 114
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-26-165.md",
+  "hazard": "",
+  "bytes": 114
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-27-166.md",
+  "hazard": "",
+  "bytes": 114
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-28-167.md",
+  "hazard": "",
+  "bytes": 114
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-01-168.md",
+  "hazard": "",
+  "bytes": 114
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-02-169.md",
+  "hazard": "",
+  "bytes": 114
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-03-170.md",
+  "hazard": "",
+  "bytes": 114
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-04-171.md",
+  "hazard": "",
+  "bytes": 114
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-05-172.md",
+  "hazard": "",
+  "bytes": 114
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-06-173.md",
+  "hazard": "",
+  "bytes": 114
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-07-174.md",
+  "hazard": "",
+  "bytes": 114
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-08-175.md",
+  "hazard": "",
+  "bytes": 114
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-09-176.md",
+  "hazard": "",
+  "bytes": 114
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-10-177.md",
+  "hazard": "",
+  "bytes": 114
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-11-178.md",
+  "hazard": "",
+  "bytes": 114
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-12-179.md",
+  "hazard": "",
+  "bytes": 114
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-13-180.md",
+  "hazard": "",
+  "bytes": 114
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-14-181.md",
+  "hazard": "",
+  "bytes": 114
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-15-182.md",
+  "hazard": "",
+  "bytes": 114
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-16-183.md",
+  "hazard": "",
+  "bytes": 114
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-17-184.md",
+  "hazard": "",
+  "bytes": 114
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-18-185.md",
+  "hazard": "",
+  "bytes": 114
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-19-186.md",
+  "hazard": "",
+  "bytes": 114
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-20-187.md",
+  "hazard": "",
+  "bytes": 114
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-21-188.md",
+  "hazard": "",
+  "bytes": 114
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-22-189.md",
+  "hazard": "",
+  "bytes": 114
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-23-190.md",
+  "hazard": "",
+  "bytes": 114
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-24-191.md",
+  "hazard": "",
+  "bytes": 114
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-25-192.md",
+  "hazard": "",
+  "bytes": 114
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-26-193.md",
+  "hazard": "",
+  "bytes": 114
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-27-194.md",
+  "hazard": "",
+  "bytes": 114
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-28-195.md",
+  "hazard": "",
+  "bytes": 114
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-01-196.md",
+  "hazard": "",
+  "bytes": 114
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-02-197.md",
+  "hazard": "",
+  "bytes": 114
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-03-198.md",
+  "hazard": "",
+  "bytes": 114
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-04-199.md",
+  "hazard": "",
+  "bytes": 114
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-05-200.md",
+  "hazard": "",
+  "bytes": 114
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-06-201.md",
+  "hazard": "",
+  "bytes": 114
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-07-202.md",
+  "hazard": "",
+  "bytes": 114
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-08-203.md",
+  "hazard": "",
+  "bytes": 114
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-09-204.md",
+  "hazard": "",
+  "bytes": 114
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-10-205.md",
+  "hazard": "",
+  "bytes": 114
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-11-206.md",
+  "hazard": "",
+  "bytes": 114
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-12-207.md",
+  "hazard": "",
+  "bytes": 114
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-13-208.md",
+  "hazard": "",
+  "bytes": 114
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-14-209.md",
+  "hazard": "",
+  "bytes": 114
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-15-210.md",
+  "hazard": "",
+  "bytes": 114
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-16-211.md",
+  "hazard": "",
+  "bytes": 114
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-17-212.md",
+  "hazard": "",
+  "bytes": 114
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-18-213.md",
+  "hazard": "",
+  "bytes": 114
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-19-214.md",
+  "hazard": "",
+  "bytes": 114
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-20-215.md",
+  "hazard": "",
+  "bytes": 114
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-21-216.md",
+  "hazard": "",
+  "bytes": 114
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-22-217.md",
+  "hazard": "",
+  "bytes": 114
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-23-218.md",
+  "hazard": "",
+  "bytes": 114
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-24-219.md",
+  "hazard": "",
+  "bytes": 114
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-25-220.md",
+  "hazard": "",
+  "bytes": 114
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-26-221.md",
+  "hazard": "",
+  "bytes": 114
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-27-222.md",
+  "hazard": "",
+  "bytes": 114
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-28-223.md",
+  "hazard": "",
+  "bytes": 114
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-01-224.md",
+  "hazard": "",
+  "bytes": 114
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-02-225.md",
+  "hazard": "",
+  "bytes": 114
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-03-226.md",
+  "hazard": "",
+  "bytes": 114
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-04-227.md",
+  "hazard": "",
+  "bytes": 114
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-05-228.md",
+  "hazard": "",
+  "bytes": 114
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-06-229.md",
+  "hazard": "",
+  "bytes": 114
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-07-230.md",
+  "hazard": "",
+  "bytes": 114
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-08-231.md",
+  "hazard": "",
+  "bytes": 114
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-09-232.md",
+  "hazard": "",
+  "bytes": 114
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-10-233.md",
+  "hazard": "",
+  "bytes": 114
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-11-234.md",
+  "hazard": "",
+  "bytes": 114
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-12-235.md",
+  "hazard": "",
+  "bytes": 114
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-13-236.md",
+  "hazard": "",
+  "bytes": 114
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-14-237.md",
+  "hazard": "",
+  "bytes": 114
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-15-238.md",
+  "hazard": "",
+  "bytes": 114
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-16-239.md",
+  "hazard": "",
+  "bytes": 114
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-17-240.md",
+  "hazard": "",
+  "bytes": 114
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-18-241.md",
+  "hazard": "",
+  "bytes": 114
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-19-242.md",
+  "hazard": "",
+  "bytes": 114
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-20-243.md",
+  "hazard": "",
+  "bytes": 114
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-21-244.md",
+  "hazard": "",
+  "bytes": 114
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-22-245.md",
+  "hazard": "",
+  "bytes": 114
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-23-246.md",
+  "hazard": "",
+  "bytes": 114
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-24-247.md",
+  "hazard": "",
+  "bytes": 114
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-25-248.md",
+  "hazard": "",
+  "bytes": 114
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-26-249.md",
+  "hazard": "",
+  "bytes": 114
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-27-250.md",
+  "hazard": "",
+  "bytes": 114
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-28-251.md",
+  "hazard": "",
+  "bytes": 114
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-01-252.md",
+  "hazard": "",
+  "bytes": 114
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-02-253.md",
+  "hazard": "",
+  "bytes": 114
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-03-254.md",
+  "hazard": "",
+  "bytes": 114
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-04-255.md",
+  "hazard": "",
+  "bytes": 114
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-05-256.md",
+  "hazard": "",
+  "bytes": 114
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-06-257.md",
+  "hazard": "",
+  "bytes": 114
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-07-258.md",
+  "hazard": "",
+  "bytes": 114
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-08-259.md",
+  "hazard": "",
+  "bytes": 114
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-09-260.md",
+  "hazard": "",
+  "bytes": 114
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-10-261.md",
+  "hazard": "",
+  "bytes": 114
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-11-262.md",
+  "hazard": "",
+  "bytes": 114
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-12-263.md",
+  "hazard": "",
+  "bytes": 114
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-13-264.md",
+  "hazard": "",
+  "bytes": 114
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-14-265.md",
+  "hazard": "",
+  "bytes": 114
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-15-266.md",
+  "hazard": "",
+  "bytes": 114
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-16-267.md",
+  "hazard": "",
+  "bytes": 114
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-17-268.md",
+  "hazard": "",
+  "bytes": 114
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-18-269.md",
+  "hazard": "",
+  "bytes": 114
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-19-270.md",
+  "hazard": "",
+  "bytes": 114
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-20-271.md",
+  "hazard": "",
+  "bytes": 114
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-21-272.md",
+  "hazard": "",
+  "bytes": 114
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-22-273.md",
+  "hazard": "",
+  "bytes": 114
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-23-274.md",
+  "hazard": "",
+  "bytes": 114
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-24-275.md",
+  "hazard": "",
+  "bytes": 114
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-25-276.md",
+  "hazard": "",
+  "bytes": 114
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-26-277.md",
+  "hazard": "",
+  "bytes": 114
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-27-278.md",
+  "hazard": "",
+  "bytes": 114
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-28-279.md",
+  "hazard": "",
+  "bytes": 114
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-01-280.md",
+  "hazard": "",
+  "bytes": 114
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-02-281.md",
+  "hazard": "",
+  "bytes": 114
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-03-282.md",
+  "hazard": "",
+  "bytes": 114
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-04-283.md",
+  "hazard": "",
+  "bytes": 114
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-05-284.md",
+  "hazard": "",
+  "bytes": 114
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-06-285.md",
+  "hazard": "",
+  "bytes": 114
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-07-286.md",
+  "hazard": "",
+  "bytes": 114
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-08-287.md",
+  "hazard": "",
+  "bytes": 114
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-09-288.md",
+  "hazard": "",
+  "bytes": 114
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-10-289.md",
+  "hazard": "",
+  "bytes": 114
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-11-290.md",
+  "hazard": "",
+  "bytes": 114
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-12-291.md",
+  "hazard": "",
+  "bytes": 114
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-13-292.md",
+  "hazard": "",
+  "bytes": 114
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-14-293.md",
+  "hazard": "",
+  "bytes": 114
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-15-294.md",
+  "hazard": "",
+  "bytes": 114
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-16-295.md",
+  "hazard": "",
+  "bytes": 114
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-17-296.md",
+  "hazard": "",
+  "bytes": 114
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-18-297.md",
+  "hazard": "",
+  "bytes": 114
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-19-298.md",
+  "hazard": "",
+  "bytes": 114
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-20-299.md",
+  "hazard": "",
+  "bytes": 114
+ },
+ {
+  "file": ".chamnan/sessions/2026-01-21-300.md",
+  "hazard": "",
+  "bytes": 114
+ },
+ {
+  "file": ".chamnan/sessions/empty.md",
+  "hazard": "a session record with no bytes",
+  "bytes": 0
+ },
+ {
+  "file": ".chamnan/sessions/2099-12-31-the-future.md",
+  "hazard": "a session dated in the future",
+  "bytes": 123
+ },
+ {
+  "file": ".chamnan/sessions/1970-01-01-the-epoch.md",
+  "hazard": "a session dated at the epoch",
+  "bytes": 64
+ },
+ {
+  "file": ".chamnan/threads/open-001.md",
+  "hazard": "one of 120 threads that never close",
+  "bytes": 51
+ },
+ {
+  "file": ".chamnan/threads/open-002.md",
+  "hazard": "",
+  "bytes": 51
+ },
+ {
+  "file": ".chamnan/threads/open-003.md",
+  "hazard": "",
+  "bytes": 51
+ },
+ {
+  "file": ".chamnan/threads/open-004.md",
+  "hazard": "",
+  "bytes": 51
+ },
+ {
+  "file": ".chamnan/threads/open-005.md",
+  "hazard": "",
+  "bytes": 51
+ },
+ {
+  "file": ".chamnan/threads/open-006.md",
+  "hazard": "",
+  "bytes": 51
+ },
+ {
+  "file": ".chamnan/threads/open-007.md",
+  "hazard": "",
+  "bytes": 51
+ },
+ {
+  "file": ".chamnan/threads/open-008.md",
+  "hazard": "",
+  "bytes": 51
+ },
+ {
+  "file": ".chamnan/threads/open-009.md",
+  "hazard": "",
+  "bytes": 51
+ },
+ {
+  "file": ".chamnan/threads/open-010.md",
+  "hazard": "",
+  "bytes": 52
+ },
+ {
+  "file": ".chamnan/threads/open-011.md",
+  "hazard": "",
+  "bytes": 52
+ },
+ {
+  "file": ".chamnan/threads/open-012.md",
+  "hazard": "",
+  "bytes": 52
+ },
+ {
+  "file": ".chamnan/threads/open-013.md",
+  "hazard": "",
+  "bytes": 52
+ },
+ {
+  "file": ".chamnan/threads/open-014.md",
+  "hazard": "",
+  "bytes": 52
+ },
+ {
+  "file": ".chamnan/threads/open-015.md",
+  "hazard": "",
+  "bytes": 52
+ },
+ {
+  "file": ".chamnan/threads/open-016.md",
+  "hazard": "",
+  "bytes": 52
+ },
+ {
+  "file": ".chamnan/threads/open-017.md",
+  "hazard": "",
+  "bytes": 52
+ },
+ {
+  "file": ".chamnan/threads/open-018.md",
+  "hazard": "",
+  "bytes": 52
+ },
+ {
+  "file": ".chamnan/threads/open-019.md",
+  "hazard": "",
+  "bytes": 52
+ },
+ {
+  "file": ".chamnan/threads/open-020.md",
+  "hazard": "",
+  "bytes": 52
+ },
+ {
+  "file": ".chamnan/threads/open-021.md",
+  "hazard": "",
+  "bytes": 52
+ },
+ {
+  "file": ".chamnan/threads/open-022.md",
+  "hazard": "",
+  "bytes": 52
+ },
+ {
+  "file": ".chamnan/threads/open-023.md",
+  "hazard": "",
+  "bytes": 52
+ },
+ {
+  "file": ".chamnan/threads/open-024.md",
+  "hazard": "",
+  "bytes": 52
+ },
+ {
+  "file": ".chamnan/threads/open-025.md",
+  "hazard": "",
+  "bytes": 52
+ },
+ {
+  "file": ".chamnan/threads/open-026.md",
+  "hazard": "",
+  "bytes": 52
+ },
+ {
+  "file": ".chamnan/threads/open-027.md",
+  "hazard": "",
+  "bytes": 52
+ },
+ {
+  "file": ".chamnan/threads/open-028.md",
+  "hazard": "",
+  "bytes": 52
+ },
+ {
+  "file": ".chamnan/threads/open-029.md",
+  "hazard": "",
+  "bytes": 52
+ },
+ {
+  "file": ".chamnan/threads/open-030.md",
+  "hazard": "",
+  "bytes": 52
+ },
+ {
+  "file": ".chamnan/threads/open-031.md",
+  "hazard": "",
+  "bytes": 52
+ },
+ {
+  "file": ".chamnan/threads/open-032.md",
+  "hazard": "",
+  "bytes": 52
+ },
+ {
+  "file": ".chamnan/threads/open-033.md",
+  "hazard": "",
+  "bytes": 52
+ },
+ {
+  "file": ".chamnan/threads/open-034.md",
+  "hazard": "",
+  "bytes": 52
+ },
+ {
+  "file": ".chamnan/threads/open-035.md",
+  "hazard": "",
+  "bytes": 52
+ },
+ {
+  "file": ".chamnan/threads/open-036.md",
+  "hazard": "",
+  "bytes": 52
+ },
+ {
+  "file": ".chamnan/threads/open-037.md",
+  "hazard": "",
+  "bytes": 52
+ },
+ {
+  "file": ".chamnan/threads/open-038.md",
+  "hazard": "",
+  "bytes": 52
+ },
+ {
+  "file": ".chamnan/threads/open-039.md",
+  "hazard": "",
+  "bytes": 52
+ },
+ {
+  "file": ".chamnan/threads/open-040.md",
+  "hazard": "",
+  "bytes": 52
+ },
+ {
+  "file": ".chamnan/threads/open-041.md",
+  "hazard": "",
+  "bytes": 52
+ },
+ {
+  "file": ".chamnan/threads/open-042.md",
+  "hazard": "",
+  "bytes": 52
+ },
+ {
+  "file": ".chamnan/threads/open-043.md",
+  "hazard": "",
+  "bytes": 52
+ },
+ {
+  "file": ".chamnan/threads/open-044.md",
+  "hazard": "",
+  "bytes": 52
+ },
+ {
+  "file": ".chamnan/threads/open-045.md",
+  "hazard": "",
+  "bytes": 52
+ },
+ {
+  "file": ".chamnan/threads/open-046.md",
+  "hazard": "",
+  "bytes": 52
+ },
+ {
+  "file": ".chamnan/threads/open-047.md",
+  "hazard": "",
+  "bytes": 52
+ },
+ {
+  "file": ".chamnan/threads/open-048.md",
+  "hazard": "",
+  "bytes": 52
+ },
+ {
+  "file": ".chamnan/threads/open-049.md",
+  "hazard": "",
+  "bytes": 52
+ },
+ {
+  "file": ".chamnan/threads/open-050.md",
+  "hazard": "",
+  "bytes": 52
+ },
+ {
+  "file": ".chamnan/threads/open-051.md",
+  "hazard": "",
+  "bytes": 52
+ },
+ {
+  "file": ".chamnan/threads/open-052.md",
+  "hazard": "",
+  "bytes": 52
+ },
+ {
+  "file": ".chamnan/threads/open-053.md",
+  "hazard": "",
+  "bytes": 52
+ },
+ {
+  "file": ".chamnan/threads/open-054.md",
+  "hazard": "",
+  "bytes": 52
+ },
+ {
+  "file": ".chamnan/threads/open-055.md",
+  "hazard": "",
+  "bytes": 52
+ },
+ {
+  "file": ".chamnan/threads/open-056.md",
+  "hazard": "",
+  "bytes": 52
+ },
+ {
+  "file": ".chamnan/threads/open-057.md",
+  "hazard": "",
+  "bytes": 52
+ },
+ {
+  "file": ".chamnan/threads/open-058.md",
+  "hazard": "",
+  "bytes": 52
+ },
+ {
+  "file": ".chamnan/threads/open-059.md",
+  "hazard": "",
+  "bytes": 52
+ },
+ {
+  "file": ".chamnan/threads/open-060.md",
+  "hazard": "",
+  "bytes": 52
+ },
+ {
+  "file": ".chamnan/threads/open-061.md",
+  "hazard": "",
+  "bytes": 52
+ },
+ {
+  "file": ".chamnan/threads/open-062.md",
+  "hazard": "",
+  "bytes": 52
+ },
+ {
+  "file": ".chamnan/threads/open-063.md",
+  "hazard": "",
+  "bytes": 52
+ },
+ {
+  "file": ".chamnan/threads/open-064.md",
+  "hazard": "",
+  "bytes": 52
+ },
+ {
+  "file": ".chamnan/threads/open-065.md",
+  "hazard": "",
+  "bytes": 52
+ },
+ {
+  "file": ".chamnan/threads/open-066.md",
+  "hazard": "",
+  "bytes": 52
+ },
+ {
+  "file": ".chamnan/threads/open-067.md",
+  "hazard": "",
+  "bytes": 52
+ },
+ {
+  "file": ".chamnan/threads/open-068.md",
+  "hazard": "",
+  "bytes": 52
+ },
+ {
+  "file": ".chamnan/threads/open-069.md",
+  "hazard": "",
+  "bytes": 52
+ },
+ {
+  "file": ".chamnan/threads/open-070.md",
+  "hazard": "",
+  "bytes": 52
+ },
+ {
+  "file": ".chamnan/threads/open-071.md",
+  "hazard": "",
+  "bytes": 52
+ },
+ {
+  "file": ".chamnan/threads/open-072.md",
+  "hazard": "",
+  "bytes": 52
+ },
+ {
+  "file": ".chamnan/threads/open-073.md",
+  "hazard": "",
+  "bytes": 52
+ },
+ {
+  "file": ".chamnan/threads/open-074.md",
+  "hazard": "",
+  "bytes": 52
+ },
+ {
+  "file": ".chamnan/threads/open-075.md",
+  "hazard": "",
+  "bytes": 52
+ },
+ {
+  "file": ".chamnan/threads/open-076.md",
+  "hazard": "",
+  "bytes": 52
+ },
+ {
+  "file": ".chamnan/threads/open-077.md",
+  "hazard": "",
+  "bytes": 52
+ },
+ {
+  "file": ".chamnan/threads/open-078.md",
+  "hazard": "",
+  "bytes": 52
+ },
+ {
+  "file": ".chamnan/threads/open-079.md",
+  "hazard": "",
+  "bytes": 52
+ },
+ {
+  "file": ".chamnan/threads/open-080.md",
+  "hazard": "",
+  "bytes": 52
+ },
+ {
+  "file": ".chamnan/threads/open-081.md",
+  "hazard": "",
+  "bytes": 52
+ },
+ {
+  "file": ".chamnan/threads/open-082.md",
+  "hazard": "",
+  "bytes": 52
+ },
+ {
+  "file": ".chamnan/threads/open-083.md",
+  "hazard": "",
+  "bytes": 52
+ },
+ {
+  "file": ".chamnan/threads/open-084.md",
+  "hazard": "",
+  "bytes": 52
+ },
+ {
+  "file": ".chamnan/threads/open-085.md",
+  "hazard": "",
+  "bytes": 52
+ },
+ {
+  "file": ".chamnan/threads/open-086.md",
+  "hazard": "",
+  "bytes": 52
+ },
+ {
+  "file": ".chamnan/threads/open-087.md",
+  "hazard": "",
+  "bytes": 52
+ },
+ {
+  "file": ".chamnan/threads/open-088.md",
+  "hazard": "",
+  "bytes": 52
+ },
+ {
+  "file": ".chamnan/threads/open-089.md",
+  "hazard": "",
+  "bytes": 52
+ },
+ {
+  "file": ".chamnan/threads/open-090.md",
+  "hazard": "",
+  "bytes": 52
+ },
+ {
+  "file": ".chamnan/threads/open-091.md",
+  "hazard": "",
+  "bytes": 52
+ },
+ {
+  "file": ".chamnan/threads/open-092.md",
+  "hazard": "",
+  "bytes": 52
+ },
+ {
+  "file": ".chamnan/threads/open-093.md",
+  "hazard": "",
+  "bytes": 52
+ },
+ {
+  "file": ".chamnan/threads/open-094.md",
+  "hazard": "",
+  "bytes": 52
+ },
+ {
+  "file": ".chamnan/threads/open-095.md",
+  "hazard": "",
+  "bytes": 52
+ },
+ {
+  "file": ".chamnan/threads/open-096.md",
+  "hazard": "",
+  "bytes": 52
+ },
+ {
+  "file": ".chamnan/threads/open-097.md",
+  "hazard": "",
+  "bytes": 52
+ },
+ {
+  "file": ".chamnan/threads/open-098.md",
+  "hazard": "",
+  "bytes": 52
+ },
+ {
+  "file": ".chamnan/threads/open-099.md",
+  "hazard": "",
+  "bytes": 52
+ },
+ {
+  "file": ".chamnan/threads/open-100.md",
+  "hazard": "",
+  "bytes": 53
+ },
+ {
+  "file": ".chamnan/threads/open-101.md",
+  "hazard": "",
+  "bytes": 53
+ },
+ {
+  "file": ".chamnan/threads/open-102.md",
+  "hazard": "",
+  "bytes": 53
+ },
+ {
+  "file": ".chamnan/threads/open-103.md",
+  "hazard": "",
+  "bytes": 53
+ },
+ {
+  "file": ".chamnan/threads/open-104.md",
+  "hazard": "",
+  "bytes": 53
+ },
+ {
+  "file": ".chamnan/threads/open-105.md",
+  "hazard": "",
+  "bytes": 53
+ },
+ {
+  "file": ".chamnan/threads/open-106.md",
+  "hazard": "",
+  "bytes": 53
+ },
+ {
+  "file": ".chamnan/threads/open-107.md",
+  "hazard": "",
+  "bytes": 53
+ },
+ {
+  "file": ".chamnan/threads/open-108.md",
+  "hazard": "",
+  "bytes": 53
+ },
+ {
+  "file": ".chamnan/threads/open-109.md",
+  "hazard": "",
+  "bytes": 53
+ },
+ {
+  "file": ".chamnan/threads/open-110.md",
+  "hazard": "",
+  "bytes": 53
+ },
+ {
+  "file": ".chamnan/threads/open-111.md",
+  "hazard": "",
+  "bytes": 53
+ },
+ {
+  "file": ".chamnan/threads/open-112.md",
+  "hazard": "",
+  "bytes": 53
+ },
+ {
+  "file": ".chamnan/threads/open-113.md",
+  "hazard": "",
+  "bytes": 53
+ },
+ {
+  "file": ".chamnan/threads/open-114.md",
+  "hazard": "",
+  "bytes": 53
+ },
+ {
+  "file": ".chamnan/threads/open-115.md",
+  "hazard": "",
+  "bytes": 53
+ },
+ {
+  "file": ".chamnan/threads/open-116.md",
+  "hazard": "",
+  "bytes": 53
+ },
+ {
+  "file": ".chamnan/threads/open-117.md",
+  "hazard": "",
+  "bytes": 53
+ },
+ {
+  "file": ".chamnan/threads/open-118.md",
+  "hazard": "",
+  "bytes": 53
+ },
+ {
+  "file": ".chamnan/threads/open-119.md",
+  "hazard": "",
+  "bytes": 53
+ },
+ {
+  "file": ".chamnan/threads/open-120.md",
+  "hazard": "",
+  "bytes": 53
+ },
+ {
+  "file": ".chamnan/threads/closed-before-opened.md",
+  "hazard": "a thread closed before it was opened",
+  "bytes": 85
+ },
+ {
+  "file": ".chamnan/logs/torn.jsonl",
+  "hazard": "a jsonl whose last line was torn by a crash",
+  "bytes": 8137
+ },
+ {
+  "file": ".chamnan/logs/with-nul.jsonl",
+  "hazard": "NUL bytes between two valid records",
+  "bytes": 57
+ },
+ {
+  "file": ".chamnan/logs/very-long.jsonl",
+  "hazard": "120,000 records in one log",
+  "bytes": 12608890
+ },
+ {
+  "file": ".chamnan/logs/one-enormous-line.jsonl",
+  "hazard": "a single 3 MB line",
+  "bytes": 3000021
+ },
+ {
+  "file": ".chamnan/logs/not-json-at-all.jsonl",
+  "hazard": "a text log named .jsonl",
+  "bytes": 33000
+ },
+ {
+  "file": ".chamnan/logs/commands.jsonl",
+  "hazard": "a self-pruning log far past the size its own bound implies",
+  "bytes": 1100000
+ },
+ {
+  "file": ".chamnan/config.json.sane",
+  "hazard": "the original config.json, kept so a run can put it back",
+  "bytes": 604
+ },
+ {
+  "file": ".chamnan/.version.sane",
+  "hazard": "the original .version, kept so a run can put it back",
+  "bytes": 7
+ },
+ {
+  "file": ".chamnan/config.json",
+  "hazard": "every config key out of range, wrong type, or unknown",
+  "bytes": 260
+ },
+ {
+  "file": ".chamnan/.version",
+  "hazard": "a version string that does not have the shape",
+  "bytes": 14
+ },
+ {
+  "file": ".chamnan/memory/rules/via-a-symlink.md",
+  "hazard": "a record reached through a symlink out of the repository",
+  "bytes": 0
+ }
+]

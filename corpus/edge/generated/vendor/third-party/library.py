@@ -1,0 +1,401 @@
+# Vendored. Editing this file is wrong, and nothing in its content says so.
+def f():
+    return 1
+def f():
+    return 1
+def f():
+    return 1
+def f():
+    return 1
+def f():
+    return 1
+def f():
+    return 1
+def f():
+    return 1
+def f():
+    return 1
+def f():
+    return 1
+def f():
+    return 1
+def f():
+    return 1
+def f():
+    return 1
+def f():
+    return 1
+def f():
+    return 1
+def f():
+    return 1
+def f():
+    return 1
+def f():
+    return 1
+def f():
+    return 1
+def f():
+    return 1
+def f():
+    return 1
+def f():
+    return 1
+def f():
+    return 1
+def f():
+    return 1
+def f():
+    return 1
+def f():
+    return 1
+def f():
+    return 1
+def f():
+    return 1
+def f():
+    return 1
+def f():
+    return 1
+def f():
+    return 1
+def f():
+    return 1
+def f():
+    return 1
+def f():
+    return 1
+def f():
+    return 1
+def f():
+    return 1
+def f():
+    return 1
+def f():
+    return 1
+def f():
+    return 1
+def f():
+    return 1
+def f():
+    return 1
+def f():
+    return 1
+def f():
+    return 1
+def f():
+    return 1
+def f():
+    return 1
+def f():
+    return 1
+def f():
+    return 1
+def f():
+    return 1
+def f():
+    return 1
+def f():
+    return 1
+def f():
+    return 1
+def f():
+    return 1
+def f():
+    return 1
+def f():
+    return 1
+def f():
+    return 1
+def f():
+    return 1
+def f():
+    return 1
+def f():
+    return 1
+def f():
+    return 1
+def f():
+    return 1
+def f():
+    return 1
+def f():
+    return 1
+def f():
+    return 1
+def f():
+    return 1
+def f():
+    return 1
+def f():
+    return 1
+def f():
+    return 1
+def f():
+    return 1
+def f():
+    return 1
+def f():
+    return 1
+def f():
+    return 1
+def f():
+    return 1
+def f():
+    return 1
+def f():
+    return 1
+def f():
+    return 1
+def f():
+    return 1
+def f():
+    return 1
+def f():
+    return 1
+def f():
+    return 1
+def f():
+    return 1
+def f():
+    return 1
+def f():
+    return 1
+def f():
+    return 1
+def f():
+    return 1
+def f():
+    return 1
+def f():
+    return 1
+def f():
+    return 1
+def f():
+    return 1
+def f():
+    return 1
+def f():
+    return 1
+def f():
+    return 1
+def f():
+    return 1
+def f():
+    return 1
+def f():
+    return 1
+def f():
+    return 1
+def f():
+    return 1
+def f():
+    return 1
+def f():
+    return 1
+def f():
+    return 1
+def f():
+    return 1
+def f():
+    return 1
+def f():
+    return 1
+def f():
+    return 1
+def f():
+    return 1
+def f():
+    return 1
+def f():
+    return 1
+def f():
+    return 1
+def f():
+    return 1
+def f():
+    return 1
+def f():
+    return 1
+def f():
+    return 1
+def f():
+    return 1
+def f():
+    return 1
+def f():
+    return 1
+def f():
+    return 1
+def f():
+    return 1
+def f():
+    return 1
+def f():
+    return 1
+def f():
+    return 1
+def f():
+    return 1
+def f():
+    return 1
+def f():
+    return 1
+def f():
+    return 1
+def f():
+    return 1
+def f():
+    return 1
+def f():
+    return 1
+def f():
+    return 1
+def f():
+    return 1
+def f():
+    return 1
+def f():
+    return 1
+def f():
+    return 1
+def f():
+    return 1
+def f():
+    return 1
+def f():
+    return 1
+def f():
+    return 1
+def f():
+    return 1
+def f():
+    return 1
+def f():
+    return 1
+def f():
+    return 1
+def f():
+    return 1
+def f():
+    return 1
+def f():
+    return 1
+def f():
+    return 1
+def f():
+    return 1
+def f():
+    return 1
+def f():
+    return 1
+def f():
+    return 1
+def f():
+    return 1
+def f():
+    return 1
+def f():
+    return 1
+def f():
+    return 1
+def f():
+    return 1
+def f():
+    return 1
+def f():
+    return 1
+def f():
+    return 1
+def f():
+    return 1
+def f():
+    return 1
+def f():
+    return 1
+def f():
+    return 1
+def f():
+    return 1
+def f():
+    return 1
+def f():
+    return 1
+def f():
+    return 1
+def f():
+    return 1
+def f():
+    return 1
+def f():
+    return 1
+def f():
+    return 1
+def f():
+    return 1
+def f():
+    return 1
+def f():
+    return 1
+def f():
+    return 1
+def f():
+    return 1
+def f():
+    return 1
+def f():
+    return 1
+def f():
+    return 1
+def f():
+    return 1
+def f():
+    return 1
+def f():
+    return 1
+def f():
+    return 1
+def f():
+    return 1
+def f():
+    return 1
+def f():
+    return 1
+def f():
+    return 1
+def f():
+    return 1
+def f():
+    return 1
+def f():
+    return 1
+def f():
+    return 1
+def f():
+    return 1
+def f():
+    return 1
+def f():
+    return 1
+def f():
+    return 1
+def f():
+    return 1
+def f():
+    return 1
+def f():
+    return 1
+def f():
+    return 1
+def f():
+    return 1
+def f():
+    return 1
+def f():
+    return 1
+def f():
+    return 1
+def f():
+    return 1
+def f():
+    return 1

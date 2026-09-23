@@ -182,6 +182,57 @@ python3 plant_secrets.py --revert   # put the placeholders back
 
 ---
 
+## The hazards, and the four scripts that plant them
+
+The corpus above is hard to *index*. This part is hard to *survive*. Four planters write about
+1,900 entries whose point is that a tool reading them does the wrong thing — and none of it is
+invented for the corpus: each group traces to a failure that was measured somewhere, either in a
+guard's own source or in a published comparison of four shipped plugins.
+
+```bash
+python3 plant_secrets.py            # the credentials — already documented above
+python3 plant_rule_patterns.py      # 177 rule trailers: patterns that run at session start
+python3 plant_workspace_hazards.py  # 463 entries across every workspace surface a clone carries
+python3 plant_failure_classes.py    # the nine classes a four-plugin comparison measured
+python3 plant_situations.py         # arrangements: many hosts at once, git shapes, scale, links
+```
+
+Each writes a manifest next to what it planted, so a run can be diffed against what was true when
+the files went down rather than re-deriving it.
+
+**`plant_rule_patterns.py` — what runs.** A `**Check:**` trailer in a rule file is a regular
+expression that arrives with a clone and runs at every session start, so a repository somebody else
+wrote can hang the reader before they have typed anything. 177 patterns in seven groups: four
+families of catastrophic backtracking, one group written specifically to slip *past* a guard's
+regexes rather than past the matching engine, thirty ordinary patterns that must keep working, and
+twenty-two that break at compile time instead of match time.
+
+**`plant_workspace_hazards.py` — what is read.** Every `.chamnan` surface a clone can carry:
+stores that talk to the model instead of to the parser, two records that contradict each other,
+frontmatter that opens and never closes, JSON that stops mid-value or sits above a read ceiling, a
+directory wearing a `.json` name, 300 sessions, 120 threads that never close, a log torn by a
+crash, a config with every key out of range, and a record reachable only through a symlink out of
+the repository. Large files here are deliberately repetitive: git stores them compressed, so a
+4 MB parse ceiling costs the clone a few kilobytes.
+
+**`plant_failure_classes.py` — what broke before.** The classes a 2026-09-22 comparison measured
+across four plugins: two writers on one file, a clock that jumps, a write that cannot succeed,
+encodings from BOM to CP874 to bytes that are not valid UTF-8, the two languages a 97.2% comment
+ceiling is actually made of, suffixes past the known list, and names that are legal on macOS and
+fatal on a Windows checkout. That last group ships as placeholders — a committed file named `NUL`
+does not test a Windows reader, it stops anyone on Windows from cloning at all.
+
+**`plant_situations.py` — what nobody designed.** Arrangements where every file is well-formed and
+the combination is the problem: eighteen host marker files present at once, each stating a rule
+that contradicts its neighbours; a `.git` that is a file, as a worktree and a submodule both leave
+it; 1,200 files in one directory and a path fourteen deep; a symlink loop and a symlink back to the
+repository root; and generated files that are real, committed, and should not be read as if a
+person wrote them.
+
+**One conflict could not be planted, because it cannot exist.** One adapter reads
+`.clinerules/chamnan.md` and another reads `.clinerules` as a file. One path, two types — no
+filesystem holds both, so a repository can satisfy at most one of them, and neither says which.
+
 ## What is deliberately missing
 
 **The binary attachments.** The original corpus carried 1,192 of them — PDFs, spreadsheets,

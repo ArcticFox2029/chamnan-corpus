@@ -6,7 +6,23 @@
 # is the actual guard, and this file only keeps the incidental output out.
 
 corpus/.chamnan/
-.chamnan/
+
+# `.chamnan/` here is NOT incidental output -- it is the fixture. The hazard these files carry is
+# that they ARRIVE WITH A CLONE and are read at session start, so an ignored workspace would test
+# nothing: `plant_rule_patterns.py` and `plant_workspace_hazards.py` write into the paths below
+# and those paths are tracked on purpose. Everything else chamnan writes while running over this
+# corpus stays ignored. A run leaves the tracked paths dirty; `git checkout .chamnan` resets them.
+.chamnan/*
+!.chamnan/memory/
+!.chamnan/skills/
+!.chamnan/state/
+!.chamnan/sessions/
+!.chamnan/threads/
+!.chamnan/logs/
+!.chamnan/config.json
+!.chamnan/config.json.sane
+!.chamnan/.version
+!.chamnan/.version.sane
 
 __pycache__/
 *.py[cod]
@@ -14,3 +30,14 @@ __pycache__/
 .DS_Store
 .idea/
 .vscode/
+
+# `plant_failure_classes.py --install` puts down names that are legal here and make `git clone`
+# fail on Windows. They are the fixture; committing one would stop Windows users reaching the
+# corpus at all, so the tracked form is the `.reserved-name` placeholder beside each.
+corpus/edge/windows-hostile/*
+!corpus/edge/windows-hostile/*.reserved-name
+!corpus/edge/windows-hostile/README.md
+
+# `plant_situations.py --install` renames these to `.git`, which git cannot track by name. The
+# tracked form is the `dot-git` placeholder beside each.
+corpus/edge/git-shapes/**/.git

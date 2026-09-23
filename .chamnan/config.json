@@ -1,0 +1,15 @@
+{
+ "log_retention_days": -5,
+ "session_retention_days": 1000000000,
+ "index_token_budget": "not a number",
+ "dashboard": "yes",
+ "commit_guard": null,
+ "a_key_that_does_not_exist": true,
+ "nested": {
+  "deeper": {
+   "deeper": {
+    "deeper": {}
+   }
+  }
+ }
+}

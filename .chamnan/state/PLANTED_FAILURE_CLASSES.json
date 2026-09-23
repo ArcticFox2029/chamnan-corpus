@@ -1,0 +1,327 @@
+[
+ {
+  "file": ".chamnan/state/contended.json",
+  "hazard": "a shared state file for two writers to race over",
+  "bytes": 34
+ },
+ {
+  "file": "corpus/edge/concurrency/hammer.py",
+  "hazard": "a harness that produces a lost update on demand",
+  "bytes": 1840
+ },
+ {
+  "file": "corpus/edge/concurrency/parse-failure-is-an-empty-dict.json",
+  "hazard": "the config whose parse failure a reader is tempted to answer with {}",
+  "bytes": 46
+ },
+ {
+  "file": ".chamnan/logs/dated-in-the-future.jsonl",
+  "hazard": "a log file whose mtime is in the future -- age is negative",
+  "bytes": 71
+ },
+ {
+  "file": ".chamnan/logs/dated-before-the-project.jsonl",
+  "hazard": "a log file older than anything the retention window contemplates",
+  "bytes": 71
+ },
+ {
+  "file": ".chamnan/state/timestamps-from-the-future.json",
+  "hazard": "a record that expires before it was written",
+  "bytes": 75
+ },
+ {
+  "file": ".chamnan/logs/runs-backwards.jsonl",
+  "hazard": "an append-only log whose records go backwards in time",
+  "bytes": 790
+ },
+ {
+  "file": ".chamnan/state/read-only/",
+  "bytes": 0,
+  "hazard": "a directory a writer cannot write into"
+ },
+ {
+  "file": ".chamnan/state/read-only/existing.json",
+  "bytes": 13,
+  "hazard": "a file a writer cannot overwrite"
+ },
+ {
+  "file": "corpus/edge/encodings/utf8-bom.md",
+  "hazard": "UTF-8 behind a byte-order mark",
+  "bytes": 179
+ },
+ {
+  "file": "corpus/edge/encodings/utf16-le.md",
+  "hazard": "UTF-16 LE with no BOM -- every other byte is NUL",
+  "bytes": 124
+ },
+ {
+  "file": "corpus/edge/encodings/utf16-bom.md",
+  "hazard": "UTF-16 with a BOM",
+  "bytes": 126
+ },
+ {
+  "file": "corpus/edge/encodings/cp874-thai.md",
+  "hazard": "Thai in CP874, which UTF-8 decoding cannot read",
+  "bytes": 62
+ },
+ {
+  "file": "corpus/edge/encodings/latin1.md",
+  "hazard": "Latin-1 -- valid bytes, invalid UTF-8",
+  "bytes": 29
+ },
+ {
+  "file": "corpus/edge/encodings/not-valid-utf8.md",
+  "hazard": "bytes that are not valid in any of the above",
+  "bytes": 47
+ },
+ {
+  "file": "corpus/edge/encodings/mixed-in-one-file.md",
+  "hazard": "three encodings inside one file",
+  "bytes": 51
+ },
+ {
+  "file": "corpus/edge/encodings/nul-in-the-middle.md",
+  "hazard": "a NUL byte inside a text file",
+  "bytes": 56
+ },
+ {
+  "file": "corpus/edge/encodings/crlf.md",
+  "hazard": "CRLF line endings",
+  "bytes": 35
+ },
+ {
+  "file": "corpus/edge/encodings/cr-only.md",
+  "hazard": "CR-only line endings, which split into one line",
+  "bytes": 36
+ },
+ {
+  "file": "corpus/edge/encodings/no-final-newline.md",
+  "hazard": "no newline at end of file",
+  "bytes": 35
+ },
+ {
+  "file": "corpus/edge/unreadable/no-reader.pl",
+  "hazard": "Perl POD -- the form with no reader",
+  "bytes": 199
+ },
+ {
+  "file": "corpus/edge/unreadable/also-no-reader.pm",
+  "hazard": "a Perl module, same form",
+  "bytes": 75
+ },
+ {
+  "file": "corpus/edge/unreadable/python2-print.py",
+  "hazard": "Python 2 -- an ordinary comment behind an unparseable file",
+  "bytes": 224
+ },
+ {
+  "file": "corpus/edge/unreadable/python2-unicode.py",
+  "hazard": "Python 2 again, a different unparseable construct",
+  "bytes": 95
+ },
+ {
+  "file": "corpus/edge/unreadable/empty.py",
+  "hazard": "a source file with no bytes",
+  "bytes": 0
+ },
+ {
+  "file": "corpus/edge/unreadable/comment-only.py",
+  "hazard": "a source file that is only a comment",
+  "bytes": 88
+ },
+ {
+  "file": "corpus/edge/unreadable/shebang-lies.py",
+  "hazard": "a shebang that contradicts the extension",
+  "bytes": 170
+ },
+ {
+  "file": "corpus/edge/extensions/sample.zig",
+  "hazard": "an unknown suffix (.zig)",
+  "bytes": 157
+ },
+ {
+  "file": "corpus/edge/extensions/sample.odin",
+  "hazard": "",
+  "bytes": 158
+ },
+ {
+  "file": "corpus/edge/extensions/sample.nim",
+  "hazard": "",
+  "bytes": 157
+ },
+ {
+  "file": "corpus/edge/extensions/sample.crystal",
+  "hazard": "",
+  "bytes": 161
+ },
+ {
+  "file": "corpus/edge/extensions/sample.hx",
+  "hazard": "",
+  "bytes": 156
+ },
+ {
+  "file": "corpus/edge/extensions/sample.v",
+  "hazard": "",
+  "bytes": 155
+ },
+ {
+  "file": "corpus/edge/extensions/sample.jai",
+  "hazard": "",
+  "bytes": 157
+ },
+ {
+  "file": "corpus/edge/extensions/sample.gleam",
+  "hazard": "",
+  "bytes": 159
+ },
+ {
+  "file": "corpus/edge/extensions/sample.roc",
+  "hazard": "",
+  "bytes": 157
+ },
+ {
+  "file": "corpus/edge/extensions/sample.grain",
+  "hazard": "",
+  "bytes": 159
+ },
+ {
+  "file": "corpus/edge/extensions/sample.wren",
+  "hazard": "",
+  "bytes": 158
+ },
+ {
+  "file": "corpus/edge/extensions/sample.janet",
+  "hazard": "",
+  "bytes": 159
+ },
+ {
+  "file": "corpus/edge/extensions/sample.carp",
+  "hazard": "",
+  "bytes": 158
+ },
+ {
+  "file": "corpus/edge/extensions/sample.pony",
+  "hazard": "",
+  "bytes": 158
+ },
+ {
+  "file": "corpus/edge/extensions/sample.chapel",
+  "hazard": "",
+  "bytes": 160
+ },
+ {
+  "file": "corpus/edge/extensions/sample.futhark",
+  "hazard": "",
+  "bytes": 161
+ },
+ {
+  "file": "corpus/edge/extensions/sample.idr",
+  "hazard": "",
+  "bytes": 157
+ },
+ {
+  "file": "corpus/edge/extensions/sample.lean",
+  "hazard": "",
+  "bytes": 158
+ },
+ {
+  "file": "corpus/edge/extensions/sample.agda",
+  "hazard": "",
+  "bytes": 158
+ },
+ {
+  "file": "corpus/edge/extensions/sample.elm",
+  "hazard": "",
+  "bytes": 157
+ },
+ {
+  "file": "corpus/edge/extensions/no-extension-at-all",
+  "hazard": "a file with no extension, identified only by its shebang",
+  "bytes": 79
+ },
+ {
+  "file": "corpus/edge/extensions/archive.tar.gz.md",
+  "hazard": "a name with three suffixes",
+  "bytes": 84
+ },
+ {
+  "file": "corpus/edge/extensions/.md",
+  "hazard": "a file whose whole name is a suffix",
+  "bytes": 43
+ },
+ {
+  "file": "corpus/edge/windows-hostile/CON.md.reserved-name",
+  "hazard": "placeholder for a reserved DOS device name: `CON.md`",
+  "bytes": 139
+ },
+ {
+  "file": "corpus/edge/windows-hostile/NUL.md.reserved-name",
+  "hazard": "placeholder for a reserved DOS device name: `NUL.md`",
+  "bytes": 139
+ },
+ {
+  "file": "corpus/edge/windows-hostile/PRN.md.reserved-name",
+  "hazard": "placeholder for a reserved DOS device name: `PRN.md`",
+  "bytes": 139
+ },
+ {
+  "file": "corpus/edge/windows-hostile/AUX.md.reserved-name",
+  "hazard": "placeholder for a reserved DOS device name: `AUX.md`",
+  "bytes": 139
+ },
+ {
+  "file": "corpus/edge/windows-hostile/LPT1.md.reserved-name",
+  "hazard": "placeholder for a reserved DOS device name: `LPT1.md`",
+  "bytes": 140
+ },
+ {
+  "file": "corpus/edge/windows-hostile/COM1.md.reserved-name",
+  "hazard": "placeholder for a reserved DOS device name: `COM1.md`",
+  "bytes": 140
+ },
+ {
+  "file": "corpus/edge/windows-hostile/trailing-dot.md..reserved-name",
+  "hazard": "placeholder for a name ending in a dot: `trailing-dot.md.`",
+  "bytes": 149
+ },
+ {
+  "file": "corpus/edge/windows-hostile/trailing-space.md .reserved-name",
+  "hazard": "placeholder for a name ending in a space: `trailing-space.md `",
+  "bytes": 151
+ },
+ {
+  "file": "corpus/edge/windows-hostile/%63%6F%6C%6F%6E%3A%69%6E%3A%6E%61%6D%65%2E%6D%64.reserved-name",
+  "hazard": "placeholder for a colon in a name: `colon:in:name.md`",
+  "bytes": 149
+ },
+ {
+  "file": "corpus/edge/windows-hostile/%70%69%70%65%7C%69%6E%7C%6E%61%6D%65%2E%6D%64.reserved-name",
+  "hazard": "placeholder for a pipe in a name: `pipe|in|name.md`",
+  "bytes": 148
+ },
+ {
+  "file": "corpus/edge/windows-hostile/%71%75%65%73%74%69%6F%6E%3F%2E%6D%64.reserved-name",
+  "hazard": "placeholder for a question mark in a name: `question?.md`",
+  "bytes": 145
+ },
+ {
+  "file": "corpus/edge/windows-hostile/%73%74%61%72%2A%2E%6D%64.reserved-name",
+  "hazard": "placeholder for an asterisk in a name: `star*.md`",
+  "bytes": 141
+ },
+ {
+  "file": "corpus/edge/windows-hostile/%71%75%6F%74%65%22%2E%6D%64.reserved-name",
+  "hazard": "placeholder for a double quote in a name: `quote\".md`",
+  "bytes": 142
+ },
+ {
+  "file": "corpus/edge/windows-hostile/%6C%65%73%73%3C%67%72%65%61%74%65%72%3E%2E%6D%64.reserved-name",
+  "hazard": "placeholder for angle brackets in a name: `less<greater>.md`",
+  "bytes": 149
+ },
+ {
+  "file": "corpus/edge/windows-hostile/README.md",
+  "hazard": "the note explaining why the group is install-only",
+  "bytes": 1033
+ }
+]

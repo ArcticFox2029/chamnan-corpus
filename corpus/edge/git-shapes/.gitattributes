@@ -1,0 +1,6 @@
+*.md linguist-generated=true
+*.md linguist-generated=false
+*.py -diff
+*.py diff
+* text=auto
+* -text
