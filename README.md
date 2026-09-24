@@ -37,14 +37,14 @@ should not come out looking the same.
 
 | | |
 |---|---|
-| Files | **804** |
+| Files | **804** in the platform itself, plus **1,923** the `plant_*` scripts and `redaction/` added since — **2,727** tracked in all |
 | File types | **72** extensions, plus a Gemfile, a Jenkinsfile, a Makefile and two extensionless shell tools |
-| Size | **4.7 MB** of tracked files |
+| Size | **4.7 MB** for the platform, **27.9 MB** tracked in all — most of the difference is `corpus/edge/scale/` |
 | Programming languages | **23** |
 | Comment languages | **8 writing systems** — Latin, Devanagari, Thai, Cyrillic, Arabic, Han, Hangul, and Japanese kana |
 | Planted credentials | **28 placeholders** in 17 shapes, filled by `plant_secrets.py` |
 
-### The 24 languages, and how much of each
+### The 23 languages, and how much of each
 
 | | | | |
 |---|---|---|---|
@@ -132,7 +132,7 @@ right, which is not a thing a script can know.
 
 Three questions worth asking of whatever you run:
 
-- **Does it read all 804 files, or does it quietly skip the extensions it has no reader for?** The
+- **Does it read all 804 of the platform's files, or does it quietly skip the extensions it has no reader for?** The
   long tail is deliberate. Perl, Nim, Zig, Objective-C and Arduino are here because they are what a
   tool drops without saying so.
 - **Does it still say something useful about a file whose comments are in Devanagari?** Eight
