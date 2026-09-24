@@ -58,3 +58,16 @@ pair apart is a rule that will damage real code.
 
 Recorded because it has happened: false positives here have destroyed GraphQL documents, Swift and
 Dart `Codable` blocks, SQL, Lua and Protobuf. Recall is not the only number.
+
+## What else lives here, and how it runs
+
+- **`recall.py`** — the recall and precision benchmark for chamnan's redactor, moved here from
+  chamnan's `tools/` on 2026-09-24 with its tables of synthetic key shapes. chamnan's README
+  credits its published figures to it. Run it against a chamnan checkout:
+  `python3 redaction/recall.py --chamnan <path to chamnan>` (or set `CHAMNAN_PLUGIN`; a checkout
+  beside this corpus is found on its own).
+- **`chamnan_checks/`** — the checks from chamnan's suite that need a key shape, and the ones that
+  hold chamnan's published redaction figures to this benchmark. They use chamnan's suite preamble
+  and run in chamnan's release step against the corpus, never in chamnan's own suite or CI.
+- **`check.py`** — holds `cases.jsonl` to the contract above.
+
